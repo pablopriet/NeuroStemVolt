@@ -3,6 +3,16 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 
 class SpheroidFile:
+    """
+    A class to handle the loading and processing of FSCV spheroid data files.
+    Usage:
+    - filepath: Path to the associated FSCV (color plot) data file (txt format).
+    - raw_data: The raw data loaded from the file, inverted. We keep it to always come back in case the user does not want to apply any processing.
+    - processed_data: The processed data, initially set to raw_data.
+    - peak_position: The position of the peak in the I-T profile, default is set to 257 (for serotonin, 5HT).
+    - window_size: The size of the window for rolling mean or smoothing, default is None. (not used yet)
+    - metadata: A dictionary to hold any additional metadata related to the file.
+    """
     def __init__(self, filepath):
         self.filepath = filepath
         self.raw_data = self.load_data()
@@ -12,7 +22,7 @@ class SpheroidFile:
         self.metadata = {}
 
     def load_data(self):
-        initial_data = np.loadtxt(self.filepath).T
+        initial_data = np.loadtxt(self.filepath).T # Transpose to match (voltage steps, time points)
         data = -initial_data # Invert the data since FSCV txt color plots will be inverted
         return data
     
@@ -81,8 +91,8 @@ class SpheroidFile:
             peak_indices = self.metadata['peak_amplitude_positions']
             peak_values = self.metadata.get('peak_amplitude_values', profile[peak_indices])
             print(f"Peak indices from metadata: {peak_indices}")
-            for peak_idx, peak_val in zip(peak_indices, peak_values):
-                if 0 <= peak_idx < len(profile):
+            for peak_idx, peak_val in zip(peak_indices, peak_values): # Iterate over index-value pairs
+                if 0 <= peak_idx < len(profile): # Check the peak is within bounds
                     ax.scatter(peak_idx, peak_val, color='red', label="Peak Amplitude", zorder=5)
                     ax.annotate(f"({peak_idx}, {peak_val:.2f})",
                                 (peak_idx, peak_val),

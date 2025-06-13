@@ -15,8 +15,19 @@ import os
 
 class SpheroidExperiment:
     """
-    Represents one full experiment for a single spheroid.
-    It contains multiple SpheroidFile objects, one per timepoint.
+    Usage: 
+    spheroid_experiment = SpheroidExperiment(filepaths, treatment="Sertraline")
+    This class represents a complete set of experiments for a single spheroid. 
+    Inputs:
+    - filepaths: List of file paths or a folder containing spheroid data files.
+    - file_length: Length of each file in seconds (default is 60).
+    - acquisition_frequency: Frequency of data acquisition in Hz (default is 10).
+    - peak_position: Position of the analyte peak in the data (default is 257).
+    - treatment: Treatment applied to the spheroid (default is None).
+    - stim_params: Dictionary containing stimulation parameters (default is None, which uses default values).
+    - processors: List of processing steps to apply (default is None, which uses a predefined set of processors, outlined for testing).
+    Outputs:
+    - The class holds the spheroid data files and if using the run() applies the series of processing steps in series.
     """
 
     def __init__(
@@ -25,7 +36,7 @@ class SpheroidExperiment:
         file_length=60,
         acquisition_frequency=10,
         peak_position=257,
-        treatment="Sertraline",
+        treatment="",
         stim_params=None,
         processors=None  # Default to None
     ):
@@ -59,6 +70,10 @@ class SpheroidExperiment:
         self.set_peak_position(peak_position)
 
     def set_peak_position(self, peak_position):
+        """
+        Usage:
+            This function sets the peak position for all spheroid file (class) in the experiment.  
+        """
         for f in self.files:
             f.set_peak_position(peak_position)
 
@@ -73,6 +88,7 @@ class SpheroidExperiment:
 
     def run(self):
         """
+        Usage:
         Runs the processing pipeline across all files.
         """
         pipeline = PipelineManager(self.processors)
@@ -81,6 +97,7 @@ class SpheroidExperiment:
 
     def run_single_file(self, index):
         """
+        Usage:
         Runs the processing pipeline for a single file specified by index.
         """
         pipeline = PipelineManager(self.processors)
@@ -88,14 +105,15 @@ class SpheroidExperiment:
 
     def collect(self):
         """
+        Usage:
         Collects output results (future implementation).
         """
         pass
 
 
 if __name__ == "__main__":
-    #folder = r"C:\Users\pablo\OneDrive\Documentos\1st_Year_PhD\Projects\NeuroStemVolt\data\241111_batch1_n1_Sert"
-    folder = r"/Users/pabloprieto/Library/CloudStorage/OneDrive-Personal/Documentos/1st_Year_PhD/Projects/NeuroStemVolt/data/241111_batch1_n1_Sert"
+    folder = r"C:\Users\pablo\OneDrive\Documentos\1st_Year_PhD\Projects\NeuroStemVolt\data\241111_batch1_n1_Sert"
+    #folder = r"/Users/pabloprieto/Library/CloudStorage/OneDrive-Personal/Documentos/1st_Year_PhD/Projects/NeuroStemVolt/data/241111_batch1_n1_Sert"
     filepaths = [os.path.join(folder, f) for f in os.listdir(folder) if f.endswith('.txt')]
 
     experiment = SpheroidExperiment(filepaths, treatment="Sertraline")

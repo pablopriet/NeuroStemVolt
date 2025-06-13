@@ -4,9 +4,15 @@ from .base import Processor
 class GaussianSmoothing2D(Processor):
     def __init__(self, window=5, repeats=3, pad_mode='reflect'):
         """
-        window    : int, width of the uniform (box) kernel
-        repeats   : int, number of times to apply the box filter per axis (3≈Gaussian)
-        pad_mode  : str, how to extend data at the edges ('reflect' is usually best)
+        Usage:
+        This processor applies a 2D Gaussian smoothing to the input data using a box filter approach.
+        Inputs:
+        - window    : int, width of the uniform (box) kernel
+        - repeats   : int, number of times to apply the box filter per axis (3≈Gaussian) 
+        - pad_mode  : str, how to extend data at the edges ('reflect' is usually best)
+        The implementation is inspired by the paper Novel, User-Friendly Experimental and Analysis Strategies for Fast Voltammetry: 1. The Analysis Kid for FSCV by Mena et al. (2021) 
+        https://doi.org/10.1021/acs.analchem.1c01258
+        It works since three box filters in a row approximate a Gaussian filter.
         """
         self.window   = window
         self.repeats  = repeats

@@ -6,8 +6,16 @@ from matplotlib.patches import Ellipse
 class ButterworthFilter(Processor):
     def __init__(self, p=4, fs_x=10, fs_y=500000):
         """
-        cx, cy: cutoff frequencies in normalized units (0 to 0.5)
-        p: filter order
+        Usage:
+        This processor applies a 2D Butterworth filter to the input data.
+        Inputs:
+        - cx, cy: cutoff frequencies in normalized units (0 to 0.5)
+        - p: filter order, default is 4
+        Outputs:
+        - filtered: 2D numpy array with the Butterworth filter applied
+        Note: The cutoff frequencies are set to 15% of the Nyquist frequency for the x and y axes.
+        The implementation is inspired by the paper Novel, User-Friendly Experimental and Analysis Strategies for Fast Voltammetry: 1. The Analysis Kid for FSCV by Mena et al. (2021) 
+        https://doi.org/10.1021/acs.analchem.1c01258
         """
         self.p = p
 
@@ -35,7 +43,7 @@ class ButterworthFilter(Processor):
         cy = 0.15 * (fs_y / 2)
 
         #print(f"Cutoff frequencies: cx={cx}, cy={cy}") -> cx=0.75, cy=37500.0
-        # 4. Compute your custom 2D Butterworth transfer function
+        # 4. Compute the custom 2D Butterworth transfer function
         H = 1 / (1 + (WX / cx)**(2) + (WY / cy)**(2))**self.p
 
         # 5. Apply transfer function in frequency domain
@@ -49,6 +57,11 @@ class ButterworthFilter(Processor):
         return filtered
     
     def visualize_cutoff(self, data):
+        """
+        This visualization function plots the 2D FFT magnitude spectrum of the input data with an overlaid Butterworth cutoff region.
+        It currently does not work properly as it does not warp the ellipse to the correct aspect ratio.
+        It is a placeholder for future work.
+        """
         rows, cols = data.shape
 
         fs_x = 10  # Time axis sampling rate
