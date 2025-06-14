@@ -13,12 +13,14 @@ class BackgroundSubtraction(Processor):
         """
         self.region = region
 
-    def process(self, data):
+    def process(self, data, context=None):
         start, end = self.region
         # compute mean CV over that region (axis=1 is voltage sweep)
         baseline = np.mean(data[:, start:end], axis=1, keepdims=True)
         #print(f"Baseline shape: {baseline.shape}, Data shape: {data.shape}")
         # subtract from every scan
+        if context is not None:
+            context['background_subtraction_region'] = self.region
         if np.array_equal(data,(data - baseline)):
             print("No change in data after background subtraction.")
         return data - baseline
