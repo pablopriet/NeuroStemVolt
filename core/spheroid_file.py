@@ -165,7 +165,7 @@ class SpheroidFile:
         ax.set_ylabel("Current (nA)")
         ax.set_title(f"I-T Profile with Exponential Decay Fit and Half-Life")
         ax.legend()
-        ax.grid(True)
+        ax.grid(False)
 
         # Show the plot
         plt.show()
