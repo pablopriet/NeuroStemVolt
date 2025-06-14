@@ -21,8 +21,6 @@ class FindAmplitude(Processor):
         if context is not None:
             context['peak_amplitude_positions'] = peak_positions
             context['peak_amplitude_values'] = peak_values
-            if "experiment_first_peak" not in context:
-                context["experiment_first_peak"] = np.mean(peak_values, axis=0)
         print(f"Found peaks at positions: {peak_positions} with values: {peak_values}")
         return data
     
