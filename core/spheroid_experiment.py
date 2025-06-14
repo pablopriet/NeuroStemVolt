@@ -49,9 +49,10 @@ class SpheroidExperiment:
         # Initialize processors after acquisition_frequency is set
         if processors is None:
             self.processors = [
-                BackgroundSubtraction(region=(0, 10)),
+                BaselineCorrection(),
+                #BackgroundSubtraction(region=(0, 10)),
                 #SavitzkyGolayFilter(w=20, p=2),
-                ButterworthFilter(),
+                #ButterworthFilter(),
                 FindAmplitude(self.peak_position)
                 # No need to pass context here
             ]
@@ -94,6 +95,7 @@ class SpheroidExperiment:
         for spheroid_file in self.files:
             # Add stimulation parameters to the context
             context = {
+                "peak_position": self.peak_position,
                 "stim_start": self.stim_params.get("start", 0),
                 "stim_duration": self.stim_params.get("duration", 0),
                 "stim_frequency": self.stim_params.get("frequency", 0),
@@ -117,14 +119,14 @@ class SpheroidExperiment:
 
 
 if __name__ == "__main__":
-    folder = r"C:\Users\pablo\OneDrive\Documentos\1st_Year_PhD\Projects\NeuroStemVolt\data\241111_batch1_n1_Sert"
-    #folder = r"/Users/pabloprieto/Library/CloudStorage/OneDrive-Personal/Documentos/1st_Year_PhD/Projects/NeuroStemVolt/data/241111_batch1_n1_Sert"
+    #folder = r"C:\Users\pablo\OneDrive\Documentos\1st_Year_PhD\Projects\NeuroStemVolt\data\241111_batch1_n1_Sert"
+    folder = r"/Users/pabloprieto/Library/CloudStorage/OneDrive-Personal/Documentos/1st_Year_PhD/Projects/NeuroStemVolt/data/241111_batch1_n1_Sert"
     filepaths = [os.path.join(folder, f) for f in os.listdir(folder) if f.endswith('.txt')]
 
     experiment = SpheroidExperiment(filepaths, treatment="Sertraline")
     experiment.run()
     print(f"Number of files (timepoints) in this experiment: {experiment.get_file_count()}")
     print(f"First file used for baseline: {experiment.get_spheroid_file(3).get_filepath()}")
-    experiment.get_spheroid_file(1).visualize_color_plot_data(title_suffix="Baseline")
-    experiment.get_spheroid_file(1).visualize_IT_profile()
+    experiment.get_spheroid_file(14).visualize_color_plot_data(title_suffix="Baseline")
+    experiment.get_spheroid_file(14).visualize_IT_profile()
 
