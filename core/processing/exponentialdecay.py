@@ -25,10 +25,12 @@ class ExponentialFitting(Processor):
                 popt, pcov = curve_fit(exp_decay, t, y, p0=[A0, tau0, C0])
 
                 A, tau, C = popt
+                t_half = np.log(2) * tau
                 context["exponential fitting parameters"] = {
                     "A": A,
                     "tau": tau,
-                    "C": C
+                    "C": C,
+                    "t_half": t_half,
                 }
                 print(f"Fitted parameters: A={A}, tau={tau}, C={C}")
         return data
