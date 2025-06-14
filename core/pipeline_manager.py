@@ -20,18 +20,14 @@ class PipelineManager:
         """
         self.list_processors.append(processor)
 
-    def run(self, spheroid_file):
+    def run(self, spheroid_file, context=None):
         """
-        Usage:
-            This function gets the individual data from the spheroid file object, and then runs sequentially 
-            the allocated processing pipeline.
+        Runs the processing pipeline for a single spheroid file.
         """
         data = spheroid_file.get_data()
-        context = {}  # Initialize context
+        context = context or {}  # Initialize context if not provided
         for processor in self.list_processors:
-            # Check if the processor's process method accepts a 'context' argument, if so, pass it
-            # Otherwise, call it without context, context is just a way to pass metadata or additional info
-            # To the SpheroidFile class, it is done so that the processor can get information about the peaks in the spheroid file, for example, for normalization purposes.
+            # Check if the processor's process method accepts a 'context' argument
             process_signature = inspect.signature(processor.process)
             if 'context' in process_signature.parameters:
                 data = processor.process(data, context=context)
