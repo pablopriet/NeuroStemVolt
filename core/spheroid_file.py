@@ -112,6 +112,54 @@ class SpheroidFile:
         # Show the plot
         plt.show()
 
+    def visualize_IT_with_exponential_decay(self):
+        """
+        Visualizes the I-T profile, highlights the detected peak, and overlays the exponential decay curve.
+        """
+        # Extract the I-T profile at the specified peak position
+        profile = self.processed_data[:, self.peak_position]
+
+        # Extract the exponential decay parameters from metadata
+        if "exponential fitting parameters" not in self.metadata:
+            raise ValueError("Exponential fitting parameters are missing from metadata.")
+        
+        params = self.metadata["exponential fitting parameters"]
+        A = params["A"]
+        tau = params["tau"]
+        C = params["C"]
+
+        # Extract the peak position from metadata
+        if "peak_amplitude_positions" not in self.metadata:
+            raise ValueError("Peak amplitude positions are missing from metadata.")
+        
+        peak_positions = self.metadata["peak_amplitude_positions"]
+        if len(peak_positions) == 0:
+            raise ValueError("No peak positions found in metadata.")
+        
+        peak_position = int(peak_positions[0])  # Use the first peak position
+
+        # Slice the profile starting from the peak position
+        y = profile[peak_position:]
+        t = np.arange(peak_position, peak_position + len(y))
+
+        # Generate the exponential decay curve
+        exp_decay_curve = A * np.exp(-t / tau) + C
+
+        # Create the plot
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.plot(profile, color='blue', linewidth=1.5, label="I-T Profile")
+        ax.scatter(peak_position, profile[peak_position], color='red', label="Detected Peak", zorder=5)
+        ax.plot(t, exp_decay_curve, color='green', linestyle='--', label="Exponential Decay Fit")
+
+        # Add labels, title, and legend
+        ax.set_xlabel("Time Points")
+        ax.set_ylabel("Current (nA)")
+        ax.set_title(f"I-T Profile with Exponential Decay Fit")
+        ax.legend()
+        ax.grid(False)
+
+        # Show the plot
+        plt.show()
 
 class PLOT_SETTINGS:
     def __init__(self):

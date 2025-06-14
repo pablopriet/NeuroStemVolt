@@ -11,6 +11,7 @@ from processing.sav_gol import SavitzkyGolayFilter
 from processing.background_subtraction import BackgroundSubtraction
 from group_analysis import GroupAnalysis
 from output_manager import OutputManager
+from processing.exponentialdecay import ExponentialFitting
 from utils import extract_timepoint
 import os
 
@@ -54,7 +55,8 @@ class SpheroidExperiment:
                 ButterworthFilter(),
                 BaselineCorrection(),
                 Normalize(self.peak_position),
-                FindAmplitude(self.peak_position)
+                FindAmplitude(self.peak_position),
+                ExponentialFitting(),
                 #BackgroundSubtraction(region=(0, 10)),
                 #SavitzkyGolayFilter(w=20, p=2),
                 #ButterworthFilter(),
@@ -131,6 +133,9 @@ if __name__ == "__main__":
     experiment.run()
     print(f"Number of files (timepoints) in this experiment: {experiment.get_file_count()}")
     print(f"First file used for baseline: {experiment.get_spheroid_file(3).get_filepath()}")
-    experiment.get_spheroid_file(0).visualize_color_plot_data(title_suffix="Baseline")
-    experiment.get_spheroid_file(0).visualize_IT_profile()
+    experiment.get_spheroid_file(15).visualize_color_plot_data(title_suffix="Baseline")
+    experiment.get_spheroid_file(15).visualize_IT_profile()
+    experiment.get_spheroid_file(15).visualize_IT_with_exponential_decay()
+    metadata = experiment.get_spheroid_file(1).get_metadata()
+    print(metadata.keys(), metadata.values())
 
