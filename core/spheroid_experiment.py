@@ -88,12 +88,17 @@ class SpheroidExperiment:
 
     def run(self):
         """
-        Usage:
         Runs the processing pipeline across all files.
         """
         pipeline = PipelineManager(self.processors)
         for spheroid_file in self.files:
-            pipeline.run(spheroid_file)
+            # Add stimulation parameters to the context
+            context = {
+                "stim_start": self.stim_params.get("start", 0),
+                "stim_duration": self.stim_params.get("duration", 0),
+                "stim_frequency": self.stim_params.get("frequency", 0),
+            }
+            pipeline.run(spheroid_file, context=context)
 
     def run_single_file(self, index):
         """
