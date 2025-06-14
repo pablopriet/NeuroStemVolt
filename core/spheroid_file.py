@@ -114,7 +114,8 @@ class SpheroidFile:
 
     def visualize_IT_with_exponential_decay(self):
         """
-        Visualizes the I-T profile, highlights the detected peak, and overlays the exponential decay curve.
+        Visualizes the I-T profile, highlights the detected peak, overlays the exponential decay curve,
+        and marks the half-life (t_half).
         """
         # Extract the I-T profile at the specified peak position
         profile = self.processed_data[:, self.peak_position]
@@ -127,6 +128,7 @@ class SpheroidFile:
         A = params["A"]
         tau = params["tau"]
         C = params["C"]
+        t_half = params["t_half"]  # Directly retrieve t_half from params
 
         # Extract the peak position from metadata
         if "peak_amplitude_positions" not in self.metadata:
@@ -145,18 +147,25 @@ class SpheroidFile:
         # Generate the exponential decay curve
         exp_decay_curve = A * np.exp(-t / tau) + C
 
+        # Calculate the corresponding position and value for t_half
+        t_half_position = peak_position + int(t_half)  # Convert t_half to the corresponding position
+        t_half_value = A * np.exp(-t_half / tau) + C  # Value of the exponential decay at t_half
+
         # Create the plot
         fig, ax = plt.subplots(figsize=(10, 6))
         ax.plot(profile, color='blue', linewidth=1.5, label="I-T Profile")
         ax.scatter(peak_position, profile[peak_position], color='red', label="Detected Peak", zorder=5)
         ax.plot(t, exp_decay_curve, color='green', linestyle='--', label="Exponential Decay Fit")
 
+        # Plot the half-life (t_half)
+        ax.axvline(x=t_half_position, color='purple', linestyle=':', label=f"t_half = {t_half:.2f}")
+
         # Add labels, title, and legend
         ax.set_xlabel("Time Points")
         ax.set_ylabel("Current (nA)")
-        ax.set_title(f"I-T Profile with Exponential Decay Fit")
+        ax.set_title(f"I-T Profile with Exponential Decay Fit and Half-Life")
         ax.legend()
-        ax.grid(False)
+        ax.grid(True)
 
         # Show the plot
         plt.show()
