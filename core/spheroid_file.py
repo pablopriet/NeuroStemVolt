@@ -15,13 +15,16 @@ class SpheroidFile:
     - window_size: The size of the window for rolling mean or smoothing, default is None. (not used yet)
     - metadata: A dictionary to hold any additional metadata related to the file.
     """
-    def __init__(self, filepath):
+    def __init__(self, filepath, waveform="5HT"):
         self.filepath = filepath
         self.raw_data = self.load_data()
         self.processed_data = self.raw_data
         self.peak_position = 257 # Default peak position for serotonin (5HT) in FSCV plots
         self.window_size = None # Default window size for rolling mean or smoothing
         self.metadata = {}
+        self.waveform = waveform  # Default waveform etc.
+        self.timeframe = self.raw_data.shape[0]
+        print(f"Loaded SpheroidFile from {self.filepath} with shape {self.raw_data.shape} and waveform {self.waveform}")
 
     def load_data(self):
         initial_data = np.loadtxt(self.filepath).T # Transpose to match (voltage steps, time points)
@@ -31,6 +34,13 @@ class SpheroidFile:
     def set_peak_position(self, peak_position):
         self.peak_position = peak_position
     
+    def set_waveform(self, waveform):
+        """
+        Sets the waveform type for the spheroid file.
+        This can be used to differentiate between different types of stimulation or analysis.
+        """
+        self.waveform = waveform
+
     def get_data(self):
         return self.raw_data
         
@@ -232,6 +242,66 @@ class SpheroidFile:
 
         # Show the plot
         plt.show()
+
+    def visualize_cv(self, time_sec=84, smooth=False, sg_window=11, sg_poly=3):
+        if self.waveform != "5HT":
+            raise ValueError("This method is currently only implemented for the 5HT waveform.")
+
+        # total number of voltage steps in one complete scan
+        N = self.processed_data.shape[0]
+
+        # split into three legs
+        n_up     = N // 3
+        n_down   = N // 3
+        n_return = N - n_up - n_down
+
+        # build the 3 ramps, avoiding duplicate end‐points
+        up     = np.linspace(0.2,  1.0, n_up,     endpoint=False)
+        down   = np.linspace(1.0, -0.1, n_down,   endpoint=False)
+        ret    = np.linspace(-0.1, 0.2, n_return, endpoint=True)
+        Vwfm   = np.concatenate([up, down, ret])
+
+        # make a closed loop (so the last point returns to the first)
+        Vclosed = np.append(Vwfm, Vwfm[0])
+
+        # build a time axis and pick the closest index
+        T     = self.timeframe
+        M     = self.processed_data.shape[1]
+        t_ax  = np.linspace(0, T, M)
+        idx   = np.argmin(np.abs(t_ax - time_sec))
+        print(f"Extracting data at t={t_ax[idx]:.3f}s (index {idx})")
+
+        # pull out the CV slice
+        Iraw = self.processed_data[:, idx]
+
+        I = Iraw.copy()  # make a copy to avoid modifying the original data
+
+        # close the current loop as well
+        Iclosed = np.append(I, I[0])
+
+        # locate and annotate the oxidation peak
+        peak_i   = np.argmax(I)
+        peak_V   = Vwfm[peak_i]
+        peak_I   = I[peak_i]
+
+        # plot
+        fig, ax = plt.subplots(figsize=(10,6))
+        ax.plot(Vclosed, Iclosed, label="CV", color="blue", lw=1.5)
+        ax.scatter([peak_V],[peak_I], color="red", zorder=5)
+        ax.annotate(f"Ox peak: {peak_V:.2f} V",
+                    xy=(peak_V, peak_I),
+                    xytext=(peak_V + 0.1, peak_I + 0.1),
+                    arrowprops=dict(arrowstyle="->"))
+
+        ax.set_xlabel("Voltage (V)", fontsize=18)
+        ax.set_ylabel("Current (nA)", fontsize=18)
+        ax.set_title(f"Cyclic Voltammogram at {t_ax[idx]:.1f} s", fontsize=16)
+        ax.legend(fontsize=14)
+        ax.grid(False)
+        plt.tight_layout()
+        plt.show()
+
+        return fig, ax
 
 class PLOT_SETTINGS:
     def __init__(self):
