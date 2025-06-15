@@ -1,6 +1,8 @@
 import numpy as np 
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+from mpl_toolkits.mplot3d import Axes3D  # Needed for 3D plotting
+from matplotlib import cm
 
 class SpheroidFile:
     """
@@ -62,7 +64,7 @@ class SpheroidFile:
                       aspect='auto', 
                       cmap=custom_cmap, 
                       origin='lower',
-                      extent = [0, processed_data.shape[1], 0, processed_data.shape[0]],
+                      extent = [0, processed_data.shape[0], 0, processed_data.shape[1]],
                       vmin=vmin, 
                       vmax=vmax)
         plt.colorbar(im, ax=ax, label="Current (nA)")
@@ -74,7 +76,68 @@ class SpheroidFile:
         plt.show()
 
         return fig, ax
-    
+        
+    def visualize_3d_color_plot(self, title_suffix=""):
+        """
+        3D surface with the same orientation as:
+        ax.imshow(self.processed_data.T, …)
+        Time → X, Voltage → Y, Current → Z.
+        """
+        from mpl_toolkits.mplot3d import Axes3D
+        from matplotlib import cm
+        
+        # 1) grab raw D of shape (voltage_steps, time_points):
+        D = self.processed_data
+
+        # 2) down-sample (optional) but keep (volt, time) ordering
+        dy, dx = 10, 10
+        volt_idx = np.arange(0, D.shape[0], dy)
+        time_idx = np.arange(0, D.shape[1], dx)
+        D_small = D[np.ix_(volt_idx, time_idx)]      # shape = (V_small, T_small)
+
+        # 3) transpose D_small so that rows→time, cols→voltage
+        Z = D_small.T                                # shape = (T_small, V_small)
+
+        # 4) build X,Y so that X[i,j] = time_idx[i], Y[i,j] = volt_idx[j]
+        T_small = time_idx
+        V_small = volt_idx
+        X, Y = np.meshgrid(T_small, V_small, indexing='xy')  # (V_small, T_small)
+        X = X.T  # now shape = (T_small, V_small)
+        Y = Y.T  # now shape = (T_small, V_small)
+
+        # 5) color-normalize over the **full** D so it matches your 2D scale
+        vmin, vmax = np.percentile(D, 1), np.percentile(D, 99)
+        norm = mcolors.Normalize(vmin=vmin, vmax=vmax)
+        cmap = PLOT_SETTINGS().custom
+
+        # 6) plot
+        fig = plt.figure(figsize=(12, 8))
+        ax  = fig.add_subplot(111, projection='3d')
+        surf = ax.plot_surface(
+            X, Y, Z,
+            facecolors=cmap(norm(Z)),
+            rstride=1, cstride=1,
+            linewidth=0, antialiased=False, shade=False
+        )
+        m = cm.ScalarMappable(norm=norm, cmap=cmap)
+        m.set_array(Z)
+        fig.colorbar(m, ax=ax, shrink=0.5, aspect=10, label="Current (nA)")
+
+        ax.set_xlabel("Voltage Steps")
+        ax.set_ylabel("Time Points")
+        ax.set_zlabel("Current (nA)")
+        ax.set_title(f"3D Surface Color Plot{': ' + title_suffix if title_suffix else ''}")
+
+        # if your 2D used origin='lower', flip Y so the “0 V” is at the front
+        ax.invert_yaxis()
+        ax.view_init(elev=30, azim=180)
+        ax.grid(False)
+        
+        plt.tight_layout()
+        plt.show()
+        return fig, ax
+
+
     def visualize_IT_profile(self):
         """
         Visualizes the I-T profile at the specified peak position and highlights all detected peaks.
