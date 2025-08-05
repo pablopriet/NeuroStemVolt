@@ -10,7 +10,7 @@ from core.processing.normalize import Normalize
 from core.processing.sav_gol import SavitzkyGolayFilter
 from core.processing.background_subtraction import BackgroundSubtraction
 from core.processing.exponentialdecay import ExponentialFitting
-from core.utils import extract_timepoint
+from core.utils import extract_timepoint, check_uniform_step_timepoints
 import os
 
 class SpheroidExperiment:
@@ -58,6 +58,7 @@ class SpheroidExperiment:
             self.waveform = waveform
 
         self.acquisition_frequency = acquisition_frequency
+        check_uniform_step_timepoints(sorted(filepaths, key=extract_timepoint))
         self.files = [SpheroidFile(fp,  self.acquisition_frequency, self.waveform) for fp in sorted(filepaths, key=extract_timepoint)]
         self.file_length = file_length
         self.peak_position = peak_position

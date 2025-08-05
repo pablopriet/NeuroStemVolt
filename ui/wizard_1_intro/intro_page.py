@@ -8,7 +8,7 @@ from core.spheroid_experiment import SpheroidExperiment
 from ui.utils.styles import apply_custom_styles
 from ui.wizard_1_intro.settings_dialog import ExperimentSettingsDialog
 from ui.wizard_1_intro.settings_dialog import StimParamsDialog
-
+from core.utils import BadTimepointOrderError
 import os
 
 class IntroPage(QWizardPage):
@@ -177,8 +177,16 @@ class IntroPage(QWizardPage):
         if self.number_of_files == 0:
             self.number_of_files = len(paths)
 
-        filtered = {k: v for k, v in settings.items() if k != "output_folder"}
-        exp = SpheroidExperiment(paths,**filtered)
+        try:
+            filtered = {k: v for k, v in settings.items() if k != "output_folder"}
+            exp = SpheroidExperiment(paths, **filtered)
+        except BadTimepointOrderError as e:
+            QMessageBox.warning(
+                self,
+                "Invalid File Order",
+                f"The files you selected are not in a valid sequence.\n\nDetails:\n{str(e)}"
+            )
+            return
         
         self.group_analysis.add_experiment(exp)
         # store it and show it in the list
