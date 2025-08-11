@@ -92,7 +92,11 @@ Whether you're characterizing iPSC-derived neuronal systems or investigating neu
 
 ---
 
-## **Executables (No Python Installation Required)**
+## Running NeuroStemVolt
+
+You can either use the pre-built executables (no Python setup required) or run directly from source.
+
+### Option 1: Pre-built Executables
 
 Pre-built executables are available for macOS and Unix-based systems.  
 These versions run without requiring any Python installation or environment setup.
@@ -118,6 +122,62 @@ You can download them here:
 
 Windows executables will be provided in a future release.
 
+### Option 2: Run from Source
+
+#### Method A – Using pip
+**Requirements**
+- Python 3.11+
+- numpy, pandas, matplotlib, PyQt5, scipy
+
+**1) Clone the repository**
+```bash
+git clone https://github.com/pablopriet/NeuroStemVolt.git
+cd NeuroStemVolt
+```
+
+**2) Install dependencies**
+- **Option 1 (Recommended)**
+```bash
+pip install -r requirements.txt
+```
+- **Option 2** 
+```bash
+pip install numpy pandas matplotlib PyQt5 scipy
+```
+
+
+**3) Launch the app**
+```bash
+python main.py
+```
+
+This will start the NeuroStemVolt GUI using your local Python environment.
+
+---
+
+#### Method B – Using `environment.yml` (Recommended for Conda Users)
+**Requirements**
+- [Miniconda](https://docs.conda.io/en/latest/miniconda.html) or [Anaconda](https://www.anaconda.com/)
+
+**1) Clone the repository**
+```bash
+git clone https://github.com/pablopriet/NeuroStemVolt.git
+cd NeuroStemVolt
+```
+
+**2) Create and activate the environment**
+```bash
+conda env create -f environment.yml
+conda activate neurostemvolt
+```
+
+**3) Launch the app**
+```bash
+python main.py
+```
+
+This will start the NeuroStemVolt GUI in a fully managed conda environment.
+
 ---
 
 ## Contributing
@@ -131,18 +191,15 @@ Windows executables will be provided in a future release.
 
 ## Dependencies
 
-Minimal environment (see `environment.yml`):
+Minimal environment (see `environment.yml` or `requirements.txt`):
 
-- python >= 3.11
-- numpy
-- pandas
-- matplotlib
-- pyqt
-- scipy
-- pip (for packaging)
-- pyinstaller (for building executables)
+- Python **3.11** (tested with 3.11.6)
+- numpy **2.1.3**
+- pandas **2.2.3**
+- matplotlib **3.10.0**
+- pyqt **5.15.9**  *(pip users install `PyQt5==5.15.9`)*
+- scipy **1.15.1**
 
----
 
 ## License
 
