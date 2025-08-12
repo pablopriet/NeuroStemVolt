@@ -106,6 +106,7 @@ You can download them here:
 ### Included in the ZIP:
 - `.app` – macOS application bundle
 - Unix executable – for Linux or macOS terminal use
+- `.exe` – Windows executable
 
 **Usage:**
 1. Download and unzip the file for your operating system.
@@ -118,8 +119,9 @@ You can download them here:
      ```bash
      ./NeuroStemVolt
      ```
-
-Windows executables will be provided in a future release.
+4. On Windows:
+   - Double-click the `.exe` to run the program.
+   - If you get a security prompt, click **More info → Run anyway**.
 
 ### Option 2: Run from Source
 
