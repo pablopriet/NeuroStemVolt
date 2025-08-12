@@ -8,7 +8,6 @@
 **NeuroStemVolt** is a user-friendly analysis tool with a graphical interface for processing **fast-scan cyclic voltammetry (FSCV)** data from **iPSC-derived neuronal spheroids**.  
 It enables in-depth analysis of:
 
-- Spontaneous neurotransmitter release  
 - Neuronal excitability  
 - Transporter kinetics  
 - Drug response dynamics over time
