@@ -1,6 +1,21 @@
 from PyQt5.QtWidgets import QPushButton, QListWidget
 
 def apply_custom_styles(widget):
+    """
+    Apply custom visual styles to QPushButton or QListWidget widgets.
+
+    This function assigns background color, font, padding, and hover effects
+    depending on the button label content (e.g., "save", "clear") or widget type.
+
+    Args:
+        widget (QWidget): The widget to which styles should be applied. 
+            Currently supports:
+                - QPushButton: Styles vary by function (e.g., "save", "clear", general).
+                - QListWidget: Styled with a pastel background and bold text.
+
+    Returns:
+        None
+    """
     if isinstance(widget, QPushButton):
         label = widget.text().lower()
 

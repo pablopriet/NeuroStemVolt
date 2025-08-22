@@ -15,21 +15,29 @@ import os
 
 class SpheroidExperiment:
     """
-    Usage: 
-    spheroid_experiment = SpheroidExperiment(filepaths, treatment="Sertraline")
-    This class represents a complete set of experiments for a single spheroid. 
-    Inputs:
-    - filepaths: List of file paths or a folder containing spheroid data files.
-    - file_length: Length of each file in seconds (default is 60).
-    - acquisition_frequency: Frequency of data acquisition in Hz (default is 10).
-    - peak_position: Position of the analyte peak in the data (default is 257).
-    - treatment: Treatment applied to the spheroid (default is None).
-    - stim_params: Dictionary containing stimulation parameters (default is None, which uses default values).
-    - processors: List of processing steps to apply (default is None, which uses a predefined set of processors, outlined for testing).
-    Outputs:
-    - The class holds the spheroid data files and if using the run() applies the series of processing steps in series.
-    """
+    Represents a full experimental (a single replicate) dataset for a single spheroid.
 
+    This class handles the initialization, preprocessing, and analysis of multiple
+    time-resolved recordings (files) representing the same spheroid across time or treatment.
+
+    Args:
+        filepaths (list): List of paths to data files.
+        file_length (int, optional): Duration of each file in seconds. Default is 60.
+        acquisition_frequency (int, optional): Data acquisition rate in Hz. Default is 10.
+        peak_position (int, optional): Index of peak amplitude. Default is 257.
+        treatment (str, optional): Description of treatment applied. Default is "".
+        waveform (str, optional): Label for waveform (e.g., "5HT"). Default is "5HT".
+        stim_params (dict, optional): Dictionary of stimulation settings. Defaults set if None.
+        processors (list, optional): List of Processor objects. Default is standard pipeline.
+        time_between_files (float, optional): Interval between recordings in minutes. Default is 10.0.
+        files_before_treatment (int, optional): Number of baseline recordings. Default is 3.
+        file_type (optional): Type or label for input file source.
+
+    Attributes:
+        files (list): List of SpheroidFile instances.
+        processors (list): Processing pipeline steps.
+        stim_params (dict): Dictionary of stimulation metadata.
+    """
     def __init__(
         self,
         filepaths,
@@ -91,52 +99,91 @@ class SpheroidExperiment:
 
     def set_peak_position(self, peak_position):
         """
-        Usage:
-            This function sets the peak position for all spheroid file (class) in the experiment.  
+        Set peak detection index for all files in this experiment.
+
+        Args:
+            peak_position (int): Sample index of expected peak.
+
+        Returns:
+            None
         """
         for f in self.files:
             f.set_peak_position(peak_position)
 
     def get_file_count(self):
+        """Return number of files in the experiment."""
         return len(self.files)
     
     def get_file_length(self):
+        """Return the duration of each file in seconds."""
         return self.file_length
     
     def get_acquisition_frequency(self):
+        """Return the acquisition frequency in Hz."""
         return self.acquisition_frequency
     
     def get_file_time_points(self):
+        """Return number of time points per file."""
         return int(self.file_length) * int(self.acquisition_frequency)
     
     def get_number_of_files_before_treatment(self):
+        """Return the number of baseline files before treatment."""
         return self.files_before_treatment
 
     def get_spheroid_file(self, index):
+        """
+        Return a specific SpheroidFile by index.
+
+        Args:
+            index (int): Index of desired file.
+
+        Returns:
+            SpheroidFile: The requested file.
+
+        Raises:
+            IndexError: If index is out of range.
+        """
         if 0 <= index < len(self.files):
             return self.files[index]
         else:
             raise IndexError("Spheroid file index out of range")
 
     def get_time_between_files(self):
+        """Return time interval between files in minutes."""
         return self.time_between_files
     
     def revert_processing(self):
         """
-        This method returns processed_data to original
+        Revert all processed data back to its original form.
+
+        Returns:
+            None
         """
         for spheroid_file in self.files:
             spheroid_file.set_processed_data_as_original()
 
     def set_processing_steps(self, processors = None):
+        """
+        Set the processing steps (pipeline).
+
+        Args:
+            processors (list): List of Processor objects.
+
+        Returns:
+            None
+        """
         self.processors = processors
 
     def get_processing_steps(self):
+        """Return the list of configured processing steps."""
         return self.processors
 
     def run(self):
         """
-        Runs the processing pipeline across all files.
+        Run the entire processing pipeline across all files.
+
+        Returns:
+            None
         """
         pipeline = PipelineManager(self.processors)
         # Add stimulation parameters to the context
@@ -152,19 +199,16 @@ class SpheroidExperiment:
 
     def run_single_file(self, index):
         """
-        Usage:
-        Runs the processing pipeline for a single file specified by index.
+        Run the processing pipeline for one specific file.
+
+        Args:
+            index (int): Index of file to process.
+
+        Returns:
+            None
         """
         pipeline = PipelineManager(self.processors)
         pipeline.run(self.files[index])
-
-    def collect(self):
-        """
-        Usage:
-        Collects output results (future implementation).
-        """
-        pass
-
 
 if __name__ == "__main__":
     #folder = r"C:\Users\pablo\OneDrive\Documentos\1st_Year_PhD\Projects\NeuroStemVolt\data\241111_batch1_n1_Sert"

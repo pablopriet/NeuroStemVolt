@@ -8,6 +8,16 @@ import json
 from ui.utils.ui_helpers import make_labeled_field_with_help
 
 class ExperimentSettingsDialog(QDialog):
+    """
+    Dialog window for configuring experiment-level parameters before analysis.
+
+    This includes metadata such as acquisition frequency, peak position, and stimulation settings.
+    Parameters are persisted using QSettings for future sessions.
+
+    Args:
+        parent (QWidget, optional): Parent widget.
+        defaults (dict, optional): Optional default values to override QSettings.
+    """
     def __init__(self, parent=None, defaults=None):
         super().__init__(parent)
         self.setWindowTitle("Experiment Settings")
@@ -98,11 +108,24 @@ class ExperimentSettingsDialog(QDialog):
         buttons.rejected.connect(self.reject)
 
     def browse_output_folder(self):
+        """
+        Opens a QFileDialog to select an output folder and populates the text field.
+
+        Returns:
+            None
+        """
         folder = QFileDialog.getExistingDirectory(self, "Select Output Folder")
         if folder:
             self.le_output_folder.setText(folder)
 
     def handle_accept(self):
+        """
+        Handler for the OK button. Validates input, optionally launches
+        the `StimParamsDialog`, and stores all parameters in QSettings.
+
+        Returns:
+            None
+        """
         # if they choose stimulation, pop the sub-dialog
         if self.cb_file_type.currentText() == "Stimulation":
             dlg = StimParamsDialog(self, defaults=self.stim_params)
@@ -130,6 +153,21 @@ class ExperimentSettingsDialog(QDialog):
         self.accept()
 
     def get_settings(self):
+        """
+        Extract and return the configured settings from the dialog.
+
+        Returns:
+            dict: Dictionary with experiment settings, including:
+                - file_length (int)
+                - acquisition_frequency (int)
+                - peak_position (int)
+                - treatment (str)
+                - time_between_files (float)
+                - files_before_treatment (int)
+                - file_type (str)
+                - stim_params (dict)
+                - output_folder (str)
+        """
         return {
             "file_length":            int(self.le_file_length.text()),
             "acquisition_frequency":  int(self.le_acq_freq.text()),
@@ -145,6 +183,17 @@ class ExperimentSettingsDialog(QDialog):
 
 class StimParamsDialog(QDialog):
     def __init__(self, parent=None, defaults=None):
+        """
+        Dialog window for entering electrical stimulation parameters.
+
+        Parameters include pulse start time, frequency, amplitude, and count.
+        Automatically computes total stimulation duration.
+
+        Args:
+            parent (QWidget, optional): Parent widget.
+            defaults (dict, optional): Dictionary with default stimulation values.
+                Expected keys: 'start', 'frequency', 'amplitude', 'pulses'
+        """
         super().__init__(parent)
         self.setWindowTitle("Stimulation Parameters")
         form = QFormLayout(self)
@@ -170,7 +219,17 @@ class StimParamsDialog(QDialog):
         form.addRow(buttons)
 
     def get_params(self):
-        """Return parameters as a dict, including calculated duration."""
+        """
+        Retrieve stimulation parameters entered by the user.
+
+        Returns:
+            dict: Dictionary containing:
+                - start (float): Stimulation start time in minutes.
+                - frequency (float): Pulse frequency in Hz.
+                - amplitude (float): Stimulation amplitude in μA.
+                - pulses (float): Number of pulses.
+                - duration (float): Calculated stimulation duration in seconds.
+        """
         params = {}
 
         # Get user inputs

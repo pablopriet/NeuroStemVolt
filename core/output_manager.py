@@ -3,10 +3,21 @@ from core.group_analysis import GroupAnalysis
 import os
 import pandas as pd
 import numpy as np
+from scipy.stats import sem
 
 class OutputManager:
     @staticmethod
     def save_ITs(group_experiments : GroupAnalysis, output_folder_path):
+        """
+        Save processed IT data for each experiment into individual CSV files.
+
+        Args:
+            group_experiments (GroupAnalysis): The group containing experiments with IT data.
+            output_folder_path (str): Directory where the CSV files will be saved.
+
+        Returns:
+            None
+        """
         # This function takes all experiments (after processing) 
         # and creates output_csv files for all of them
         n_experiments = len(group_experiments.get_experiments())
@@ -34,6 +45,16 @@ class OutputManager:
 
     @staticmethod
     def save_all_ITs(group_experiments : GroupAnalysis, output_folder_path):
+        """
+        Save all IT traces from all replicates into a single multi-indexed CSV file.
+
+        Args:
+            group_experiments (GroupAnalysis): Group containing multiple experiments.
+            output_folder_path (str): Directory to save the output file.
+
+        Returns:
+            None
+        """
         # This function takes all experiments (after processing) 
         # and creates output_csv files for all of them
         experiments = group_experiments.get_experiments()
@@ -93,6 +114,16 @@ class OutputManager:
         
     @staticmethod
     def save_original_ITs(group_experiments : GroupAnalysis, output_folder_path):
+        """
+        Save the original (unprocessed) IT data for each replicate into CSV files.
+
+        Args:
+            group_experiments (GroupAnalysis): Group with experiments to export.
+            output_folder_path (str): Path to the destination folder.
+
+        Returns:
+            None
+        """
         # This function takes all experiments (after processing) 
         # and creates output_csv files for all of them
         n_experiments = len(group_experiments.get_experiments())
@@ -120,6 +151,16 @@ class OutputManager:
 
     @staticmethod
     def save_peak_amplitudes_metrics(group_experiments : GroupAnalysis, output_folder_path):
+        """
+        Save selected peak amplitude metrics (position and value) from each file.
+
+        Args:
+            group_experiments (GroupAnalysis): The experiments to extract metadata from.
+            output_folder_path (str): Directory for saving metadata CSVs.
+
+        Returns:
+            None
+        """
         # This function saves the following keys per file in a folder named metadata_files
         # Particularly these are the saves the method can save:
         # # Current metadata:
@@ -150,136 +191,17 @@ class OutputManager:
                 df.to_csv(output_path, index_label="File Number")
 
     @staticmethod
-    def save_spontaneous_peak_metrics(group_experiments : GroupAnalysis, output_folder_path):
-        """Save detailed metrics about spontaneous peaks for all experiments."""
-        import pandas as pd
-        import numpy as np
-        import os
-        from PyQt5.QtCore import QSettings
-
-        settings = QSettings("HashemiLab", "NeuroStemVolt")
-        acquisition_freq = settings.value("acquisition_frequency", 10, type=int)
-        file_length_sec = settings.value("file_length", 100, type=int)
-        time_between_files = settings.value("time_between_files", 10, type=float)
-
-        # Create output folder if it doesn't exist
-        spont_folder = os.path.join(output_folder_path, "spontaneous_metrics")
-        if not os.path.isdir(spont_folder):
-            os.mkdir(spont_folder)
-
-        # Summary data for all experiments
-        all_summary_records = []
-
-        # Process each experiment
-        for i, experiment in enumerate(group_experiments.get_experiments()):
-            # Detailed records for each peak in this experiment
-            detailed_records = []
-            # Summary record for each file in this experiment
-            summary_records = []
-
-            for j, spheroid_file in enumerate(experiment.files):
-                meta = spheroid_file.get_metadata()
-                file_name = os.path.basename(spheroid_file.get_filepath())
-
-                # Get peak data
-                peak_positions = meta.get('peak_amplitude_positions', [])
-                peak_values = meta.get('peak_amplitude_values', [])
-                peak_metadata = meta.get('all_peak_metadata', [])
-
-                # Handle both single value and list/array cases
-                if not isinstance(peak_positions, (list, np.ndarray)):
-                    peak_positions = [peak_positions] if peak_positions else []
-
-                if not isinstance(peak_values, (list, np.ndarray)):
-                    peak_values = [peak_values] if peak_values else []
-
-                # Calculate summary metrics
-                num_peaks = len(peak_positions)
-                mean_amplitude = np.mean(peak_values) if peak_values else 0
-                peak_frequency = num_peaks / (file_length_sec / 60)  # peaks per minute
-                timepoint_min = j * time_between_files
-
-                # Add summary record
-                summary_records.append({
-                    'File Number': j,
-                    'File Name': file_name,
-                    'Time (min)': timepoint_min,
-                    'Number of Peaks': num_peaks,
-                    'Mean Amplitude (nA)': mean_amplitude,
-                    'Peak Frequency (peaks/min)': peak_frequency
-                })
-
-                # Add detailed records for each peak
-                for k, (pos, val) in enumerate(zip(peak_positions, peak_values)):
-                    peak_info = {
-                        'File Number': j,
-                        'File Name': file_name,
-                        'Time (min)': timepoint_min,
-                        'Peak Number': k + 1,
-                        'Peak Position': pos,
-                        'Peak Time (s)': pos / acquisition_freq,
-                        'Amplitude (nA)': val
-                    }
-
-                    # Add rise/decay info if available
-                    if k < len(peak_metadata):
-                        md = peak_metadata[k]
-                        peak_info.update({
-                            'Rise Time (s)': md.get('rise_time_sec', 0),
-                            'Decay Time (s)': md.get('decay_time_sec', 0)
-                        })
-
-                    detailed_records.append(peak_info)
-
-            # Save detailed peak information for this experiment
-            if detailed_records:
-                df_detailed = pd.DataFrame(detailed_records)
-                output_detailed = f"Experiment_{i+1}_Detailed_Peak_Data.csv"
-                df_detailed.to_csv(os.path.join(spont_folder, output_detailed), index=False)
-
-            # Save summary for this experiment
-            if summary_records:
-                df_summary = pd.DataFrame(summary_records)
-                output_summary = f"Experiment_{i+1}_Summary_Peak_Data.csv"
-                df_summary.to_csv(os.path.join(spont_folder, output_summary), index=False)
-
-                # Add to all experiments summary
-                for record in summary_records:
-                    record['Experiment'] = i + 1
-                    all_summary_records.append(record)
-
-        # Save combined summary for all experiments
-        if all_summary_records:
-            df_all = pd.DataFrame(all_summary_records)
-            output_all = "All_Experiments_Spontaneous_Peak_Summary.csv"
-            df_all.to_csv(os.path.join(spont_folder, output_all), index=False)
-
-        # Calculate group statistics and save them
-        if all_summary_records:
-            df_all = pd.DataFrame(all_summary_records)
-
-            # Group by timepoint
-            timepoint_stats = []
-            for time, group in df_all.groupby('Time (min)'):
-                timepoint_stats.append({
-                    'Time (min)': time,
-                    'Mean Peak Frequency (peaks/min)': group['Peak Frequency (peaks/min)'].mean(),
-                    'StdDev Peak Frequency': group['Peak Frequency (peaks/min)'].std(),
-                    'Mean Amplitude (nA)': group['Mean Amplitude (nA)'].mean(),
-                    'StdDev Amplitude': group['Mean Amplitude (nA)'].std(),
-                    'Total Peaks': group['Number of Peaks'].sum(),
-                    'Number of Experiments': len(group)
-                })
-
-            # Save timepoint statistics
-            if timepoint_stats:
-                df_timepoints = pd.DataFrame(timepoint_stats)
-                output_timepoints = "Group_Statistics_By_Timepoint.csv"
-                df_timepoints.to_csv(os.path.join(spont_folder, output_timepoints), index=False)
-
-        return spont_folder
-    @staticmethod
     def save_all_peak_amplitudes(group_experiments : GroupAnalysis, output_folder_path):
+        """
+        Save all peak amplitude values and their positions (in seconds) for each replicate.
+
+        Args:
+            group_experiments (GroupAnalysis): The experiment group to analyze.
+            output_folder_path (str): Directory to store the output.
+
+        Returns:
+            None
+        """
         keys = ['peak_amplitude_values', 'peak_amplitude_positions']
 
         experiments = group_experiments.get_experiments()
@@ -327,13 +249,72 @@ class OutputManager:
         df.to_csv(output_path, index=False)
         print(f"Saved all amplitudes for all replicates to {output_path}")
 
+    def save_all_AUC(group_experiments:GroupAnalysis, output_folder_path):
+        """
+        Save the area under the curve (AUC) for all replicates and files over time.
+
+        Args:
+            group_experiments (GroupAnalysis): Group containing processed experiments.
+            output_folder_path (str): Directory where outputs will be saved.
+
+        Returns:
+            None
+        """
+        experiments = group_experiments.get_experiments()
+        n_experiments = len(experiments)
+        n_files = experiments[0].get_file_count()
+        n_before = experiments[0].get_number_of_files_before_treatment()
+        interval = experiments[0].get_time_between_files()  # e.g., 10
+
+        if n_experiments == 0:
+            return None
+        # Initialise the time axis (first column)
+        if n_before > 0:
+            time_points = [interval * (i - n_before) for i in range(n_files)]
+        else:
+            time_points = [i * interval for i in range(n_files)]
+
+        all_AUC = group_experiments.get_all_AUC()
+        df_AUC = pd.DataFrame(all_AUC).T
+
+        df_AUC.columns = [f"Rep{idx+1}" for idx in range(n_experiments)]
+        df_AUC.insert(0, "Time", time_points)
+
+        # Save to CSV
+        output_folder = os.path.join(output_folder_path, "all_replicates_AUC")
+        os.makedirs(output_folder, exist_ok=True)
+        output_path = os.path.join(output_folder, "All_AUC_all_replicates.csv")
+        df_AUC.to_csv(output_path, index=False)
+        print(f"Saved all amplitudes for all replicates to {output_path}")
+
+        # Compute mean and SEM (standard error of the mean)
+        values_only = df_AUC.iloc[:, 1:].to_numpy()  # exclude "Time" column
+        mean_auc = np.nanmean(values_only, axis=1)
+        sem_auc = sem(values_only, axis=1, nan_policy='omit')
+
+        df_mean_sem = pd.DataFrame({
+            "Time": time_points,
+            "Mean AUC": mean_auc,
+            "SEM AUC": sem_auc
+        })
+
+        # Save mean and SEM
+        mean_output_path = os.path.join(output_folder, "Mean_AUC_with_SEM.csv")
+        df_mean_sem.to_csv(mean_output_path, index=False)
+        print(f"Saved mean AUC with SEM to {mean_output_path}")
+
     @staticmethod
     def save_all_reuptake_curves(group_experiments : GroupAnalysis, output_folder_path):
         """
-        Save the aligned reuptake curves (pre_allocated_ITs_array) for all replicates to a CSV.
-        Each column is a replicate, each row is a time point after peak alignment.
-        """
+        Save aligned reuptake curves (post-peak ITs) into a multi-indexed CSV file.
 
+        Args:
+            group_experiments (GroupAnalysis): The group of processed experiments.
+            output_folder_path (str): Directory for storing output.
+
+        Returns:
+            None
+        """
         # This function takes all experiments (after processing) 
         # and creates output_csv files for all of them
         experiments = group_experiments.get_experiments()
@@ -387,7 +368,14 @@ class OutputManager:
     @staticmethod
     def save_all_exponential_fitting_params(group_experiments : GroupAnalysis, output_folder_path):
         """
-        Save all exponential fitting parameters (A_fit, A_err, tau_fit, tau_err, C_fit, C_err) over time.
+        Save exponential fitting parameters (A, tau, C) and related statistics over time.
+
+        Args:
+            group_experiments (GroupAnalysis): Group with time-series IT data.
+            output_folder_path (str): Directory to write parameter outputs.
+
+        Returns:
+            None
         """
         params_matrix = group_experiments.get_exponential_fit_params_over_time()
         experiments = group_experiments.get_experiments()
@@ -441,6 +429,16 @@ class OutputManager:
     ### Methods for spheroid_files
     @staticmethod
     def save_IT_profile(spheroid_file, output_path):
+        """
+        Save the processed IT profile of a single file to a CSV.
+
+        Args:
+            spheroid_file: A SpheroidFile instance containing processed IT data.
+            output_path (str): Directory where the IT CSV will be saved.
+
+        Returns:
+            np.ndarray: The processed IT data that was saved.
+        """
         processed_data_IT = spheroid_file.get_processed_data_IT()
 
         n_timepoints = spheroid_file.timeframe
@@ -470,6 +468,16 @@ class OutputManager:
 
     @staticmethod
     def save_IT_profile_plot(spheroid_file, output_path):
+        """
+        Save a plot of the IT profile to the output directory.
+
+        Args:
+            spheroid_file: File with visualizable IT data.
+            output_path (str): Path to store the plot.
+
+        Returns:
+            None
+        """
         output_folder = os.path.join(output_path, "plots")
         os.makedirs(output_folder, exist_ok=True)
         save_path = os.path.join(output_folder, "save_IT_profile_plot.png")
@@ -478,6 +486,16 @@ class OutputManager:
     
     @staticmethod
     def save_color_plot(spheroid_file, output_path):
+        """
+        Save a color-coded data visualization for the given file.
+
+        Args:
+            spheroid_file: File containing the color plot data.
+            output_path (str): Path to output the color plot PNG.
+
+        Returns:
+            None
+        """
         output_folder = os.path.join(output_path, "plots")
         os.makedirs(output_folder, exist_ok=True)
         save_path = os.path.join(output_folder, "color_plot.png")
@@ -486,6 +504,16 @@ class OutputManager:
     ### Methods for group_analysis
     @staticmethod
     def save_mean_ITs_plot(group_analysis, output_path):
+        """
+        Save a plot of mean ITs over time for all replicates.
+
+        Args:
+            group_analysis: GroupAnalysis instance with experiments.
+            output_path (str): Directory to store the plot.
+
+        Returns:
+            None
+        """
         output_folder = os.path.join(output_path, "plots")
         os.makedirs(output_folder, exist_ok=True)
         save_path = os.path.join(output_folder, "mean_ITs.png")
@@ -493,6 +521,16 @@ class OutputManager:
 
     @staticmethod
     def save_unprocessed_first_ITs_plot(group_analysis, output_path):
+        """
+        Save a plot showing the raw (unprocessed) ITs from the first stimulation.
+
+        Args:
+            group_analysis: The GroupAnalysis instance.
+            output_path (str): Path to save the plot.
+
+        Returns:
+            None
+        """
         output_folder = os.path.join(output_path, "plots")
         os.makedirs(output_folder, exist_ok=True)
         save_path = os.path.join(output_folder, "unprocessed_first_ITs_plot.png")
@@ -500,6 +538,16 @@ class OutputManager:
 
     @staticmethod
     def save_plot_tau_over_time(group_analysis, output_path):
+        """
+        Save the plot of decay constant (tau) over all replicate time points.
+
+        Args:
+            group_analysis: GroupAnalysis object.
+            output_path (str): Output directory for the plot.
+
+        Returns:
+            None
+        """
         output_folder = os.path.join(output_path, "plots")
         os.makedirs(output_folder, exist_ok=True)
         save_path = os.path.join(output_folder, "plot_tau_over_time.png")
@@ -507,6 +555,17 @@ class OutputManager:
 
     @staticmethod
     def save_plot_exponential_fit_aligned(group_analysis, output_path, replicated_time_point=0):
+        """
+        Save exponential decay fit plot for a specific time point across replicates.
+
+        Args:
+            group_analysis: GroupAnalysis object.
+            output_path (str): Directory to save the figure.
+            replicated_time_point (int): Index of the replicate file to analyze.
+
+        Returns:
+            None
+        """
         output_folder = os.path.join(output_path, "plots")
         os.makedirs(output_folder, exist_ok=True)
         save_path = os.path.join(output_folder, "plot_exponential_fit.png")
@@ -520,6 +579,16 @@ class OutputManager:
     
     @staticmethod
     def save_plot_all_amplitudes_over_time(group_analysis, output_path):
+        """
+        Save a line plot of amplitude evolution for each experiment.
+
+        Args:
+            group_analysis: GroupAnalysis instance.
+            output_path (str): Output folder path.
+
+        Returns:
+            None
+        """
         output_folder = os.path.join(output_path, "plots")
         os.makedirs(output_folder, exist_ok=True)
         save_path = os.path.join(output_folder, "plot_all_amplitudes_over_time.png")
@@ -527,6 +596,16 @@ class OutputManager:
 
     @staticmethod
     def save_plot_mean_amplitudes_over_time(group_analysis, output_path):
+        """
+        Save a plot of mean amplitude over time with standard deviation shaded.
+
+        Args:
+            group_analysis: GroupAnalysis object.
+            output_path (str): Directory to save the PNG.
+
+        Returns:
+            None
+        """
         output_folder = os.path.join(output_path, "plots")
         os.makedirs(output_folder, exist_ok=True)
         save_path = os.path.join(output_folder, "plot_mean_amplitudes_over_time.png")
@@ -534,6 +613,16 @@ class OutputManager:
 
     @staticmethod
     def save_plot_first_stim_amplitudes(group_analysis, output_path):
+        """
+        Save a bar plot of unnormalized first-stim amplitudes across replicates.
+
+        Args:
+            group_analysis: GroupAnalysis containing replicate data.
+            output_path (str): Directory to store the plot.
+
+        Returns:
+            None
+        """
         output_folder = os.path.join(output_path, "plots")
         os.makedirs(output_folder, exist_ok=True)
         save_path = os.path.join(output_folder, "plot_first_stim_amplitudes.png")

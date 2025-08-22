@@ -3,7 +3,28 @@ import numpy as np
 from scipy.optimize import curve_fit
 
 class ExponentialFitting(Processor):
+    """
+    Fit an exponential decay curve to the I-T profile after the peak.
+
+    Extracts parameters A, tau, and C from the model:
+        I(t) = A * exp(-t / tau) + C
+    Also computes the half-life `t_half`.
+
+    Methods:
+        process(data, peak_position, context): Applies fitting and stores parameters.
+    """
     def process(self, data, peak_position=257, context=None):
+        """
+        Fit exponential decay to the I-T trace starting at the detected peak.
+
+        Args:
+            data (np.ndarray): 2D FSCV array (voltage × time).
+            peak_position (int): Index for peak current extraction.
+            context (dict): Must contain 'peak_amplitude_positions'.
+
+        Returns:
+            np.ndarray: Original input data (unchanged).
+        """
         if context is not None:
             if "peak_amplitude_positions" in context:
                 peak_amplitude_position = context["peak_amplitude_positions"]

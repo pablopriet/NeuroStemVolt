@@ -1,9 +1,17 @@
 import re
 
 def extract_timepoint(filepath):
-    # This function looks for a number preceded by an underscore _
-    # The number may be negative (-?) and must contain at least one digit (\d+)
-    # If no match is found, it returns float('inf') to indicate no valid timepoint
-    # If a match is found, it returns the integer value of the matched number for sorting purposes
+    """
+    Extract a numeric timepoint from a filename.
+
+    This function searches for a number following an underscore in the given filepath
+    (e.g., "file_120.txt" → 120). If no such pattern is found, it returns `float('inf')`.
+
+    Args:
+        filepath (str): Path or filename string to extract the timepoint from.
+
+    Returns:
+        int or float: The extracted timepoint as an integer, or `float('inf')` if not found.
+    """
     match = re.search(r"_(\-?\d+)", filepath) 
     return int(match.group(1)) if match else float('inf')

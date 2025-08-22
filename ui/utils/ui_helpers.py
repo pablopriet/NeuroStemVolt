@@ -1,6 +1,17 @@
 from PyQt5.QtWidgets import QWidget, QHBoxLayout, QPushButton, QMessageBox
 
 def make_labeled_field_with_help(label_text, widget, help_text):
+    """
+    Wrap a widget (e.g., QLineEdit) with a help button that shows an info dialog.
+
+    Args:
+        label_text (str): Label used for the QMessageBox title.
+        widget (QWidget): The main input widget to be accompanied by the help button.
+        help_text (str): Description shown in the tooltip and help dialog.
+
+    Returns:
+        QWidget: A container widget holding both the input field and help button.
+    """
     container = QWidget()
     layout = QHBoxLayout(container)
     layout.setContentsMargins(0, 0, 0, 0)

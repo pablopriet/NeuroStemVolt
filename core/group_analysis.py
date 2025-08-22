@@ -6,10 +6,12 @@ import numpy as np
 
 class GroupAnalysis:
     """
-    Usage:
-        This class is used to manage and analyze multiple SpheroidExperiment instances.
-        It allows adding experiments, retrieving single experiments, and plotting amplitudes over time.
-    """
+    Initializes a GroupAnalysis instance with optional experiments.
+        Args:
+            experiments (None, SpheroidExperiment, or list): Optional initial experiments to add.
+        Raises:
+            ValueError: If input is not None, a SpheroidExperiment, or a list of SpheroidExperiment instances.
+        """
     def __init__(self, experiments=None):
         if experiments is None:
             self.experiments = []
@@ -23,7 +25,8 @@ class GroupAnalysis:
     def add_experiment(self, *experiments):
         """
         Add one or more SpheroidExperiment instances to the group analysis.
-        :param experiments: One or more SpheroidExperiment instances to be added.
+        Args:
+            experiments: One or more SpheroidExperiment instances to be added.
         """
         for experiment in experiments:
             if isinstance(experiment, SpheroidExperiment):
@@ -39,15 +42,19 @@ class GroupAnalysis:
 
     def get_single_experiments(self, index: int):
         """
-        Get the single experiment of SpheroidExperiments in the group analysis.
-        :return: a single SpheroidExperiment instance.
+        Retrieves a single experiment by index.
+        Args:
+            index (int): Index of the experiment to retrieve.
+        Returns:
+            SpheroidExperiment: The selected experiment.
         """
         return self.experiments[index]
     
     def get_experiments(self):
         """
-        Get the list of SpheroidExperiments in the group analysis.
-        :return: List of SpheroidExperiment instances.
+        Returns all experiments.
+        Returns:
+            list: List of SpheroidExperiment instances.
         """
         return self.experiments
     
@@ -62,14 +69,25 @@ class GroupAnalysis:
         del self.experiments[index]
 
     def set_processing_options_exp(self, processors = None):
+        """Set the data processing pipeline for all experiments.
+
+        Applies a shared list of processing steps (e.g., normalization, filtering)
+        to all experiments in the group.
+
+        Args:
+            processors (list): A list of processor instances to apply.
+        """
         for exp in self.experiments:
             exp.set_processing_steps(processors)
 
     def non_normalized_first_ITs(self):
-        """
-        This method gets the ITs of the first stimulation per experiment (per replicate)
-        The ITs are obtained from the original data, completely unprocessed.
-        returns: First ITs over replicates as a matrix
+        """Get unprocessed first I-T signals from each replicate.
+
+        This function extracts the initial stimulation file from each experiment
+        and returns the raw current traces (I-T curves) prior to any processing.
+
+        Returns:
+            np.ndarray: A matrix (n_experiments x n_timepoints) of raw IT traces.
         """
         n_experiments = len(self.experiments)
         if n_experiments == 0:
@@ -89,7 +107,10 @@ class GroupAnalysis:
         return ITs
     
     def get_all_reuptake_curves(self):
-
+        """Retrieves and aligns IT signals post-peak for all replicates.
+        Returns:
+            np.ndarray: Aligned post-peak IT data across all replicates.
+        """
         from scipy.optimize import curve_fit
         n_experiments = len(self.experiments)
         if n_experiments == 0:
@@ -129,13 +150,13 @@ class GroupAnalysis:
             
         print(pre_allocated_ITs_array)
         return pre_allocated_ITs_array
-    
+
     def average_IT_over_replicates(self):
-        """
-        This method gets the IT profiles of all experiments of all files
-        and averages them over the replicates, precisely over the replicate time points.
-        Averages IT every 10 mins for example.
-        :return: Averages of IT profiles over replicates.
+        """Compute the average IT curve over replicates for each timepoint.
+
+        Returns:
+            np.ndarray: Averaged IT matrix with shape (n_files, n_timepoints),
+            where each row corresponds to a timepoint and each column to a file.
         """
         n_experiments = len(self.experiments)
         if n_experiments == 0:
@@ -160,9 +181,16 @@ class GroupAnalysis:
         return mean_ITs
     
     def amplitudes_first_stim(self):
-        """
-        Get the unnormalised amplitudes of all experiments over time.
-        :return: List of lists containing amplitudes for each experiment.
+        """Retrieve unnormalized amplitudes from the first stimulation file of each replicate.
+
+        This pulls metadata from the first stimulation and returns raw amplitudes.
+        Normalization should not have been applied to these experiments.
+
+        Returns:
+            list of list: Nested list containing peak amplitude values for each replicate.
+
+        Raises:
+            RuntimeError: If Normalize is found in any experiment's processor pipeline.
         """
         n_experiments = len(self.experiments)
         if n_experiments == 0:
@@ -191,9 +219,11 @@ class GroupAnalysis:
         return amplitudes
 
     def amplitudes_over_time_single_experiment(self, experiment_index=0):
-        """
-        Get the amplitudes of all experiments over time.
-        :return: List of lists containing amplitudes for each experiment.
+        """Retrieve amplitude data over time from a single experiment.
+        Args:
+            experiment_index (int): Index of the experiment to inspect.
+        Returns:
+            tuple: (time_points, amplitudes, files_before_treatment)
         """
         experiment = group_analysis.get_single_experiments(experiment_index)
         files_before_treatment = experiment.get_number_of_files_before_treatment()
@@ -215,13 +245,12 @@ class GroupAnalysis:
         return time_points, amplitudes, files_before_treatment
     
     def amplitudes_over_time_all_experiments(self):
-        """
-        Collects amplitudes for all experiments, aligns them by time point,
-        and computes the average amplitude at each time point.
+        """Compute mean amplitude over time across all experiments.
+
+        Aligns amplitudes by timepoints and calculates averages and raw data matrix.
+
         Returns:
-            time_points: 1D array of time points
-            mean_amplitudes: 1D array of mean amplitudes at each time point
-            all_amplitudes: 2D array [experiment, time_point]
+            tuple: (time_points, mean_amplitudes, all_amplitudes, files_before_treatment)
         """
         n_experiments = len(self.experiments)
         if n_experiments == 0:
@@ -253,8 +282,195 @@ class GroupAnalysis:
                     all_amplitudes[i, j] = val if val != 0 else 0.0
         mean_amplitudes = np.nanmean(all_amplitudes, axis=0)
         return time_points, mean_amplitudes, all_amplitudes, files_before_treatment
+
+    def get_all_AUC(self, show_plot: bool = False):
+        """
+        Compute the Area Under the Curve (AUC) for post-stimulation IT traces across all experiments.
+
+        For each experiment and its replicate files, this method:
+          1. Determines an integration start point—either the end of a stimulation artifact (with linear interpolation)
+             or the detected onset of the signal rise when no artifact is present.
+          2. Identifies the end of the integration window by finding the first zero‐crossing after the peak (or
+             the signal minimum if no crossing is found).
+          3. Applies Simpson’s rule to the processed signal between these bounds.
+          4. Optionally displays a diagnostic plot per file, showing raw vs. processed data, integration region,
+             and key markers (stimulation window, rise start, peak, integration end).
+
+        Args:
+            show_plot (bool, optional): If True, generate a matplotlib figure for each file illustrating
+                the original trace, artifact removal (or gradient detection), integration limits, and the
+                filled AUC region. Defaults to True.
+
+        Returns:
+            list[list[float]] or None:
+                - If experiments are present, returns a nested list where each sublist contains the AUC values
+                  computed for each file in that experiment.
+                - Returns None immediately if there are no experiments to process.
+        """
+        import numpy as np
+        from scipy.integrate import simpson
+        import matplotlib.pyplot as plt
+
+        n_experiments = len(self.experiments)
+        if n_experiments == 0:
+            return None
+
+        all_AUC = []
+        for i, experiment in enumerate(self.experiments):
+            records_AUC = []
+            acq_freq = experiment.get_acquisition_frequency()
+            stim_params = experiment.stim_params
+
+            # Determine stimulation parameters
+            if stim_params is not None:
+                start_stim = int(stim_params['start'] * acq_freq)
+                dur_stim = int(stim_params['duration'] * acq_freq)
+                is_stim = True
+            else:
+                is_stim = False
+                grad_start = 0
+
+            for j, spheroid_file in enumerate(experiment.files):
+                # Metadata and raw signal
+                metadata = spheroid_file.get_metadata()
+                peak_idx = metadata['peak_amplitude_positions']
+                raw = spheroid_file.get_processed_data_IT()
+                sig = raw.copy()
+
+                # Optionally plot original data
+                if show_plot:
+                    fig, ax = plt.subplots()
+                    x_all = np.arange(len(raw))
+                    ax.scatter(x_all, raw, s=10, alpha=0.4, label='Original data')
+
+                # Remove stim artifact or find gradient start
+                if is_stim:
+                    end_stim = start_stim + dur_stim
+                    xp = [start_stim - 1, end_stim]
+                    fp = [sig[xp[0]], sig[xp[1]]]
+                    sig[start_stim:end_stim] = np.interp(
+                        np.arange(start_stim, end_stim), xp, fp
+                    )
+                    start_integration = start_stim
+                    if show_plot:
+                        ax.plot(x_all, sig, linewidth=1, label='Processed (artifact removed)')
+                else:
+                    diff_IT = np.diff(sig)
+                    window = diff_IT[grad_start:peak_idx]
+                    sharp = np.argmax(window)
+                    start_integration = grad_start + sharp + 1
+                    if show_plot:
+                        ax.plot(x_all, sig, linewidth=1, label='Processed (no artifact)')
+                        ax.axvline(start_integration, color='green', linestyle='--', label='Integration start')
+
+                # Find end of integration by detecting zero crossing between samples
+                post_peak = sig[peak_idx:]
+                # look for sign change between consecutive points
+                prod = post_peak[:-1] * post_peak[1:]
+                zero_cross_inds = np.where(prod <= 0)[0]
+                if zero_cross_inds.size > 0:
+                    # choose first crossing, adjust index to sample after peak
+                    cross_idx = zero_cross_inds[0] + 1
+                    end_integration = peak_idx + cross_idx
+                else:
+                    # fallback to minimal point
+                    end_integration = peak_idx + np.argmin(post_peak)
+
+                # Ensure valid window
+                if end_integration <= start_integration:
+                    end_integration = len(sig) - 1
+                    if show_plot:
+                        ax.plot(x_all, sig, linestyle=':', label='Fallback end (signal end)')
+
+                # Compute AUC
+                if end_integration >= start_integration:
+                    x_int = np.arange(start_integration, end_integration + 1)
+                    y_int = sig[start_integration:end_integration + 1]
+                    auc_val = simpson(y_int)
+                    if show_plot:
+                        ax.fill_between(x_int, y_int, alpha=0.3, label='AUC region')
+                        ax.plot(x_int, y_int, linewidth=2, label='Integration curve')
+                else:
+                    auc_val = 0.0
+
+                # Finalize plot
+                if show_plot:
+                    ax.axvline(peak_idx, color='red', linestyle='--', label='Peak')
+                    ax.axvline(end_integration, color='purple', linestyle='-.', label='Integration end')
+                    ax.legend(loc='best', fontsize='small')
+                    ax.set_title(f'Exp {i} File {j} — AUC={auc_val:.2f}')
+                    ax.set_xlabel('Sample Index')
+                    ax.set_ylabel('Signal Amplitude')
+                    plt.tight_layout()
+                    plt.show()
+
+                records_AUC.append(auc_val)
+
+            all_AUC.append(records_AUC)
+
+        return all_AUC
     
+    def legacy_get_all_AUC(self):
+        """Legacy AUC computation using zero crossings.
+
+        Calculates the AUC from the last zero before the peak to the first zero after it.
+
+        Returns:
+            list: AUC values per replicate and file.
+        """
+        from scipy.integrate import simpson
+
+        n_experiments = len(self.experiments)
+        if n_experiments == 0:
+            return None, None, None, None
+        
+        all_AUC = []
+        for i, experiment in enumerate(self.experiments):
+            records_AUC = []
+            for j, spheroid_file in enumerate(experiment.files):
+                # Gathering position of peak
+                metadata = spheroid_file.get_metadata()
+                peak_amplitude_pos = metadata['peak_amplitude_positions']
+                # Gathering processed data
+                processed_IT = spheroid_file.get_processed_data_IT()
+
+                # Cropping IT to find first intersect before peak
+                IT_cropped_before_peak = processed_IT[:peak_amplitude_pos]
+                zero_indices_before_peak = np.where(IT_cropped_before_peak == 0)[0]
+                if zero_indices_before_peak.size > 0:
+                    # Getting the last zero before the peak
+                    mapped_intersect_before = zero_indices_before_peak[-1]
+                else:
+                    mapped_intersect_before = 0  # fallback to start
+                # Cropping IT to find first intersect after peak
+                IT_cropped_after_peak = processed_IT[peak_amplitude_pos:]
+                zero_indices_after_peak = np.where(IT_cropped_after_peak == 0)[0]
+                if zero_indices_after_peak.size > 0:
+                    mapped_intersect = zero_indices_after_peak[0] + peak_amplitude_pos
+                else:
+                    min_amp_index = np.argmin(IT_cropped_after_peak)
+                    mapped_intersect = min_amp_index + peak_amplitude_pos
+                
+                # Just in case there is a very short range
+                if mapped_intersect <= 1:
+                    res_AUC = 0 
+                else:
+                    res_AUC = simpson(processed_IT[mapped_intersect_before:mapped_intersect + 1])
+
+                records_AUC.append(res_AUC)
+            all_AUC.append(records_AUC)
+        return all_AUC
+
     def exponential_fitting_replicated(self, replicate_time_point=0, global_peak_amplitude_position=None):
+        """Perform exponential fitting of post-peak decay curves aligned by peak.
+
+        Args:
+            replicate_time_point (int): Timepoint (file index) to use from each experiment.
+            global_peak_amplitude_position (int, optional): Optional override for alignment.
+
+        Returns:
+            tuple: (time_all, cropped_ITs, aligned_ITs, t_half, (A, k, C), (A_err, k_err, C_err), min_peak)
+        """
         from scipy.optimize import curve_fit
         n_experiments = len(self.experiments)
         if n_experiments == 0:
@@ -351,9 +567,10 @@ class GroupAnalysis:
         return time_all, cropped_ITs, pre_allocated_ITs_array, t_half, (A_fit, k_fit, C_fit), (A_err, k_err, C_err), min_peak
     
     def get_tau_over_time(self):
-        """
-        Runs exponential_fitting_replicated for each replicate time point,
-        collects tau and its error, and returns them as lists.
+        """Extract tau (decay time constant) at each replicate time point.
+
+        Returns:
+            tuple: (tau_list, tau_error_list)
         """
         n_files = self.experiments[0].get_file_count()
         tau_list = []
@@ -382,7 +599,8 @@ class GroupAnalysis:
         The errors here are the standard error of the different quantities, in other words, 
         what is computed is the one-sigma (≈ 68 % coverage) standard error.
 
-        This assumes that the fitted parameter has an approximately Gaussian sampling distribution
+        Returns:
+            np.ndarray: A matrix of shape (n_timepoints, 16) with values and uncertainties.
         """
         n_files = self.experiments[0].get_file_count()
         n_reps = len(self.experiments)
@@ -425,14 +643,22 @@ class GroupAnalysis:
     
     def exponential_fitting_replicated_legacy(self, replicate_time_point = 0, global_peak_amplitude_position=None):
         """
-        This function implements an exponential fitting curve over the replicates 
-        at specific replicated time points. (e.g. 10min treatment file), this function
-        does it considering the data from the max peak amplitude position. Meaning it does not align the peaks
-        Input:
-        - replicate_time_point is the index to gather the data from. 
-        (e.g. if files are collected every 10 min, and there are three files pre-treatment
-          index 0 will be the first file before treatment, index 3 will be the first file after treatment)
-        returns 
+        Legacy Function - No Longer Supporter. This function performs exponential fitting of IT curves without aligning the peaks across replicates.
+
+        Args:
+            replicate_time_point (int): Index of the replicate time point (e.g., 3 for first post-treatment).
+            global_peak_amplitude_position (int, optional): Optional override for peak alignment index.
+
+        Returns:
+            tuple: A tuple containing:
+                - time_all (np.ndarray): Time vector repeated across replicates.
+                - ITs_flattened (np.ndarray): Flattened IT signal array.
+                - t_half (float): Estimated half-life of the decay.
+                - popt (list): Fitted parameters [A, tau, C].
+                - pcov (np.ndarray): Covariance matrix of the fit.
+                - A_fit (float): Fitted amplitude.
+                - tau_fit (float): Fitted decay constant.
+                - C_fit (float): Fitted baseline value.
         """
 
         from scipy.optimize import curve_fit
@@ -505,8 +731,14 @@ class GroupAnalysis:
 
     def plot_exponential_fit_aligned(self, replicate_time_point=0, save_path=None):
         """
-        Plot each post-peak IT trace, the mean decay, the exponential fit, 
-        its 95% CI, and mark the half-life, all on a common “time since peak” axis.
+        Plot the exponential decay fit on peak-aligned IT curves with a 95% confidence interval.
+
+        Args:
+            replicate_time_point (int): Index of the replicate time point to analyze.
+            save_path (str, optional): File path to save the figure. If None, shows the plot.
+
+        Returns:
+            tuple: A tuple containing the matplotlib figure and axis objects.
         """
         import matplotlib.pyplot as plt
         from scipy.stats import t
@@ -571,7 +803,13 @@ class GroupAnalysis:
 
     def plot_tau_over_time(self, save_path=None):
         """
-        Plots the exponential decay parameter tau over replicate time points.
+        Plot tau (the exponential decay constant) over replicate time points.
+
+        Args:
+            save_path (str, optional): Path to save the figure. If None, shows the plot.
+
+        Returns:
+            None
         """
         import matplotlib.pyplot as plt
 
@@ -598,6 +836,16 @@ class GroupAnalysis:
             plt.show()
 
     def plot_exponential_fit_with_CI_legacy(self, replicate_time_point=0, global_peak_position=None):
+        """
+        Legacy Function - No Longer in Use, This functions plots an exponential fit and confidence interval over raw IT traces.
+
+        Args:
+            replicate_time_point (int): Index of the replicate time point.
+            global_peak_position (int, optional): Override for alignment if specified.
+
+        Returns:
+            None
+        """
         import matplotlib.pyplot as plt
         from scipy.stats import t
         import numpy as np
@@ -687,7 +935,14 @@ class GroupAnalysis:
 
     def plot_amplitudes_over_time_single_experiment(self, experiment_index=0, save_path=None):
         """
-        Plot the amplitudes of a single experiment over time, with treatment point clearly marked.
+        Plot amplitudes over time for a single experiment and mark treatment start.
+
+        Args:
+            experiment_index (int): Index of the experiment to plot.
+            save_path (str, optional): File path to save the figure. If None, shows the plot.
+
+        Returns:
+            None
         """
         import matplotlib.pyplot as plt
 
@@ -732,8 +987,13 @@ class GroupAnalysis:
     
     def plot_mean_amplitudes_over_time(self, save_path=None):
         """
-        Plot the mean amplitudes over time across all experiments,
-        with the standard deviation as a shaded area.
+        Plot the mean amplitude over time across all experiments with standard deviation.
+
+        Args:
+            save_path (str, optional): Path to save the figure. If None, shows the plot.
+
+        Returns:
+            None
         """
         import matplotlib.pyplot as plt
 
@@ -764,7 +1024,13 @@ class GroupAnalysis:
 
     def plot_all_amplitudes_over_time(self, save_path=None):
         """
-        Plot all amplitudes over time for each experiment as separate lines.
+        Plot amplitude traces for all experiments over time.
+
+        Args:
+            save_path (str, optional): Path to save the figure. If None, shows the plot.
+
+        Returns:
+            None
         """
         import matplotlib.pyplot as plt
         
@@ -792,8 +1058,13 @@ class GroupAnalysis:
 
     def plot_first_stim_amplitudes(self, save_path=None):
         """
-        Plot the unnormalized amplitudes of the first stimulation for all experiments (replicates).
-        Each replicate is shown as a bar or point, with optional mean and std.
+        Plot the unnormalized amplitude from the first stimulation of each replicate.
+
+        Args:
+            save_path (str, optional): Path to save the figure. If None, shows the plot.
+
+        Returns:
+            None
         """
         import matplotlib.pyplot as plt
         import numpy as np
@@ -883,8 +1154,13 @@ class GroupAnalysis:
 
     def plot_unprocessed_first_ITs(self, save_path=None):
         """
-        Plots the unprocessed first ITs of replicates.
-        The x-axis represents the amplitude of the signal, and the y-axis represents time in seconds.
+        Plot the unprocessed first IT trace from each replicate.
+
+        Args:
+            save_path (str, optional): Path to save the figure. If None, shows the plot.
+
+        Returns:
+            None
         """
         import matplotlib.pyplot as plt
 
@@ -918,6 +1194,73 @@ class GroupAnalysis:
             plt.close()
         else:
             plt.show()
+
+    def plot_AUC(self, experiment_index=0, file_index=0, save_path=None):
+        """
+        Plot the IT trace for a specific experiment and file and highlight the AUC region.
+
+        Args:
+            experiment_index (int): Index of the experiment to plot.
+            file_index (int): Index of the file within the experiment.
+            save_path (str, optional): File path to save the figure. If None, shows the plot.
+
+        Returns:
+            tuple: A tuple with (fig, ax, auc_value) for further use.
+        """
+        import matplotlib.pyplot as plt
+        import numpy as np
+        from scipy.integrate import simpson
+
+        # Extract data for the specified experiment and file
+        experiment = self.experiments[experiment_index]
+        spheroid_file = experiment.get_spheroid_file(file_index)
+        processed_IT = spheroid_file.get_processed_data_IT()
+        metadata = spheroid_file.get_metadata()
+        peak_pos = metadata['peak_amplitude_positions']
+
+        # Identify the first zero-crossing after the peak
+        cropped_IT = processed_IT[peak_pos:]
+        zero_indices = np.where(cropped_IT == 0)[0]
+        if zero_indices.size > 0:
+            first_zero = zero_indices[0] + peak_pos
+        else:
+            first_zero = len(processed_IT)
+
+        # Calculate the area under the curve up to the first zero-crossing
+        auc_value = simpson(processed_IT[:first_zero])
+
+        # Prepare the plot
+        x = np.arange(len(processed_IT))
+        fig, ax = plt.subplots(figsize=(8, 6))
+        ax.plot(x, processed_IT, label='Processed IT')
+        ax.fill_between(x[:first_zero], processed_IT[:first_zero], color='C1', alpha=0.3, label='AUC region')
+        ax.set_xlabel('Time Points')
+        ax.set_ylabel('Current (nA)')
+        ax.set_title('AUC Calculation')
+
+        # Annotate the AUC value on the plot
+        text_x = 0.05 * len(processed_IT)
+        text_y = np.max(processed_IT) * 0.9
+        ax.text(
+            text_x,
+            text_y,
+            f'AUC = {auc_value:.2f}',
+            fontsize=12,
+            color='black',
+            bbox=dict(facecolor='white', alpha=0.6)
+        )
+        ax.legend(frameon=False)
+        fig.tight_layout()
+
+        # Save or show the figure
+        if save_path:
+            fig.savefig(save_path, dpi=300, bbox_inches='tight')
+            plt.close(fig)
+        else:
+            plt.show()
+
+        # 7) Return the figure, axis, and calculated AUC in case further processing is desired
+        return fig, ax, auc_value
 
 if __name__ == "__main__":
     import time
@@ -954,7 +1297,8 @@ if __name__ == "__main__":
     print("--- %s seconds ---" % (time.time() - start_time))
 
     #group_analysis.plot_mean_ITs()
-    group_analysis.exponential_fitting_replicated()
+    group_analysis.plot_AUC()
+    #group_analysis.exponential_fitting_replicated()
     #group_analysis.plot_exponential_fit_aligned(replicate_time_point=0)
     #group_analysis.plot_unprocessed_first_ITs()
     #group_analysis.plot_mean_amplitudes_over_time()
@@ -962,5 +1306,5 @@ if __name__ == "__main__":
     #group_analysis.amplitudes_first_stim()
     #group_analysis.plot_first_stim_amplitudes()
     #group_analysis.plot_tau_over_time()
-    group_analysis.get_all_reuptake_curves()
-    params_matrix = group_analysis.get_exponential_fit_params_over_time()
+    #group_analysis.get_all_reuptake_curves()
+    #params_matrix = group_analysis.get_exponential_fit_params_over_time()

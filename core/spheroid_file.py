@@ -11,14 +11,18 @@ from matplotlib.animation import FuncAnimation
 
 class SpheroidFile:
     """
-    A class to handle the loading and processing of FSCV spheroid data files.
-    Usage:
-    - filepath: Path to the associated FSCV (color plot) data file (txt format).
-    - raw_data: The raw data loaded from the file, inverted. We keep it to always come back in case the user does not want to apply any processing.
-    - processed_data: The processed data, initially set to raw_data.
-    - peak_position: The position of the peak in the I-T profile, default is set to 257 (for serotonin, 5HT).
-    - window_size: The size of the window for rolling mean or smoothing, default is None. (not used yet)
-    - metadata: A dictionary to hold any additional metadata related to the file.
+    A class to handle the loading, processing, and visualization of FSCV spheroid data files.
+
+    Attributes:
+        filepath (str): Path to the associated FSCV (color plot) data file (txt format).
+        raw_data (np.ndarray): Inverted raw FSCV data.
+        processed_data (np.ndarray): Initially same as raw_data; can be transformed.
+        acq_freq (float): Acquisition frequency in Hz.
+        peak_position (int): The voltage index corresponding to peak response (default 257).
+        window_size (int): Reserved for future processing (e.g. smoothing).
+        metadata (dict): Dictionary holding processing-related metadata.
+        waveform (str): Type of waveform used (e.g., "5HT").
+        timeframe (int): Number of time points in the data.
     """
 
     def __init__(self, filepath, acq_freq, waveform="5HT"):
@@ -46,8 +50,13 @@ class SpheroidFile:
 
     def set_waveform(self, waveform):
         """
-        Sets the waveform type for the spheroid file.
-        This can be used to differentiate between different types of stimulation or analysis.
+        Set the waveform type for this spheroid file.
+
+        Args:
+            waveform (str): Name of the waveform protocol (e.g., "5HT").
+
+        Returns:
+            None
         """
         self.waveform = waveform
 
@@ -55,16 +64,30 @@ class SpheroidFile:
         return self.raw_data
     
     def get_original_data_IT(self):
+        """
+        Get the raw I-T profile (current over time) at the peak voltage index.
+
+        Returns:
+            np.ndarray: Unprocessed current-time data.
+        """
         return self.raw_data[:, self.peak_position] 
     
     def get_processed_data(self):
         """
-        Returns the processed data.
-        This is a 2D array where rows represent voltage steps and columns represent time points.
+        Retrieve the current processed data.
+
+        Returns:
+            np.ndarray: The 2D processed FSCV matrix.
         """
         return self.processed_data
     
     def set_processed_data_as_original(self):
+        """
+        Reset the processed data to the original raw input.
+
+        Returns:
+            None
+        """
         self.processed_data = self.raw_data
         self.metadata['peak_amplitude_positions'] = None
         self.metadata['peak_amplitude_values'] = None
@@ -72,24 +95,54 @@ class SpheroidFile:
     
     def get_processed_data_IT(self):
         """
-        Returns the processed data for the I-T profile.
-        This is a 1D array representing the current at the peak position across all time points.
+        Extract the processed I-T trace at the cyclic voltamogram peak position.
+
+        Returns:
+            np.ndarray: Current vs time trace at peak.
         """
         return self.processed_data[:, self.peak_position]
 
     def get_filepath(self):
+        """
+        Return the full path to the FSCV data file.
+
+        Returns:
+            str: File path.
+        """
         return self.filepath
 
     def update_metadata(self, context):
         """
-        Updates the metadata with the provided context.
+        Merge new data into the metadata dictionary.
+
+        Args:
+            context (dict): Dictionary with metadata fields to add.
+
+        Returns:
+            None
         """
         self.metadata.update(context)
 
     def get_metadata(self):
+        """
+        Get the complete metadata dictionary.
+
+        Returns:
+            dict: Current metadata.
+        """
         return self.metadata
 
     def visualize_color_plot_data(self, title_suffix="", save_path=None):
+        """
+        Visualize the FSCV data as a 2D color plot.
+
+        Args:
+            title_suffix (str, optional): Optional string to add to the plot title.
+            save_path (str, optional): Directory path to save the plot as PNG. If None, displays the plot.
+
+        Returns:
+            tuple: (fig, ax) where fig is the Matplotlib Figure object and ax is the Axes.
+        """
         # Initialize plot settings
         plot_settings = PLOT_SETTINGS()
         custom_cmap = plot_settings.custom
@@ -132,9 +185,14 @@ class SpheroidFile:
 
     def visualize_3d_color_plot(self, title_suffix="",save_path=None):
         """
-        3D surface with the same orientation as:
-        ax.imshow(self.processed_data.T, …)
-        Time → X, Voltage → Y, Current → Z.
+        Generate a 3D surface plot of the FSCV data.
+
+        Args:
+            title_suffix (str, optional): Optional title label for plot.
+            save_path (str, optional): Path to save the 3D plot image as PNG. If None, shows the plot.
+
+        Returns:
+            tuple: (fig, ax) Matplotlib 3D figure and axes objects.
         """
         from mpl_toolkits.mplot3d import Axes3D
         from matplotlib import cm
@@ -201,8 +259,13 @@ class SpheroidFile:
 
     def animate_3d_color_plot(self, title_suffix=""):
         """
-        Creates an animation for the 3D surface plot.
-        Starts at elev=90, azim=180, transitions to elev=0, and then to elev=0, azim=270.
+        Create and save an animated 3D rotation of the FSCV color surface.
+
+        Args:
+            title_suffix (str, optional): Optional title suffix (unused in plot).
+
+        Returns:
+            None
         """
         from mpl_toolkits.mplot3d import Axes3D
         from matplotlib import cm
@@ -284,7 +347,13 @@ class SpheroidFile:
         
     def visualize_IT_profile(self, save_path=None):
         """
-        Visualizes the I-T profile at the specified peak position and highlights all detected peaks.
+        Plot the I-T profile at the peak position and optionally highlight detected peaks.
+
+        Args:
+            save_path (str, optional): Folder path to save the plot as PNG. If None, displays the plot.
+
+        Returns:
+            tuple: (fig, ax) Matplotlib Figure and Axes of the plot.
         """
         # Extract the profile at the peak position
         profile = self.processed_data[:, self.peak_position]
@@ -353,8 +422,13 @@ class SpheroidFile:
 
     def visualize_IT_with_exponential_decay(self):
         """
-        Visualizes the I-T profile, highlights the detected peak, overlays the exponential decay curve,
-        and marks the half-life (t_half).
+        Visualize the I-T profile along with fitted exponential decay curve and t_half marker.
+
+        Raises:
+            ValueError: If exponential fitting or peak metadata is missing.
+
+        Returns:
+            None
         """
         # Extract the I-T profile at the specified peak position
         profile = self.processed_data[:, self.peak_position]

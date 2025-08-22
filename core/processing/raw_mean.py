@@ -3,9 +3,12 @@ import numpy as np
 
 class RawMean(Processor):
     """
-    Usage: 
-    This processor computes a simple moving average across the time axis of the input data.
-    It works the same way as the rolling_mean function. We may get rid of it in the future.
+    Apply a simple moving average (smoothing) across time.
+
+    This performs 1D convolution using a flat kernel for each voltage step.
+
+    Args:
+        window_size (int): Width of the smoothing window.
     """
     def __init__(self, window_size=5):
         self.window_size = window_size

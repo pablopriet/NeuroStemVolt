@@ -6,32 +6,51 @@ from matplotlib.patches import Ellipse
 class ButterworthFilter(Processor):
     def __init__(self, p=4, fs_x=10, fs_y=500000):
         """
-        Usage:
-        This processor applies a 2D Butterworth filter to the input data.
-        Inputs:
-        - cx, cy: cutoff frequencies in normalized units (0 to 0.5)
-        - p: filter order, default is 4
-        Outputs:
-        - filtered: 2D numpy array with the Butterworth filter applied
-        Note: The cutoff frequencies are set to 15% of the Nyquist frequency for the x and y axes.
-        The implementation is inspired by the paper Novel, User-Friendly Experimental and Analysis Strategies for Fast Voltammetry: 1. The Analysis Kid for FSCV by Mena et al. (2021) 
+        Apply a 2D low-pass Butterworth filter to FSCV color plot data. The implementation is inspired by the paper Novel, User-Friendly Experimental and Analysis Strategies for Fast Voltammetry: 1. The Analysis Kid for FSCV by Mena et al. (2021) 
         https://doi.org/10.1021/acs.analchem.1c01258
+
+        Args:
+            p (int): Filter order.
+            fs_x (int): Sampling rate in time direction.
+            fs_y (int): Sampling rate in voltage direction.
+
+        Methods:
+            process(data): Returns filtered data.
+            visualize_cutoff(data): Shows cutoff region on FFT spectrum.
         """
         self.p = p
 
     def process(self, data):
+        """
+        Apply a 2D Butterworth filter to the input data.
+
+        Args:
+            data (np.ndarray): 2D FSCV data array.
+
+        Returns:
+            np.ndarray: Filtered 2D data.
+        """
         rows, cols = data.shape
 
+        # Amount of padding — you can tweak this
+        pad_y = int(0.1 * rows)   # 10% vertical padding
+        pad_x = int(0.1 * cols)   # 10% horizontal padding
+
+        # Apply reflect padding and store it
+        padded_data = np.pad(data, ((pad_y, pad_y), (pad_x, pad_x)), mode='reflect')
+
         # 1. Perform 2D FFT and shift the zero frequency to the center
-        F = np.fft.fft2(data)
+        F = np.fft.fft2(padded_data)
         F_shifted = np.fft.fftshift(F)
 
         fs_x = 10  # Acquisition frequency in x direction
         fs_y = 500000 # Update rate in y direction
 
+        padded_rows, padded_cols = padded_data.shape
+
         # 2. Frequency vectors in Hz
-        fx = np.fft.fftfreq(cols, d=1/fs_x)  # shape: (1100,)
-        fy = np.fft.fftfreq(rows, d=1/fs_y)  # shape: (150,)
+        fx = np.fft.fftfreq(padded_cols, d=1/fs_x)
+        fy = np.fft.fftfreq(padded_rows, d=1/fs_y) 
 
         wx = np.fft.fftshift(fx)
         wy = np.fft.fftshift(fy)
@@ -52,9 +71,12 @@ class ButterworthFilter(Processor):
         # 6. Inverse FFT to return to spatial domain
         filtered = np.fft.ifft2(np.fft.ifftshift(F_filtered)).real
 
+        # 7. Crop to original size (remove padding)
+        filtered_cropped = filtered[pad_y:-pad_y, pad_x:-pad_x]
+
         #self.visualize_cutoff(data)
 
-        return filtered
+        return filtered_cropped
     
     def visualize_cutoff(self, data):
         """

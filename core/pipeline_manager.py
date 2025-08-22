@@ -3,26 +3,51 @@ import inspect
 
 class PipelineManager:
     """
-    Usage:
-        A class to manage a pipeline of processors for processing spheroid files.
-        It allows adding processors dynamically and running them sequentially on spheroid files.
-    Inputs:
-    - list_processors: A list of Processor instances to be executed in sequence.
-    
+    Manage and execute a sequence of processing steps on spheroid data files.
+
+    This class maintains an ordered list of processing steps (processors) and applies them
+    sequentially to a spheroid file's data. Each processor must implement a `process` method.
+
+    Args:
+        list_processors (list, optional): A list of Processor instances to run in sequence.
     """
     def __init__(self, list_processors=None):
+        """
+        Initialize the pipeline manager with an optional list of processors.
+
+        Args:
+            list_processors (list, optional): Initial list of Processor instances.
+
+        Returns:
+            None
+        """
         self.list_processors = list_processors or []
 
     def add_processor(self, processor):
         """
-        Usage:
-            Adds a processor to the pipeline.
+        Add a processor to the processing pipeline.
+
+        Args:
+            processor (Processor): A processor instance that implements a `process` method.
+
+        Returns:
+            None
         """
         self.list_processors.append(processor)
 
     def run(self, spheroid_file, context=None):
         """
-        Runs the processing pipeline for a single spheroid file.
+        Execute the processing pipeline on a single spheroid file.
+
+        Each processor is applied sequentially to the file's processed data.
+        If a processor accepts a `context` argument, it is passed in.
+
+        Args:
+            spheroid_file: An object containing spheroid data and metadata.
+            context (dict, optional): Shared state between processors.
+
+        Returns:
+            None
         """
         data = spheroid_file.get_processed_data()
         context = context or {}  # Initialize context if not provided

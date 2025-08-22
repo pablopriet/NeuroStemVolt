@@ -1,6 +1,12 @@
 from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QComboBox, QDialogButtonBox
 
 class TimepointSelectionDialog(QDialog):
+    """
+    Dialog window to allow the user to select a timepoint (file) for exponential fitting.
+
+    This dialog presents a dropdown (QComboBox) populated with the names of available
+    FSCV files, allowing the user to choose a specific one for downstream analysis.
+    """
     def __init__(self, file_names, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Select Timepoint for Exponential Fit")

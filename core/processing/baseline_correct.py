@@ -1,11 +1,26 @@
 from .base import Processor
 
 class BaselineCorrection(Processor):
+    """
+    Subtracts baseline current from FSCV data using pre-stimulation time window.
+
+    This processor identifies the time before stimulation begins (based on `stim_start`)
+    and computes the mean current across that period to use as a baseline. It then subtracts
+    this baseline from the entire signal.
+
+    Methods:
+        process(data, context): Applies baseline correction using metadata in context.
+    """
     def process(self, data, context=None):
         """
-        Usage:
-        This processor applies baseline correction to the input data by subtracting
-        the mean of the FSCV recordings previous to stimulation.
+        Apply baseline correction to the data using the pre-stimulation region.
+
+        Args:
+            data (np.ndarray): 2D FSCV array (voltage × time).
+            context (dict): Must contain 'stim_start', may include 'peak_position' and 'acquisition_frequency'.
+
+        Returns:
+            np.ndarray: Baseline-corrected data.
         """
         if context is None or "stim_start" not in context:
             raise ValueError("Stimulation start time ('stim_start') is missing from the context.")

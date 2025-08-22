@@ -9,6 +9,12 @@ from ui.wizard_2_colorplot.colorplot_page import ColorPlotPage
 from ui.wizard_3_results.results_page import ResultsPage
 
 def main():
+    """
+    Launches the NeuroStemVolt Qt application.
+
+    This function initializes the Qt environment, displays a splash screen,
+    and loads the multi-page wizard interface for processing FSCV replicates.
+    """
     # Enable high DPI to show loading image in high quality
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)

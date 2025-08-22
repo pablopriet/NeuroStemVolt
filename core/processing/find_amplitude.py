@@ -5,13 +5,27 @@ from PyQt5.QtCore import QSettings
 from scipy.optimize import curve_fit
 
 class FindAmplitudeLegacy(Processor):
+    """
+    Detect the most prominent peak in the I-T profile at a given peak position.
+
+    Stores the position and value of the peak in the context dictionary.
+
+    Args:
+        peak_position (int): Index for voltage sweep peak (default 257).
+    """
     def __init__(self, peak_position=257):
         self.peak_position = peak_position
 
     def process(self, data, context=None):
         """
-        Usage:
-        Finds the dominant local maxima of the input data and updates the context with their positions and values.
+        Detect the highest peak in the I-T trace and update context with its value and location.
+
+        Args:
+            data (np.ndarray): 2D FSCV array.
+            context (dict): Optional metadata dictionary.
+
+        Returns:
+            np.ndarray: Unchanged data array.
         """
         fx = data[:, self.peak_position]
         peaks, _ = find_peaks(fx, 

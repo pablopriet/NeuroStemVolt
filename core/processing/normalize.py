@@ -4,12 +4,27 @@ import numpy as np
 from scipy.signal import find_peaks
 
 class Normalize(Processor):
+    """
+    Normalize data by the mean peak value in the I-T profile.
+
+    If a peak value is already present in the context under "experiment_first_peak",
+    use it for normalization. Otherwise, compute and store it from the current trace.
+
+    Args:
+        peak_position (int): Index in voltage axis used for I-T profile.
+    """
     def __init__(self, peak_position=257):
         self.peak_position = peak_position
     def process(self, data,context=None):
         """
-        Usage:
-        This processor normalizes the input data by dividing each scan by the maximum value of that scan.
+        Normalize each scan in the data using the first peak amplitude.
+
+        Args:
+            data (np.ndarray): 2D FSCV array (voltage × time).
+            context (dict, optional): Stores or uses 'experiment_first_peak'.
+
+        Returns:
+            np.ndarray: Normalized data.
         """
         if context is not None:
             if "experiment_first_peak" in context:

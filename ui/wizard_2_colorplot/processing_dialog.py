@@ -10,6 +10,20 @@ from core.processing import BackgroundSubtraction, SavitzkyGolayFilter, RollingM
 from core.processing.spontaneous_peak_detector import FindAmplitudeMultiple
 
 class ProcessingOptionsDialog(QDialog):
+    """
+    Dialog for configuring and selecting signal processing options.
+
+    This UI allows users to:
+    - Choose which preprocessing steps to apply.
+    - Configure parameters (e.g., window sizes, smoothing regions).
+    - Persist selections across sessions using QSettings.
+
+    Attributes:
+        qsettings (QSettings): Persistent storage for user preferences.
+        processor_options (list): List of available processors and their default activation state.
+        checkboxes (dict): Maps processor names to their associated QCheckBox.
+        param_widgets (dict): Maps processor names to their parameter input widgets.
+    """
     def __init__(self, parent=None, defaults=None):
         super().__init__(parent)
         self.setWindowTitle("Filtering Options")
@@ -206,6 +220,16 @@ class ProcessingOptionsDialog(QDialog):
         self.setLayout(layout)
 
     def get_processor_instance(self, name, peak_position=None):
+        """
+        Instantiate the selected processor based on its name and parameters.
+
+        Args:
+            name (str): Name of the processing step.
+            peak_position (int, optional): Voltage index of the peak, needed by some processors.
+
+        Returns:
+            Processor: An instance of a subclass of `Processor`, or None if not matched.
+        """
         if name == "Background Subtraction":
             region_start, region_end = self.param_widgets[name]
             try:
@@ -271,10 +295,19 @@ class ProcessingOptionsDialog(QDialog):
             return None
 
     def get_selected_processors(self):
-        """Return a list of selected processor names."""
+        """
+        Retrieve a list of processor names selected by the user.
+
+        Returns:
+            list of str: Names of enabled processing steps.
+        """
         return [name for name, cb in self.checkboxes.items() if cb.isChecked()]
 
     def accept(self):
+        """
+        Saves the selected processor configuration and parameters to QSettings,
+        then closes the dialog.
+        """
         selected = self.get_selected_processors()
         self.qsettings.setValue("processing_pipeline", json.dumps(selected))
 
