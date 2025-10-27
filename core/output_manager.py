@@ -191,6 +191,135 @@ class OutputManager:
                 df.to_csv(output_path, index_label="File Number")
 
     @staticmethod
+    def save_spontaneous_peak_metrics(group_experiments : GroupAnalysis, output_folder_path):
+        """Save detailed metrics about spontaneous peaks for all experiments."""
+        import pandas as pd
+        import numpy as np
+        import os
+        from PyQt5.QtCore import QSettings
+
+        settings = QSettings("HashemiLab", "NeuroStemVolt")
+        acquisition_freq = settings.value("acquisition_frequency", 10, type=int)
+        file_length_sec = settings.value("file_length", 100, type=int)
+        time_between_files = settings.value("time_between_files", 10, type=float)
+
+        # Create output folder if it doesn't exist
+        spont_folder = os.path.join(output_folder_path, "spontaneous_metrics")
+        if not os.path.isdir(spont_folder):
+            os.mkdir(spont_folder)
+
+        # Summary data for all experiments
+        all_summary_records = []
+
+        # Process each experiment
+        for i, experiment in enumerate(group_experiments.get_experiments()):
+            # Detailed records for each peak in this experiment
+            detailed_records = []
+            # Summary record for each file in this experiment
+            summary_records = []
+
+            for j, spheroid_file in enumerate(experiment.files):
+                meta = spheroid_file.get_metadata()
+                file_name = os.path.basename(spheroid_file.get_filepath())
+
+                # Get peak data
+                peak_positions = meta.get('peak_amplitude_positions', [])
+                peak_values = meta.get('peak_amplitude_values', [])
+                peak_metadata = meta.get('all_peak_metadata', [])
+
+                # Handle both single value and list/array cases
+                if not isinstance(peak_positions, (list, np.ndarray)):
+                    peak_positions = [peak_positions] if peak_positions else []
+
+                if not isinstance(peak_values, (list, np.ndarray)):
+                    peak_values = [peak_values] if peak_values else []
+
+                # Calculate summary metrics
+                num_peaks = len(peak_positions)
+                mean_amplitude = np.mean(peak_values) if peak_values else 0
+                peak_frequency = num_peaks / (file_length_sec / 60)  # peaks per minute
+                timepoint_min = j * time_between_files
+
+                # Add summary record
+                summary_records.append({
+                    'File Number': j,
+                    'File Name': file_name,
+                    'Time (min)': timepoint_min,
+                    'Number of Peaks': num_peaks,
+                    'Mean Amplitude (nA)': mean_amplitude,
+                    'Peak Frequency (peaks/min)': peak_frequency
+                })
+
+                # Add detailed records for each peak
+                for k, (pos, val) in enumerate(zip(peak_positions, peak_values)):
+                    peak_info = {
+                        'File Number': j,
+                        'File Name': file_name,
+                        'Time (min)': timepoint_min,
+                        'Peak Number': k + 1,
+                        'Peak Position': pos,
+                        'Peak Time (s)': pos / acquisition_freq,
+                        'Amplitude (nA)': val
+                    }
+
+                    # Add rise/decay info if available
+                    if k < len(peak_metadata):
+                        md = peak_metadata[k]
+                        peak_info.update({
+                            'Rise Time (s)': md.get('rise_time_sec', 0),
+                            'Decay Time (s)': md.get('decay_time_sec', 0)
+                        })
+
+                    detailed_records.append(peak_info)
+
+            # Save detailed peak information for this experiment
+            if detailed_records:
+                df_detailed = pd.DataFrame(detailed_records)
+                output_detailed = f"Experiment_{i+1}_Detailed_Peak_Data.csv"
+                df_detailed.to_csv(os.path.join(spont_folder, output_detailed), index=False)
+
+            # Save summary for this experiment
+            if summary_records:
+                df_summary = pd.DataFrame(summary_records)
+                output_summary = f"Experiment_{i+1}_Summary_Peak_Data.csv"
+                df_summary.to_csv(os.path.join(spont_folder, output_summary), index=False)
+
+                # Add to all experiments summary
+                for record in summary_records:
+                    record['Experiment'] = i + 1
+                    all_summary_records.append(record)
+
+        # Save combined summary for all experiments
+        if all_summary_records:
+            df_all = pd.DataFrame(all_summary_records)
+            output_all = "All_Experiments_Spontaneous_Peak_Summary.csv"
+            df_all.to_csv(os.path.join(spont_folder, output_all), index=False)
+
+        # Calculate group statistics and save them
+        if all_summary_records:
+            df_all = pd.DataFrame(all_summary_records)
+
+            # Group by timepoint
+            timepoint_stats = []
+            for time, group in df_all.groupby('Time (min)'):
+                timepoint_stats.append({
+                    'Time (min)': time,
+                    'Mean Peak Frequency (peaks/min)': group['Peak Frequency (peaks/min)'].mean(),
+                    'StdDev Peak Frequency': group['Peak Frequency (peaks/min)'].std(),
+                    'Mean Amplitude (nA)': group['Mean Amplitude (nA)'].mean(),
+                    'StdDev Amplitude': group['Mean Amplitude (nA)'].std(),
+                    'Total Peaks': group['Number of Peaks'].sum(),
+                    'Number of Experiments': len(group)
+                })
+
+            # Save timepoint statistics
+            if timepoint_stats:
+                df_timepoints = pd.DataFrame(timepoint_stats)
+                output_timepoints = "Group_Statistics_By_Timepoint.csv"
+                df_timepoints.to_csv(os.path.join(spont_folder, output_timepoints), index=False)
+
+        return spont_folder
+    @staticmethod
     def save_all_peak_amplitudes(group_experiments : GroupAnalysis, output_folder_path):
         """
         Save all peak amplitude values and their positions (in seconds) for each replicate.
@@ -628,6 +757,62 @@ class OutputManager:
         save_path = os.path.join(output_folder, "plot_first_stim_amplitudes.png")
         group_analysis.plot_first_stim_amplitudes(save_path=save_path)
         
+    @staticmethod
+    def save_mean_ITs(group_experiments: GroupAnalysis, output_folder_path):
+        """
+        Save the mean IT trace for each file index across all experiments into a single CSV file.
+        Each column corresponds to a file index (e.g., timepoint), using the base filename from the first experiment.
+
+        Args:
+            group_experiments (GroupAnalysis): Group containing multiple experiments.
+            output_folder_path (str): Directory to save the output file.
+
+        Returns:
+            None
+        """
+        experiments = group_experiments.get_experiments()
+        if not experiments:
+            return None
+
+        file_count = experiments[0].get_file_count()
+        acq_freq = experiments[0].get_acquisition_frequency()
+        file_length = experiments[0].get_file_length()
+        n_timepoints = experiments[0].get_file_time_points()
+
+        # Get column headers from first experiment's file base names
+        base_names = [os.path.splitext(os.path.basename(sf.get_filepath()))[0] for sf in experiments[0].files]
+
+        # Collect ITs for each file index across experiments
+        mean_ITs = []
+        for file_idx in range(file_count):
+            # Gather ITs for this file index from all experiments
+            it_matrix = []
+            for exp in experiments:
+                IT_individual = exp.get_spheroid_file(file_idx).get_processed_data_IT()
+                it_matrix.append(IT_individual)
+            # Pad to same length if needed
+            max_len = max(len(it) for it in it_matrix)
+            it_matrix_padded = [np.pad(it, (0, max_len - len(it)), constant_values=np.nan) for it in it_matrix]
+            # Average across experiments (axis=0)
+            mean_IT = np.nanmean(it_matrix_padded, axis=0)
+            mean_ITs.append(mean_IT)
+
+        # Transpose so each column is a file index, each row is a timepoint
+        mean_ITs_array = np.array(mean_ITs).T  # shape: (n_timepoints, file_count)
+
+        # Create time axis in seconds
+        time_seconds = np.arange(mean_ITs_array.shape[0]) / acq_freq
+
+        # Build DataFrame
+        df = pd.DataFrame(mean_ITs_array, columns=base_names)
+        df.insert(0, "Time (s)", time_seconds)
+
+        # Save to CSV
+        output_folder = os.path.join(output_folder_path, "mean_ITs")
+        os.makedirs(output_folder, exist_ok=True)
+        output_path = os.path.join(output_folder, "Mean_ITs_across_experiments.csv")
+        df.to_csv(output_path, index=False)
+        print(f"Saved mean ITs across experiments to {output_path}")
 
 if __name__ == "__main__":
     # Example usage

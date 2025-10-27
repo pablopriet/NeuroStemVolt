@@ -30,7 +30,7 @@ class PlotCanvas(FigureCanvas):
         import matplotlib
 
         matplotlib.rcParams.update({
-            "font.family": ["Helvetica", "Arial"],
+            "font.family": ["Arial"],
             "font.size": 10,
         })
         fig = Figure(figsize=(width, height), dpi=dpi)
@@ -158,7 +158,7 @@ class PlotCanvas(FigureCanvas):
                     idx = int(peak_indices) if not isinstance(peak_indices, (list, np.ndarray)) else peak_indices[0]
                     val = float(peak_values) if not isinstance(peak_values, (list, np.ndarray)) else peak_values[0]
                     if 0 <= idx < len(profile):
-                        self.axes.scatter(t[idx], val, color='#FF3877', s=100, zorder=5, label='Current Peak')
+                        self.axes.scatter(t[idx], val, color='#FF3877', s=100, alpha=0.5, zorder=5, label='Current Peak')
                         self.axes.annotate(f"{val:.2f}", (t[idx], val), textcoords="offset points",
                                            xytext=(0, 10), ha='center', fontsize=9, color='#FF3877')
                 except (ValueError, TypeError, IndexError):
@@ -169,10 +169,10 @@ class PlotCanvas(FigureCanvas):
                 temp_time = temp_peak_detection / freq
                 temp_value = profile[temp_peak_detection]
                 self.axes.scatter(temp_time, temp_value, color='#00FF00', s=120, zorder=6,
-                                  label='Preview Peak', marker='s', edgecolors='black', linewidth=2)
+                                  label='Preview Peak', marker='o', alpha=0.5, linewidth=2)
                 self.axes.annotate(f"Preview: {temp_value:.2f}", (temp_time, temp_value),
                                    textcoords="offset points", xytext=(0, -25),
-                                   ha='center', fontsize=9, color='#00FF00', fontweight='bold',
+                                   ha='center', fontsize=9, color='#00FF00', alpha=0.5, fontweight='bold',
                                    bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor='#00FF00',
                                              alpha=0.8))
 

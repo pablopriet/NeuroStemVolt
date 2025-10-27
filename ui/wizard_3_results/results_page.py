@@ -141,6 +141,13 @@ class ResultsPage(QWizardPage):
             OutputManager.save_all_reuptake_curves(ga, output_folder)
             OutputManager.save_all_exponential_fitting_params(ga, output_folder)
             OutputManager.save_all_AUC(ga, output_folder)
+            OutputManager.save_mean_ITs(ga, output_folder)
+
+            # Export spontaneous peak metrics if applicable
+            settings = QSettings("HashemiLab", "NeuroStemVolt")
+            file_type = settings.value("file_type", "None", type=str)
+            if file_type == "Spontaneous":
+                OutputManager.save_spontaneous_peak_metrics(ga, output_folder)
         except Exception as e:
             QMessageBox.critical(
                 self, "Export Failed",
@@ -157,7 +164,7 @@ class ResultsPage(QWizardPage):
     def save_current_plot(self):
         """
         Save the currently displayed result plot as a PNG image.
-        
+
         Prompts the user for a filename using QFileDialog.
         """
         options = QFileDialog.Options()

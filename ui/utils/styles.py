@@ -25,7 +25,7 @@ def apply_custom_styles(widget):
                 QPushButton {
                     background-color: #4178F2;
                     color: white;
-                    font-family: Helvetica, Arial;
+                    font-family: Arial, sans-serif;
                     font-weight: bold;
                     border-radius: 10px;
                     padding: 6px 12px;
@@ -47,7 +47,7 @@ def apply_custom_styles(widget):
                 QPushButton {
                     background-color: #FF3877;
                     color: white;
-                    font-family: Helvetica, Arial;
+                    font-family: Arial, sans-serif;
                     font-weight: bold;
                     border-radius: 10px;
                     padding: 6px 12px;
@@ -69,7 +69,7 @@ def apply_custom_styles(widget):
                 QPushButton {
                     background-color: #21AE62;
                     color: white;
-                    font-family: Helvetica, Arial;
+                    font-family: Arial, sans-serif;
                     font-weight: bold;
                     border-radius: 10px;
                     padding: 6px 12px;
@@ -91,7 +91,7 @@ def apply_custom_styles(widget):
             QListWidget {
                 background-color: #CAF2FB;
                 color: black;
-                font-family: Helvetica, Arial;
+                font-family: Arial, sans-serif;
                 font-weight: bold;
                 border-radius: 8px;
                 padding: 4px;

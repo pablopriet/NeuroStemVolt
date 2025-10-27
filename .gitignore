@@ -1,4 +1,5 @@
 data/
+example_data/stimulation_sample_1
 output/
 core/__pycache__/
 core/processing/__pycache__/
@@ -9,3 +10,4 @@ ui/.DS_Store
 .DS_Store
 build/
 dist/
+main.spec

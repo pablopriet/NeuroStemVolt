@@ -92,6 +92,34 @@ Whether you're characterizing iPSC-derived neuronal systems or investigating neu
 
 ---
 
+## **Executables (No Python Installation Required)**
+
+Pre-built executables are available for macOS and Unix-based systems.  
+These versions run without requiring any Python installation or environment setup.
+
+You can download them here:  
+[**NeuroStemVolt v1.0.0 – Release Assets**](https://github.com/pablopriet/NeuroStemVolt/releases/tag/v1.0.0)
+
+### Included in the ZIP:
+- `.app` – macOS application bundle
+- Unix executable – for Linux or macOS terminal use
+
+**Usage:**
+1. Download and unzip the file for your operating system.
+2. On macOS:
+   - Double-click the `.app` to launch the GUI.
+   - If you get a security warning, go to **System Preferences → Security & Privacy** and allow the app.
+3. On Unix/Linux:
+   - Open a terminal in the extracted folder.
+   - Run:  
+     ```bash
+     ./NeuroStemVolt
+     ```
+
+Windows executables will be provided in a future release.
+
+---
+
 ## Contributing
 
 1. Fork the repository.

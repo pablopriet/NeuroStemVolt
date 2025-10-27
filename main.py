@@ -132,6 +132,16 @@ def main():
     def show_wizard():
         """Function to properly transition from splash to wizard"""
         splash.finish(wizard)  # This ensures splash closes when wizard shows
+        # Scale the image given the device pixels
+        # Get 75% of the primary screen size
+        screen = app.primaryScreen()
+        sw, sh = screen.size().width(), screen.size().height()
+        wizard.resize(int(sw * 0.75), int(sh * 0.75))
+        # Center it on the screen
+        geo = wizard.frameGeometry()
+        center = screen.availableGeometry().center()
+        geo.moveCenter(center)
+        wizard.move(geo.topLeft())
         wizard.show()
         wizard.raise_()  # Bring to front
         wizard.activateWindow()  # Give focus
