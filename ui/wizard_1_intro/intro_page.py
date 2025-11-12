@@ -164,18 +164,18 @@ class IntroPage(QWizardPage):
             # optional: warn “no .txt found”
             return
         
-        if self.number_of_files != 0 and self.number_of_files != len(paths):
-            QMessageBox.warning(
-                self,
-                "Warning! Missing Files!",
-                "Folders do not contain the same number of files.\n"
-                f"Expected: {self.number_of_files}, Found: {len(paths)}"
-            )
-            return
+        # if self.number_of_files != 0 and self.number_of_files != len(paths):
+        #     QMessageBox.warning(
+        #         self,
+        #         "Warning! Missing Files!",
+        #         "Folders do not contain the same number of files.\n"
+        #         f"Expected: {self.number_of_files}, Found: {len(paths)}"
+        #     )
+        #     return
         
-        # If first replicate, set number_of_files
-        if self.number_of_files == 0:
-            self.number_of_files = len(paths)
+        # # If first replicate, set number_of_files
+        # if self.number_of_files == 0:
+        #     self.number_of_files = len(paths)
 
         # We do not pass calibration to initializing the SpheroidExperiments
         expected_keys = [
