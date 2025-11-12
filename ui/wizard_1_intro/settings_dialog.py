@@ -29,7 +29,7 @@ class ExperimentSettingsDialog(QDialog):
             "acquisition_frequency": self.qsettings.value("acquisition_frequency", 10,     type=int),
             "peak_position":         self.qsettings.value("peak_position",         257,    type=int),
             "treatment":             self.qsettings.value("treatment",             "None", type=str),
-            #"waveform":              self.qsettings.value("waveform",              "5HT",  type=str),
+            "waveform":              self.qsettings.value("waveform",              "5HT",  type=str),
             "time_between_files":    self.qsettings.value("time_between_files",    10,     type=int),
             "files_before_treatment":self.qsettings.value("files_before_treatment",3,      type=int),
             "file_type":             self.qsettings.value("file_type",             "None", type=str),
@@ -44,10 +44,10 @@ class ExperimentSettingsDialog(QDialog):
         form = QFormLayout()
         vbox.addLayout(form)
 
-        #self.cb_waveform    = QComboBox();  self.cb_waveform.addItems(["5HT","Else"])
-        #self.cb_waveform.setCurrentText(defaults["waveform"]);                     form.addRow("Waveform:", self.cb_waveform)
+        self.cb_waveform    = QComboBox();  self.cb_waveform.addItems(["5HT","HA"])
+        self.cb_waveform.setCurrentText(defaults["waveform"]);                     form.addRow("Waveform:", self.cb_waveform)
 
-        self.cb_file_type = QComboBox(); self.cb_file_type.addItems(["None","Stimulation"])
+        self.cb_file_type = QComboBox(); self.cb_file_type.addItems(["Stimulation", "Spontaneous"])
         self.cb_file_type.setCurrentText(defaults["file_type"]);                   form.addRow("File Type:", self.cb_file_type)
 
         self.le_acq_freq = QLineEdit(str(defaults["acquisition_frequency"]))  
@@ -140,7 +140,7 @@ class ExperimentSettingsDialog(QDialog):
         self.qsettings.setValue("file_length",           int(self.le_file_length.text()))
         self.qsettings.setValue("peak_position",         int(self.le_peak_pos.text()))
         self.qsettings.setValue("treatment",             self.le_treatment.text())
-        #self.qsettings.setValue("waveform",              self.cb_waveform.currentText())
+        self.qsettings.setValue("waveform",              self.cb_waveform.currentText())
         self.qsettings.setValue("time_between_files",    int(self.le_time_btw.text()))
         self.qsettings.setValue("files_before_treatment",int(self.le_files_before.text()))
         self.qsettings.setValue("output_folder", self.le_output_folder.text())
@@ -173,7 +173,7 @@ class ExperimentSettingsDialog(QDialog):
             "acquisition_frequency":  int(self.le_acq_freq.text()),
             "peak_position":          int(self.le_peak_pos.text()),
             "treatment":              self.le_treatment.text(),
-            #"waveform":               self.cb_waveform.currentText(),
+            "waveform":               self.cb_waveform.currentText(),
             "time_between_files":     float(self.le_time_btw.text()),
             "files_before_treatment": int(self.le_files_before.text()),
             "file_type":              self.cb_file_type.currentText(),
