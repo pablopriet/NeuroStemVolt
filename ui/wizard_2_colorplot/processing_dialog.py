@@ -38,10 +38,9 @@ class ProcessingOptionsDialog(QDialog):
             ("Baseline Correction", True),
             ("Normalize", True),
             ("Invert Data", False),  # Now enabled, but unchecked by default
-            ("Find Amplitude", True),
-            #("Multiple Peak Detection", False),  # New option
         ]
 
+        file_type = QSettings("HashemiLab", "NeuroStemVolt").value("file_type", "None", type=str)
         self.checkboxes = {}
         self.param_widgets = {}
         layout = QVBoxLayout()
@@ -52,6 +51,12 @@ class ProcessingOptionsDialog(QDialog):
         saved = self.qsettings.value("processing_params", type=str)
         saved_params = json.loads(saved) if saved else {}
 
+        if file_type == "Spontaneous":
+            self.processor_options.append(("Single Peak Detection", False))
+            self.processor_options.append(("Multiple Peak Detection", True))
+        else:
+            self.processor_options.append(("Single Peak Detection", True))
+
         help_texts = {
             "Background Subtraction": "Subtracts baseline offset by averaging the signal between a specified 'start' and 'end' segment (given as data indices or time points at the beginning of the trace) and subtracting that mean from the entire recording.",
             "Rolling Mean": "Smooths the trace by computing a moving average over a sliding window of N points. The 'window size' parameter sets how many consecutive samples are included in each average. Larger windows yield smoother traces but can blur sharp features.",
@@ -60,13 +65,11 @@ class ProcessingOptionsDialog(QDialog):
             "Baseline Correction": "Removes baseline drift from the signal.",
             "Normalize": "Normalizes each trace based on the peak amplitude of the first file within each replicate.",
             "Invert Data": "Inverts the sign of all data points. Use if your data is 'upside down' and you need to flip it.",
-            #"Multiple Peak Detection": "Detects multiple spontaneous peaks throughout the signal using adaptive validation windows. Useful for analyzing spontaneous activity patterns.",
+            "Single Peak Detection": "Detects peaks throughout the signal using a simple thresholding algorithm. Useful for analyzing stimulation activity patterns.",
+            "Multiple Peak Detection": "Detects multiple peaks throughout the signal using adaptive validation windows. Useful for analyzing spontaneous activity patterns.",
         }
 
         for name, default_checked in self.processor_options:
-            if name == "Find Amplitude":
-                continue
-
             # Create a vertical layout for each filter option
             filter_layout = QVBoxLayout()
             filter_layout.setSpacing(2)
@@ -159,32 +162,69 @@ class ProcessingOptionsDialog(QDialog):
                 prominence_layout.addWidget(prominence_edit)
 
                 # Rise window
-                rise_layout = QHBoxLayout()
-                rise_label = QLabel("Rise Window (sec):")
-                rise_label.setStyleSheet("font-size: 11px; color: #555; margin-left: 16px;")
-                rise_edit = QLineEdit("3.0")
-                rise_layout.addWidget(rise_label)
-                rise_layout.addWidget(rise_edit)
+                min_rise_layout = QHBoxLayout()
+                min_rise_label = QLabel("Min Rise Window (sec):")
+                min_rise_label.setStyleSheet("font-size: 11px; color: #555; margin-left: 16px;")
+                min_rise_edit = QLineEdit("0.2")
+                min_rise_layout.addWidget(min_rise_label)
+                min_rise_layout.addWidget(min_rise_edit)
+
+                max_rise_layout = QHBoxLayout()
+                max_rise_label = QLabel("Min Rise Window (sec):")
+                max_rise_label.setStyleSheet("font-size: 11px; color: #555; margin-left: 16px;")
+                max_rise_edit = QLineEdit("3.0")
+                max_rise_layout.addWidget(max_rise_label)
+                max_rise_layout.addWidget(max_rise_edit)
 
                 # Decay window
-                decay_layout = QHBoxLayout()
-                decay_label = QLabel("Decay Window (sec):")
-                decay_label.setStyleSheet("font-size: 11px; color: #555; margin-left: 16px;")
-                decay_edit = QLineEdit("10.0")
-                decay_layout.addWidget(decay_label)
-                decay_layout.addWidget(decay_edit)
+                min_decay_layout = QHBoxLayout()
+                min_decay_label = QLabel("Min Decay Window (sec):")
+                min_decay_label.setStyleSheet("font-size: 11px; color: #555; margin-left: 16px;")
+                min_decay_edit = QLineEdit("5.0")
+                min_decay_layout.addWidget(min_decay_label)
+                min_decay_layout.addWidget(min_decay_edit)
+
+                max_decay_layout = QHBoxLayout()
+                max_decay_label = QLabel("Max Decay Window (sec):")
+                max_decay_label.setStyleSheet("font-size: 11px; color: #555; margin-left: 16px;")
+                max_decay_edit = QLineEdit("20.0")
+                max_decay_layout.addWidget(max_decay_label)
+                max_decay_layout.addWidget(max_decay_edit)
+
+                cv_peak_layout = QHBoxLayout()
+                cv_peak_label = QLabel("CV Peak:")
+                cv_peak_label.setStyleSheet("font-size: 11px; color: #555; margin-left: 16px;")
+                cv_peak_edit = QLineEdit("0.6")
+                cv_peak_layout.addWidget(cv_peak_label)
+                cv_peak_layout.addWidget(cv_peak_edit)
+
+                peak_height_threshold_layout = QHBoxLayout()
+                peak_height_threshold_label = QLabel("Peak Height Threshold:")
+                peak_height_threshold_label.setStyleSheet("font-size: 11px; color: #555; margin-left: 16px;")
+                peak_height_threshold_edit = QLineEdit("0.2")
+                peak_height_threshold_layout.addWidget(peak_height_threshold_label)
+                peak_height_threshold_layout.addWidget(peak_height_threshold_edit)
+
 
                 if "Multiple Peak Detection" in saved_params:
                     params = saved_params["Multiple Peak Detection"]
                     max_peaks_edit.setText(str(params.get("max_peaks", "10")))
                     prominence_edit.setText(str(params.get("min_prominence", "0.5")))
-                    rise_edit.setText(str(params.get("rise_window_sec", "3.0")))
-                    decay_edit.setText(str(params.get("decay_window_sec", "10.0")))
+                    min_rise_edit.setText(str(params.get("min_rise_window_sec", "0.2")))
+                    max_rise_edit.setText(str(params.get("max_rise_window_sec", "3.0")))
+                    min_decay_edit.setText(str(params.get("min_decay_window_sec", "5.0")))
+                    max_decay_edit.setText(str(params.get("max_decay_window_sec", "20.0")))
+                    cv_peak_edit.setText(str(params.get("cv_peak", "0.6")))
+                    peak_height_threshold_edit.setText(str(params.get("peak_height_threshold", "0.2")))
 
                 mpd_layout.addLayout(max_peaks_layout)
                 mpd_layout.addLayout(prominence_layout)
-                mpd_layout.addLayout(rise_layout)
-                mpd_layout.addLayout(decay_layout)
+                mpd_layout.addLayout(min_rise_layout)
+                mpd_layout.addLayout(max_rise_layout)
+                mpd_layout.addLayout(min_decay_layout)
+                mpd_layout.addLayout(max_decay_layout)
+                mpd_layout.addLayout(cv_peak_layout)
+                mpd_layout.addLayout(peak_height_threshold_layout)
 
                 mpd_container = QWidget()
                 mpd_container.setLayout(mpd_layout)
@@ -194,8 +234,12 @@ class ProcessingOptionsDialog(QDialog):
                 self.param_widgets[name] = {
                     "max_peaks": max_peaks_edit,
                     "min_prominence": prominence_edit,
-                    "rise_window_sec": rise_edit,
-                    "decay_window_sec": decay_edit
+                    "min_rise_window_sec": min_rise_edit,
+                    "max_rise_window_sec": max_rise_edit,
+                    "min_decay_window_sec": min_decay_edit,
+                    "max_decay_window_sec": max_decay_edit,
+                    "peak_height_threshold": peak_height_threshold_edit,
+                    "cv_peak": cv_peak_edit,
                 }
 
             # For "Invert Data", no parameters, just a checkbox
@@ -264,6 +308,7 @@ class ProcessingOptionsDialog(QDialog):
 
         # Wire Multiple Peak Detection -> Single Peak Detection button state
         mpd_cb = self.checkboxes.get("Multiple Peak Detection")
+
         if mpd_cb is not None:
             def sync_single_peak_detection(checked: bool):
                 # When MPD is on, Single Peak Detection shows OFF; otherwise ON
@@ -333,33 +378,35 @@ class ProcessingOptionsDialog(QDialog):
             return Normalize(peak_position)
         elif name == "Invert Data":
             return InvertData()
-        elif name == "Find Amplitude":
-            # Check file type to determine which amplitude finder to use
-            settings = QSettings("HashemiLab", "NeuroStemVolt")
-            file_type = settings.value("file_type", "None", type=str)
-
-            if file_type == "Spontaneous":
-                return FindAmplitudeMultiple(peak_position)
-            else:
-                return FindAmplitude(peak_position)
+        elif name == "Single Peak Detection":
+            return FindAmplitude(peak_position)
         elif name == "Multiple Peak Detection":
             params = self.param_widgets[name]
             try:
                 max_peaks = int(params["max_peaks"].text())
                 min_prominence = float(params["min_prominence"].text())
-                rise_window_sec = float(params["rise_window_sec"].text())
-                decay_window_sec = float(params["decay_window_sec"].text())
+                min_rise_window_sec = float(params["min_rise_window_sec"].text())
+                min_rise_window_sec = float(params["min_rise_window_sec"].text())
+                min_decay_window_sec = float(params["min_decay_window_sec"].text())
+                max_decay_window_sec = float(params["max_decay_window_sec"].text())
+                cv_peak = float(params["cv_peak"].text())
+                peak_height_threshold = float(params["peak_height_threshold"].text())
+
             except ValueError:
                 max_peaks = 10
                 min_prominence = 0.5
                 rise_window_sec = 3.0
                 decay_window_sec = 10.0
+                cv_peak = 0.6
             return FindAmplitudeMultiple(
                 peak_position=peak_position,
                 max_peaks=max_peaks,
                 min_prominence=min_prominence,
-                rise_window_sec=rise_window_sec,
-                decay_window_sec=decay_window_sec
+                min_rise_window_sec=min_rise_window_sec,
+                min_decay_window_sec=min_decay_window_sec,
+                max_decay_window_sec=max_decay_window_sec,
+                cv_peak=cv_peak,
+                peak_height_threshold=peak_height_threshold,
             )
         elif name == "Exponential Fitting":
             return ExponentialFitting()
@@ -391,8 +438,12 @@ class ProcessingOptionsDialog(QDialog):
                 out[name] = {
                     "max_peaks": widget["max_peaks"].text(),
                     "min_prominence": widget["min_prominence"].text(),
-                    "rise_window_sec": widget["rise_window_sec"].text(),
-                    "decay_window_sec": widget["decay_window_sec"].text()
+                    "min_rise_window_sec": widget["min_rise_window_sec"].text(),
+                    "max_rise_window_sec": widget["max_rise_window_sec"].text(),
+                    "min_decay_window_sec": widget["min_decay_window_sec"].text(),
+                    "max_decay_window_sec": widget["max_decay_window_sec"].text(),
+                    "cv_peak": widget["cv_peak"].text(),
+                    "peak_height_threshold": widget["peak_height_threshold"].text(),
                 }
             elif isinstance(widget, tuple):
                 # multiple-lineEdits
