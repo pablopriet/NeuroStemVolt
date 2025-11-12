@@ -1,5 +1,5 @@
 from PyQt5.QtGui import QIcon, QPixmap
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, QSettings
 from PyQt5.QtWidgets import QSplashScreen, QApplication, QWizard
 import sys
 import os
@@ -151,7 +151,7 @@ def main():
     timer.timeout.connect(show_wizard)
     timer.setSingleShot(True)
     timer.start(3000)
-    
+
     # Start the application
     sys.exit(app.exec_())
 

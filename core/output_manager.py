@@ -683,6 +683,23 @@ class OutputManager:
         group_analysis.plot_tau_over_time(save_path=save_path)
 
     @staticmethod
+    def save_plot_frequency_over_time(group_analysis, output_path):
+        """
+        Save the plot of decay constant (tau) over all replicate time points.
+
+        Args:
+            group_analysis: GroupAnalysis object.
+            output_path (str): Output directory for the plot.
+
+        Returns:
+            None
+        """
+        output_folder = os.path.join(output_path, "plots")
+        os.makedirs(output_folder, exist_ok=True)
+        save_path = os.path.join(output_folder, "plot_frequency_over_time.png")
+        group_analysis.plot_frequency_over_time(save_path=save_path)
+
+    @staticmethod
     def save_plot_exponential_fit_aligned(group_analysis, output_path, replicated_time_point=0):
         """
         Save exponential decay fit plot for a specific time point across replicates.
