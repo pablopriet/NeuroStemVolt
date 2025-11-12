@@ -29,41 +29,64 @@ class ResultsPage(QWizardPage):
     """
     def __init__(self, parent=None):
         super().__init__(parent)
+        file_type = QSettings("HashemiLab", "NeuroStemVolt").value("file_type", "None", type=str)
 
         # analysis buttons
-        btn_avg    = QPushButton("Mean Amplitude Over Experiments");      apply_custom_styles(btn_avg)
-        btn_fit    = QPushButton("Decay Exponential Fitting");     apply_custom_styles(btn_fit)
-        btn_param  = QPushButton("Tau Over Time");                 apply_custom_styles(btn_param)
-        btn_amp    = QPushButton("Individual Amplitudes Over Time");          apply_custom_styles(btn_amp)
-
-        # grid of analysis buttons
         analysis = QGridLayout()
-        analysis.addWidget(btn_avg,    0, 0)
-        analysis.addWidget(btn_fit,    1, 1)
-        analysis.addWidget(btn_param,  1, 0)
-        analysis.addWidget(btn_amp,    0, 1)
+        btn_freq = None
+        if file_type == "Spontaneous":
+            btn_avg = QPushButton("Mean Amplitude Over Experiments"); apply_custom_styles(btn_avg)
+            btn_freq = QPushButton("Frequency Over Time"); apply_custom_styles(btn_freq)
+            btn_amp   = QPushButton("Individual Amplitudes Over Time"); apply_custom_styles(btn_amp)
+
+            analysis.addWidget(btn_avg, 0, 0)
+            analysis.addWidget(btn_amp, 2, 0)
+            analysis.addWidget(btn_freq, 0, 1)
+
+
+            # Start analysis_buttons list with only the allowed analysis actions; save/export appended later
+            self.analysis_buttons = [btn_avg, btn_amp, btn_freq]
+        else:
+            btn_avg   = QPushButton("Mean Amplitude Over Experiments"); apply_custom_styles(btn_avg)
+            btn_fit   = QPushButton("Decay Exponential Fitting");     apply_custom_styles(btn_fit)
+            btn_param = QPushButton("Tau Over Time");                 apply_custom_styles(btn_param)
+            btn_amp   = QPushButton("Individual Amplitudes Over Time"); apply_custom_styles(btn_amp)
+
+            analysis.addWidget(btn_avg,   0, 0)
+            analysis.addWidget(btn_amp,   0, 1)
+            analysis.addWidget(btn_param, 1, 0)
+            analysis.addWidget(btn_fit,   1, 1)
+
+            self.analysis_buttons = [btn_avg, btn_fit, btn_param, btn_amp]
+
+        # connect buttons to show-and-plot
+        if file_type == "Spontaneous":
+            btn_avg.clicked.connect(lambda _, f=lambda: self.result_plot.show_average_over_experiments(self.wizard().group_analysis): self._reveal_and_call(f))
+            btn_amp.clicked.connect(lambda _, f=lambda: self.result_plot.show_amplitudes_over_time(self.wizard().group_analysis): self._reveal_and_call(f))
+            btn_freq.clicked.connect(lambda: self._reveal_and_call(
+                lambda: self.result_plot.show_frequency_over_time(self.wizard().group_analysis)
+            ))
+        else:
+            for btn, fn in (
+                (btn_avg,   lambda: self.result_plot.show_average_over_experiments(self.wizard().group_analysis)),
+                (btn_fit,   self.handle_decay_fit),
+                (btn_param, lambda: self.result_plot.show_tau_param_over_time(self.wizard().group_analysis)),
+                (btn_amp,   lambda: self.result_plot.show_amplitudes_over_time(self.wizard().group_analysis)),
+            ):
+                btn.clicked.connect(lambda _, f=fn: self._reveal_and_call(f))
 
         # save/export buttons
         btn_save     = QPushButton("Save Current Plot");          apply_custom_styles(btn_save)
         btn_save_all = QPushButton("Save All Plots");             apply_custom_styles(btn_save_all)
         btn_export   = QPushButton("Export metrics as csv");      apply_custom_styles(btn_export)
 
-        self.analysis_buttons = [btn_avg, btn_fit, btn_param, btn_amp, btn_save, btn_save_all, btn_export]
+        self.analysis_buttons += [btn_save, btn_save_all, btn_export]
 
         # placeholder & plotCanvas
         self.placeholder = QLabel("Select an analysis option to show plot")
         self.placeholder.setAlignment(Qt.AlignCenter)
         self.result_plot = PlotCanvas(self, width=5, height=4)
         self.result_plot.hide()  # start hidden
-
-        # connect buttons to show‐and‐plot
-        for btn, fn in (
-            (btn_avg,   lambda: self.result_plot.show_average_over_experiments(self.wizard().group_analysis)),
-            (btn_fit,   self.handle_decay_fit),
-            (btn_param, lambda: self.result_plot.show_tau_param_over_time(self.wizard().group_analysis)),
-            (btn_amp,   lambda: self.result_plot.show_amplitudes_over_time(self.wizard().group_analysis)),
-        ):
-            btn.clicked.connect(lambda _, f=fn: self._reveal_and_call(f))
 
         btn_save.clicked.connect(self.save_current_plot)
         btn_save_all.clicked.connect(self.save_all_plots)
@@ -136,18 +159,20 @@ class ResultsPage(QWizardPage):
 
         try:
             ga = self.wizard().group_analysis
-            OutputManager.save_all_ITs(ga, output_folder)
-            OutputManager.save_all_peak_amplitudes(ga, output_folder)
-            OutputManager.save_all_reuptake_curves(ga, output_folder)
-            OutputManager.save_all_exponential_fitting_params(ga, output_folder)
-            OutputManager.save_all_AUC(ga, output_folder)
-            OutputManager.save_mean_ITs(ga, output_folder)
-
             # Export spontaneous peak metrics if applicable
             settings = QSettings("HashemiLab", "NeuroStemVolt")
             file_type = settings.value("file_type", "None", type=str)
             if file_type == "Spontaneous":
                 OutputManager.save_spontaneous_peak_metrics(ga, output_folder)
+            else:
+                OutputManager.save_all_peak_amplitudes(ga, output_folder)
+                OutputManager.save_all_reuptake_curves(ga, output_folder)
+                OutputManager.save_all_exponential_fitting_params(ga, output_folder)
+                OutputManager.save_all_AUC(ga, output_folder)
+            OutputManager.save_all_ITs(ga, output_folder)
+            OutputManager.save_mean_ITs(ga, output_folder)
+
+
         except Exception as e:
             QMessageBox.critical(
                 self, "Export Failed",
@@ -191,12 +216,14 @@ class ResultsPage(QWizardPage):
 
         Displays a progress dialog during export and handles exceptions.
         """
-        output_folder = QSettings("HashemiLab", "NeuroStemVolt").value("output_folder")
+        settings = (QSettings("HashemiLab", "NeuroStemVolt"))
+        output_folder = settings.value("output_folder")
+        file_type = settings.value("file_type", "None", type=str)
         group_analysis = self.wizard().group_analysis
         if not output_folder or not os.path.isdir(output_folder):
             QMessageBox.warning(self, "No Output Folder", "Please set a valid output folder in Experiment Settings.")
             return
-        
+
         # create & show the indeterminate progress dialog
         progress = QProgressDialog("Exporting plots...", None, 0, 0, self)
         progress.setWindowModality(Qt.WindowModal)
@@ -209,10 +236,14 @@ class ResultsPage(QWizardPage):
         try:
             # Save all group-level plots using OutputManager
             OutputManager.save_mean_ITs_plot(group_analysis, output_folder)
-            OutputManager.save_plot_tau_over_time(group_analysis, output_folder)
-            OutputManager.save_plot_exponential_fit_aligned(group_analysis, output_folder)
             OutputManager.save_plot_all_amplitudes_over_time(group_analysis, output_folder)
             OutputManager.save_plot_mean_amplitudes_over_time(group_analysis, output_folder)
+
+            if not file_type == "Spontaneous":
+                OutputManager.save_plot_tau_over_time(group_analysis, output_folder)
+                OutputManager.save_plot_exponential_fit_aligned(group_analysis, output_folder)
+            else:
+                OutputManager.save_plot_frequency_over_time(group_analysis, output_folder)
             # Add more OutputManager plot saves as needed
         except Exception as e:
             QMessageBox.critical(
@@ -226,7 +257,7 @@ class ResultsPage(QWizardPage):
             )
         finally:
             progress.hide()
-    
+
     def initializePage(self):
         """
         Called when the page is first displayed.
@@ -273,6 +304,28 @@ class ResultsPage(QWizardPage):
             idx = dlg.get_selected_index()
             self.result_plot.show_decay_exponential_fitting(group_analysis, replicate_time_point=idx)
 
-
-
-
+    def handle_amplitude_single_file(self):
+        """
+        Prompts the user to select a timepoint (file) and displays the amplitude analysis
+        for that single file using the group analysis results.
+        """
+        group_analysis = self.wizard().group_analysis
+        experiments = group_analysis.get_experiments()
+        if not experiments:
+            return
+        # Use the first experiment to get the list of files (timepoints)
+        exp = experiments[0]
+        file_names = [os.path.basename(exp.get_spheroid_file(i).get_filepath()) for i in range(exp.get_file_count())]
+        dlg = TimepointSelectionDialog(file_names, self)
+        if dlg.exec_() == QDialog.Accepted:
+            idx = dlg.get_selected_index()
+            # Try a dedicated plotting method if available; otherwise, fall back or warn
+            try:
+                plotter = getattr(self.result_plot, 'show_amplitude_for_single_file')
+                plotter(group_analysis, replicate_time_point=idx)
+            except AttributeError:
+                # Fallback: if no dedicated method exists, try reusing amplitudes-over-time and focus a single trace
+                try:
+                    self.result_plot.show_amplitudes_for_timepoint(group_analysis, replicate_time_point=idx)
+                except AttributeError:
+                    QMessageBox.warning(self, "Not Implemented", "Single-file amplitude plot is not implemented in PlotCanvas.")
