@@ -23,23 +23,32 @@ class OutputManager:
         n_experiments = len(group_experiments.get_experiments())
         if n_experiments == 0:
             return None
-        # Initialise the matrix 
+
         for i, experiment in enumerate(group_experiments.get_experiments()):
             it_matrix = []
             file_names = []
+            # collect ITs and file names
             for j, spheroid_file in enumerate(experiment.files):
                 IT_individual = spheroid_file.get_processed_data_IT()
-                it_matrix.append(IT_individual)
+                if IT_individual is None:
+                    IT_individual = np.array([], dtype=float)
+                it_matrix.append(np.asarray(IT_individual, dtype=float))
                 file_name = spheroid_file.get_filepath()
                 file_names.append(file_name)
+            # determine max length and pad with zeros
+            if len(it_matrix) == 0:
+                continue
+            max_len = max(arr.size for arr in it_matrix)
+            try:
+                it_matrix_padded = [np.pad(arr, (0, max_len - arr.size), mode='edge') for arr in it_matrix]
+            except Exception:
+                it_matrix_padded = [np.pad(arr, (0, max_len - arr.size), mode='constant', constant_values=0.0) for arr in it_matrix]
             # Transpose so each column is a file
-            df = pd.DataFrame(it_matrix).T
-            df.columns = [f"File_{i}" for i in range(len(file_names))]
-            df.columns = [file_name.split("/")[-1] for file_name in file_names]
+            df = pd.DataFrame(it_matrix_padded).T
+            df.columns = [os.path.basename(f) for f in file_names]
             output_csv = "All_ITs_experiment_n{0}.csv".format(i)
             output_IT_folder = os.path.join(output_folder_path,"replicate_ITs")
-            if os.path.isdir(output_IT_folder) == False:
-                os.mkdir(output_IT_folder)
+            os.makedirs(output_IT_folder, exist_ok=True)
             output_path = os.path.join(output_IT_folder, output_csv)
             df.to_csv(output_path, index_label="TimePoint")
 
@@ -58,37 +67,41 @@ class OutputManager:
         # This function takes all experiments (after processing) 
         # and creates output_csv files for all of them
         experiments = group_experiments.get_experiments()
-        n_experiments = len(group_experiments.get_experiments())
-        n_ITs = group_experiments.get_experiments()[0].get_file_count()
-        n_timepoints = group_experiments.get_experiments()[0].get_file_time_points()
-        if n_experiments == 0:
+        if not experiments:
             return None
-        # Initialise the matrix
+
+        # Build list of columns (replicate, file) and collect all IT arrays
         arrays = []
-        data = []
-        # For each experiment (replicate)
+        it_series = []
         for exp_idx, experiment in enumerate(experiments):
             rep_name = f"Rep{exp_idx+1}"
             for file_idx, spheroid_file in enumerate(experiment.files):
                 file_short = os.path.basename(spheroid_file.get_filepath())
-                arrays.append((rep_name, file_short))    
-                
-        for t in range(n_timepoints):
-            row = []
-            for exp_idx, experiment in enumerate(experiments):
-                for file_idx, spheroid_file in enumerate(experiment.files):
-                    IT_individual = spheroid_file.get_processed_data_IT()
-                    if t < len(IT_individual):
-                        row.append(IT_individual[t])
-                    else:
-                        row.append(None)
-            data.append(row)
+                arrays.append((rep_name, file_short))
+                IT_individual = spheroid_file.get_processed_data_IT()
+                if IT_individual is None:
+                    IT_individual = np.array([], dtype=float)
+                it_series.append(np.asarray(IT_individual, dtype=float))
 
-        # Create time axis in seconds
-        acq_freq = group_experiments.get_single_experiments(0).get_acquisition_frequency()
-        time_seconds = np.arange(n_timepoints) / acq_freq
+        if len(it_series) == 0:
+            return None
 
-        # Create MultiIndex columns
+        # Determine max length across all ITs and pad with zeros
+        max_len = max(arr.size for arr in it_series)
+        try:
+            padded_series = [np.pad(arr, (0, max_len - arr.size), mode='edge') for arr in it_series]
+        except Exception:
+            padded_series = [np.pad(arr, (0, max_len - arr.size), mode='constant', constant_values=0.0) for arr in it_series]
+        data = np.column_stack(padded_series)
+
+        # Create time axis in seconds (use acquisition freq from first experiment if available)
+        try:
+            acq_freq = experiments[0].get_acquisition_frequency()
+            time_seconds = np.arange(max_len) / acq_freq
+        except Exception:
+            time_seconds = np.arange(max_len)
+
+        # Create MultiIndex columns and DataFrame
         columns = pd.MultiIndex.from_tuples(arrays, names=["Replicate", "File"])
         df = pd.DataFrame(data, columns=columns)
         df.index = time_seconds
@@ -101,16 +114,16 @@ class OutputManager:
         df.to_csv(output_path)
         print(f"Saved all ITs for all replicates to {output_path}")
 
-        df_paired = df.swaplevel("Replicate","File", axis=1)   \
-                      .sort_index(axis=1)                    
-
-        paired_folder = os.path.join(output_folder_path,
-                                     "all_replicates_ITs_paired")
-        os.makedirs(paired_folder, exist_ok=True)
-        paired_path = os.path.join(paired_folder,
-                                   "All_ITs_all_replicates_paired_by_file.csv")
-        df_paired.to_csv(paired_path)
-        print(f"Saved paired ITs (same file side-by-side) to {paired_path}")
+        # paired view
+        try:
+            df_paired = df.swaplevel("Replicate","File", axis=1).sort_index(axis=1)
+            paired_folder = os.path.join(output_folder_path, "all_replicates_ITs_paired")
+            os.makedirs(paired_folder, exist_ok=True)
+            paired_path = os.path.join(paired_folder, "All_ITs_all_replicates_paired_by_file.csv")
+            df_paired.to_csv(paired_path)
+            print(f"Saved paired ITs (same file side-by-side) to {paired_path}")
+        except Exception:
+            pass
         
     @staticmethod
     def save_original_ITs(group_experiments : GroupAnalysis, output_folder_path):
@@ -334,48 +347,97 @@ class OutputManager:
         keys = ['peak_amplitude_values', 'peak_amplitude_positions']
 
         experiments = group_experiments.get_experiments()
-        acq_freq = experiments[0].get_acquisition_frequency()
-        n_experiments = len(experiments)
-        n_files = experiments[0].get_file_count()
-        n_before = experiments[0].get_number_of_files_before_treatment()
-        interval = experiments[0].get_time_between_files()  # e.g., 10
-
-        if n_experiments == 0:
+        if not experiments:
+            print("No experiments available to export peak amplitudes.")
             return None
-        # Initialise the time axis (first column)
+
+        n_experiments = len(experiments)
+        # determine maximum number of files across experiments
+        max_files = max(getattr(exp, 'get_file_count', lambda: len(getattr(exp, 'files', [])))() for exp in experiments)
+
+        # timing parameters (use first experiment defaults if present)
+        try:
+            n_before = experiments[0].get_number_of_files_before_treatment()
+            interval = experiments[0].get_time_between_files()
+        except Exception:
+            n_before = 0
+            interval = 0
+
+        # build time axis using max_files
         if n_before > 0:
-            time_points = [interval * (i - n_before) for i in range(n_files)]
+            time_points = [interval * (i - n_before) for i in range(max_files)]
         else:
-            time_points = [i * interval for i in range(n_files)]
+            time_points = [i * interval for i in range(max_files)]
 
-        all_amplitudes = []
-        all_amplitude_pos = []
-        for i, experiment in enumerate(group_experiments.get_experiments()):
-            records_amp = []
-            records_pos = []
-            for j, spheroid_file in enumerate(experiment.files):
-                meta = spheroid_file.get_metadata()
-                # Save only selected keys
-                records_amp.append(meta.get(keys[0], None) if keys else meta)
-                records_pos.append(meta.get(keys[1], None) if keys else meta)
-            all_amplitudes.append(records_amp)
-            all_amplitude_pos.append(records_pos)
-        
-        # Build DataFrame
-        df_amp = pd.DataFrame(all_amplitudes).T  # shape: (n_files, n_experiments)
-        df_pos = pd.DataFrame(all_amplitude_pos).T / acq_freq
+        # prepare DataFrames indexed by file index, columns per replicate
+        rep_cols = [f"Rep{idx+1}" for idx in range(n_experiments)]
+        df_amp = pd.DataFrame(index=range(max_files), columns=rep_cols, dtype=float)
+        df_pos = pd.DataFrame(index=range(max_files), columns=rep_cols, dtype=float)
 
-        df_amp.columns = [f"Rep{idx+1}" for idx in range(n_experiments)]
-        df_pos.columns = [f"Rep{idx+1}" for idx in range(n_experiments)]
+        # fill with NaN by default (already NaN)
+        for exp_idx, exp in enumerate(experiments):
+            col = f"Rep{exp_idx+1}"
+            try:
+                file_count = exp.get_file_count()
+            except Exception:
+                file_count = len(getattr(exp, "files", []))
+            for file_idx in range(file_count):
+                try:
+                    sf = exp.get_spheroid_file(file_idx)
+                except Exception:
+                    continue
+                try:
+                    meta = sf.get_metadata() or {}
+                except Exception:
+                    meta = {}
 
-        df = pd.concat({'Amplitude': df_amp, 'Position (s)': df_pos}, axis=1)
-        df.insert(0, "Time", time_points)
+                # amplitude
+                amp_raw = meta.get('peak_amplitude_values', None)
+                amp_val = None
+                if amp_raw is not None:
+                    try:
+                        arr = np.asarray(amp_raw)
+                        if arr.size == 0:
+                            amp_val = np.nan
+                        else:
+                            amp_val = float(arr.ravel()[0])
+                    except Exception:
+                        try:
+                            amp_val = float(amp_raw)
+                        except Exception:
+                            amp_val = np.nan
+                # position (convert to seconds if numeric)
+                pos_raw = meta.get('peak_amplitude_positions', None)
+                pos_val = None
+                if pos_raw is not None:
+                    try:
+                        parr = np.asarray(pos_raw)
+                        if parr.size == 0:
+                            pos_val = np.nan
+                        else:
+                            pos_val = float(parr.ravel()[0]) / (experiments[0].get_acquisition_frequency() or 1.0)
+                    except Exception:
+                        try:
+                            pos_val = float(pos_raw) / (experiments[0].get_acquisition_frequency() or 1.0)
+                        except Exception:
+                            pos_val = np.nan
 
-        # Save to CSV
+                # assign into DataFrames (leave NaN if missing)
+                if amp_val is not None:
+                    df_amp.at[file_idx, col] = amp_val
+                if pos_val is not None:
+                    df_pos.at[file_idx, col] = pos_val
+
+        # combine amplitude and position into a single multi-column DataFrame
+        combined = pd.concat({'Amplitude': df_amp, 'Position (s)': df_pos}, axis=1)
+        # insert Time column
+        combined.insert(0, "Time", time_points[:combined.shape[0]])
+
+        # save
         output_folder = os.path.join(output_folder_path, "all_replicates_amplitudes")
         os.makedirs(output_folder, exist_ok=True)
         output_path = os.path.join(output_folder, "All_amplitudes_all_replicates.csv")
-        df.to_csv(output_path, index=False)
+        combined.to_csv(output_path, index=False)
         print(f"Saved all amplitudes for all replicates to {output_path}")
 
     def save_all_AUC(group_experiments:GroupAnalysis, output_folder_path):
@@ -839,7 +901,10 @@ class OutputManager:
                 it_matrix.append(IT_individual)
             # Pad to same length if needed
             max_len = max(len(it) for it in it_matrix)
-            it_matrix_padded = [np.pad(it, (0, max_len - len(it)), constant_values=np.nan) for it in it_matrix]
+            try:
+                it_matrix_padded = [np.pad(it, (0, max_len - len(it)), mode='edge') for it in it_matrix]
+            except Exception:
+                it_matrix_padded = [np.pad(it, (0, max_len - len(it)), mode='constant', constant_values=np.nan) for it in it_matrix]
             # Average across experiments (axis=0)
             mean_IT = np.nanmean(it_matrix_padded, axis=0)
             mean_ITs.append(mean_IT)
@@ -893,10 +958,16 @@ class OutputManager:
             # Pad matrices to the same shape if needed
             shapes = [m.shape for m in matrices]
             max_shape = (max(s[0] for s in shapes), max(s[1] for s in shapes))
-            matrices_padded = [
-                np.pad(m, ((0, max_shape[0] - m.shape[0]), (0, max_shape[1] - m.shape[1])), constant_values=np.nan)
-                for m in matrices
-            ]
+            try:
+                matrices_padded = [
+                    np.pad(m, ((0, max_shape[0] - m.shape[0]), (0, max_shape[1] - m.shape[1])), mode='edge')
+                    for m in matrices
+                ]
+            except Exception:
+                matrices_padded = [
+                    np.pad(m, ((0, max_shape[0] - m.shape[0]), (0, max_shape[1] - m.shape[1])), mode='constant', constant_values=np.nan)
+                    for m in matrices
+                ]
             # Compute mean matrix
             mean_matrix = np.nanmean(matrices_padded, axis=0).T
             # Save to CSV
