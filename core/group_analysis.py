@@ -3,6 +3,7 @@ from core.processing.exponentialdecay import exp_decay
 from core.processing.normalize import Normalize
 import os
 import numpy as np
+import warnings
 
 class GroupAnalysis:
     """
@@ -84,6 +85,27 @@ class GroupAnalysis:
         for exp in self.experiments:
             exp.set_processing_steps(processors)
 
+    def _pad_to_length(self, arr, target_len, fill_value=0.0):
+        """
+        Ensure 1D array `arr` has length `target_len` by padding at the end.
+        Use 'edge' padding (repeat last value). If array is empty, fill with fill_value.
+        Returns a numpy 1D array of length `target_len`.
+        """
+        a = np.asarray(arr, dtype=float).flatten()
+        if a.size == target_len:
+            return a
+        if a.size == 0:
+            return np.full(target_len, fill_value, dtype=float)
+        if a.size < target_len:
+            pad_width = target_len - a.size
+            try:
+                return np.pad(a, (0, pad_width), mode='edge')
+            except Exception:
+                # fallback to constant if edge padding fails for some reason
+                return np.pad(a, (0, pad_width), mode='constant', constant_values=fill_value)
+        # If longer, truncate (keeps behavior predictable)
+        return a[:target_len]
+
     def non_normalized_first_ITs(self):
         """Get unprocessed first I-T signals from each replicate.
 
@@ -106,7 +128,8 @@ class GroupAnalysis:
         for i, experiment in enumerate(self.experiments):
             first_file = experiment.get_spheroid_file(0)
             IT_individual = first_file.get_original_data_IT()
-            ITs[i, :] = IT_individual
+            IT_individual_padded = self._pad_to_length(IT_individual, n_timepoints, fill_value=0.0)
+            ITs[i, :] = IT_individual_padded
         
         return ITs
     
@@ -131,9 +154,12 @@ class GroupAnalysis:
             for j, spheroid_file in enumerate(experiment.files):
                 spheroid_file = experiment.get_spheroid_file(j)
                 IT_individual = spheroid_file.get_processed_data_IT()
+                # pad/truncate so broadcasting never fails
+                IT_individual_padded = self._pad_to_length(IT_individual, n_timepoints, fill_value=0.0)
                 metadata = spheroid_file.get_metadata()
-                peak_amplitude_positions.append((metadata["peak_amplitude_positions"]))
-                all_ITs[i*file_count+j, :] = IT_individual
+                peak_amplitude_positions.append((metadata.get("peak_amplitude_positions", 0)))
+                
+                all_ITs[i*file_count+j, :] = IT_individual_padded
 
         # Turning peak_amplitude_positions into a list of integers
         # Turning peak_amplitude_positions into a list of integers
@@ -175,9 +201,9 @@ class GroupAnalysis:
         # Then do the average over the replicates
         for i, experiment in enumerate(self.experiments):
             for j, spheroid_file in enumerate(experiment.files):
-                #print(spheroid_file.get_filepath())
                 IT_individual = spheroid_file.get_processed_data_IT()
-                all_ITs[j, :, i] = IT_individual
+                IT_individual_padded = self._pad_to_length(IT_individual, n_timepoints, fill_value=0.0)
+                all_ITs[j, :, i] = IT_individual_padded
         # Average over the third dimension (replicates)
         mean_ITs = np.nanmean(all_ITs, axis=2)
         print(np.shape(mean_ITs))
@@ -487,14 +513,13 @@ class GroupAnalysis:
         for i, experiment in enumerate(self.experiments):
             file = experiment.get_spheroid_file(actual_index)
             IT_individual = file.get_processed_data_IT()
-            if IT_individual.shape[0] != n_timepoints:
-                raise ValueError(
-                    f"Replicate {i+1} has {IT_individual.shape[0]} time points, expected {n_timepoints}.\n"
-                    "All replicates must have the same number of time points."
-                )
+            # pad/truncate instead of raising on mismatch
+            IT_individual_padded = self._pad_to_length(IT_individual, n_timepoints, fill_value=0.0)
+            if IT_individual_padded.shape[0] != n_timepoints:
+                warnings.warn(f"Replicate {i+1} IT length adjusted to {n_timepoints}")
             metadata = file.get_metadata()
-            peak_amplitude_positions.append((metadata["peak_amplitude_positions"]))
-            all_ITs[i, :] = IT_individual
+            peak_amplitude_positions.append((metadata.get("peak_amplitude_positions", 0)))
+            all_ITs[i, :] = IT_individual_padded
 
         # Turning peak_amplitude_positions into a list of integers
         try:
@@ -700,10 +725,6 @@ class GroupAnalysis:
 
         A = np.arange(global_peak_amplitude_position, n_timepoints)
         time_all = np.tile(A, n_experiments)  # Repeat time point
-
-        #print("Len ITs Flattened:", len(ITs_flattened))
-        #print("ITs_Flattened", np.shape(ITs_flattened))
-        #print("Time All", np.shape(time_all))
 
         # Improved initial guess for parameters
         # A: amplitude (difference between max and min of cropped ITs)
