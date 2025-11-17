@@ -17,3 +17,7 @@ DEFAULT_STIMULATION_AMPLITUDE = 0.5  # Volts
 DEFAULT_STIMULATION_PULSES = 50  # Number of pulses
 # minutes, this means how often are you taking stimulation files for a single spheroid
 DEFAULT_INTERVAL_BETWEEN_FILES = 10
+
+# Waveforms
+WF_5HT = [0.2, [1.0, -0.1], 0.2]
+WF_HA = [-0.5, [-0.7, 1.1], -0.5]
