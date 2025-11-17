@@ -1,4 +1,3 @@
-
 from PyQt5.QtWidgets import (
     QWizardPage, QLabel, QPushButton, QVBoxLayout, QListWidget, QMessageBox, QFileDialog, QShortcut, QDialog
 )
@@ -127,6 +126,29 @@ class IntroPage(QWizardPage):
         # Also clear our own display_names_list
         self.display_names_list = []
         
+        # Clear the persistent file_type and other settings that may interfere
+        settings = QSettings("HashemiLab", "NeuroStemVolt")
+
+        # Remove only the most relevant keys (safer)
+        keys_to_remove = [
+            "file_type",
+            "processing_pipeline",
+            "processing_params",
+            "peak_amplitude_positions",
+            "global_peak_position",
+            "last_opened_folder",
+            "recent_files",
+            "experiment_settings"
+        ]
+        for key in keys_to_remove:
+            if settings.contains(key):
+                settings.remove(key)
+
+        # To completely wipe all settings for this app, uncomment:
+        # settings.clear()
+
+        settings.sync()
+
         # Re-evaluate isComplete
         self.completeChanged.emit()
 

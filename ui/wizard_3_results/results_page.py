@@ -29,76 +29,27 @@ class ResultsPage(QWizardPage):
     """
     def __init__(self, parent=None):
         super().__init__(parent)
-        file_type = QSettings("HashemiLab", "NeuroStemVolt").value("file_type", "None", type=str)
+        # prepare placeholders; actual analysis buttons are built in initializePage
+        self.analysis = QGridLayout()
+        self.analysis_buttons = []
+        self.current_file_type = None  # track to detect changes
 
-        # analysis buttons
-        analysis = QGridLayout()
-        btn_freq = None
-        if file_type == "Spontaneous":
-            btn_avg = QPushButton("Mean Amplitude Over Experiments"); apply_custom_styles(btn_avg)
-            btn_freq = QPushButton("Frequency Over Time"); apply_custom_styles(btn_freq)
-            btn_amp   = QPushButton("Individual Amplitudes Over Time"); apply_custom_styles(btn_amp)
-
-            analysis.addWidget(btn_avg, 0, 0)
-            analysis.addWidget(btn_amp, 2, 0)
-            analysis.addWidget(btn_freq, 0, 1)
-
-
-            # Start analysis_buttons list with only the allowed analysis actions; save/export appended later
-            self.analysis_buttons = [btn_avg, btn_amp, btn_freq]
-        else:
-            btn_avg   = QPushButton("Mean Amplitude Over Experiments"); apply_custom_styles(btn_avg)
-            btn_fit   = QPushButton("Decay Exponential Fitting");     apply_custom_styles(btn_fit)
-            btn_param = QPushButton("Tau Over Time");                 apply_custom_styles(btn_param)
-            btn_amp   = QPushButton("Individual Amplitudes Over Time"); apply_custom_styles(btn_amp)
-
-            analysis.addWidget(btn_avg,   0, 0)
-            analysis.addWidget(btn_amp,   0, 1)
-            analysis.addWidget(btn_param, 1, 0)
-            analysis.addWidget(btn_fit,   1, 1)
-
-            self.analysis_buttons = [btn_avg, btn_fit, btn_param, btn_amp]
-
-        # connect buttons to show-and-plot
-        if file_type == "Spontaneous":
-            btn_avg.clicked.connect(lambda _, f=lambda: self.result_plot.show_average_over_experiments(self.wizard().group_analysis): self._reveal_and_call(f))
-            btn_amp.clicked.connect(lambda _, f=lambda: self.result_plot.show_amplitudes_over_time(self.wizard().group_analysis): self._reveal_and_call(f))
-            btn_freq.clicked.connect(lambda: self._reveal_and_call(
-                lambda: self.result_plot.show_frequency_over_time(self.wizard().group_analysis)
-            ))
-        else:
-            for btn, fn in (
-                (btn_avg,   lambda: self.result_plot.show_average_over_experiments(self.wizard().group_analysis)),
-                (btn_fit,   self.handle_decay_fit),
-                (btn_param, lambda: self.result_plot.show_tau_param_over_time(self.wizard().group_analysis)),
-                (btn_amp,   lambda: self.result_plot.show_amplitudes_over_time(self.wizard().group_analysis)),
-            ):
-                btn.clicked.connect(lambda _, f=fn: self._reveal_and_call(f))
-
-        # save/export buttons
-        btn_save     = QPushButton("Save Current Plot");          apply_custom_styles(btn_save)
-        btn_save_all = QPushButton("Save All Plots");             apply_custom_styles(btn_save_all)
-        btn_export   = QPushButton("Export metrics as csv");      apply_custom_styles(btn_export)
-
-        self.analysis_buttons += [btn_save, btn_save_all, btn_export]
-
-        # placeholder & plotCanvas
+        # create plot canvas now (kept regardless of file_type)
         self.placeholder = QLabel("Select an analysis option to show plot")
         self.placeholder.setAlignment(Qt.AlignCenter)
         self.result_plot = PlotCanvas(self, width=5, height=4)
         self.result_plot.hide()  # start hidden
 
-        btn_save.clicked.connect(self.save_current_plot)
-        btn_save_all.clicked.connect(self.save_all_plots)
-        btn_export.clicked.connect(self.export_all_as_csv)
-
         # layout assembly
         main_layout = QVBoxLayout(self)
 
-        # analysis buttons at top
-        main_layout.addLayout(analysis)
+        # placeholder for analysis controls (will be populated in initializePage)
+        main_layout.addLayout(self.analysis)
 
         # save/export
+        btn_save     = QPushButton("Save Current Plot");          apply_custom_styles(btn_save)
+        btn_save_all = QPushButton("Save All Plots");             apply_custom_styles(btn_save_all)
+        btn_export   = QPushButton("Export metrics as csv");      apply_custom_styles(btn_export)
         main_layout.addWidget(btn_save)
         main_layout.addWidget(btn_save_all)
         main_layout.addWidget(btn_export)
@@ -114,6 +65,53 @@ class ResultsPage(QWizardPage):
         main_layout.addWidget(footer)
 
         self.setLayout(main_layout)
+
+    def _clear_layout(self, layout):
+        while layout.count():
+            item = layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                try:
+                    w.setParent(None)
+                    w.deleteLater()
+                except Exception:
+                    pass
+
+    def _build_analysis_buttons(self, file_type):
+        """
+        Build and wire analysis buttons according to current file_type.
+        """
+        # clear existing
+        self._clear_layout(self.analysis)
+        self.analysis_buttons = []
+
+        if file_type == "Spontaneous":
+            btn_avg = QPushButton("Mean Amplitude Over Experiments"); apply_custom_styles(btn_avg)
+            btn_freq = QPushButton("Frequency Over Time"); apply_custom_styles(btn_freq)
+            btn_amp = QPushButton("Individual Amplitudes Over Time"); apply_custom_styles(btn_amp)
+            self.analysis.addWidget(btn_avg, 0, 0)
+            self.analysis.addWidget(btn_amp, 2, 0)
+            self.analysis.addWidget(btn_freq, 0, 1)
+            # connect
+            btn_avg.clicked.connect(lambda _, f=lambda: self.result_plot.show_average_over_experiments(self.wizard().group_analysis): self._reveal_and_call(f))
+            btn_amp.clicked.connect(lambda _, f=lambda: self.result_plot.show_amplitudes_over_time(self.wizard().group_analysis): self._reveal_and_call(f))
+            btn_freq.clicked.connect(lambda: self._reveal_and_call(lambda: self.result_plot.show_frequency_over_time(self.wizard().group_analysis)))
+            self.analysis_buttons = [btn_avg, btn_amp, btn_freq]
+        else:
+            btn_avg = QPushButton("Mean Amplitude Over Experiments"); apply_custom_styles(btn_avg)
+            btn_fit = QPushButton("Decay Exponential Fitting"); apply_custom_styles(btn_fit)
+            btn_param = QPushButton("Tau Over Time"); apply_custom_styles(btn_param)
+            btn_amp = QPushButton("Individual Amplitudes Over Time"); apply_custom_styles(btn_amp)
+            self.analysis.addWidget(btn_avg, 0, 0)
+            self.analysis.addWidget(btn_amp, 0, 1)
+            self.analysis.addWidget(btn_param, 1, 0)
+            self.analysis.addWidget(btn_fit, 1, 1)
+            # connect
+            btn_avg.clicked.connect(lambda _, f=lambda: self.result_plot.show_average_over_experiments(self.wizard().group_analysis): self._reveal_and_call(f))
+            btn_fit.clicked.connect(lambda _, f=self.handle_decay_fit: self._reveal_and_call(f))
+            btn_param.clicked.connect(lambda _, f=lambda: self.result_plot.show_tau_param_over_time(self.wizard().group_analysis): self._reveal_and_call(f))
+            btn_amp.clicked.connect(lambda _, f=lambda: self.result_plot.show_amplitudes_over_time(self.wizard().group_analysis): self._reveal_and_call(f))
+            self.analysis_buttons = [btn_avg, btn_fit, btn_param, btn_amp]
 
     def _reveal_and_call(self, plot_fn):
         """
@@ -264,6 +262,13 @@ class ResultsPage(QWizardPage):
 
         Enables or disables analysis buttons depending on whether experiments are loaded.
         """
+        # rebuild analysis UI if file_type changed
+        settings = QSettings("HashemiLab", "NeuroStemVolt")
+        file_type = settings.value("file_type", "None", type=str)
+        if file_type != self.current_file_type:
+            self.current_file_type = file_type
+            self._build_analysis_buttons(file_type)
+
         if self.wizard().group_analysis.get_experiments():
             self.enable_analysis_buttons()
         else:
