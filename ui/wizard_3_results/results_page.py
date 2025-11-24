@@ -54,6 +54,11 @@ class ResultsPage(QWizardPage):
         main_layout.addWidget(btn_save_all)
         main_layout.addWidget(btn_export)
 
+        # wire save/export buttons
+        btn_save.clicked.connect(self.save_current_plot)
+        btn_save_all.clicked.connect(self.save_all_plots)
+        btn_export.clicked.connect(self.export_all_as_csv)
+
         # placeholder + future plot
         main_layout.addWidget(self.placeholder, stretch=1)
         main_layout.addWidget(self.result_plot, stretch=3)
@@ -160,6 +165,8 @@ class ResultsPage(QWizardPage):
             # Export spontaneous peak metrics if applicable
             settings = QSettings("HashemiLab", "NeuroStemVolt")
             file_type = settings.value("file_type", "None", type=str)
+            print(file_type)
+            print(type(file_type))
             if file_type == "Spontaneous":
                 OutputManager.save_spontaneous_peak_metrics(ga, output_folder)
             else:
@@ -262,7 +269,7 @@ class ResultsPage(QWizardPage):
 
         Enables or disables analysis buttons depending on whether experiments are loaded.
         """
-        # rebuild analysis UI if file_type changed
+        # rebuild analysis UI if file_type changed fore xample whether spontaenous vs estimulated 
         settings = QSettings("HashemiLab", "NeuroStemVolt")
         file_type = settings.value("file_type", "None", type=str)
         if file_type != self.current_file_type:
