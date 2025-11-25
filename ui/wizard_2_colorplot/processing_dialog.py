@@ -78,6 +78,14 @@ class ProcessingOptionsDialog(QDialog):
             cb = QCheckBox(name)
             cb.setChecked(name in saved_selection if saved_selection else default_checked)
             cb.setStyleSheet("font-weight: bold; font-size: 12px;")
+            
+            # Disable Normalize for Flow Cell experiments
+            if name == "Normalize" and file_type == "Flow Cell":
+                cb.setEnabled(False)
+                cb.setChecked(False)
+                cb.setToolTip("Normalize is disabled for Flow Cell experiments")
+                print("[DEBUG] ProcessingDialog: Disabled Normalize for Flow Cell")
+            
             help_widget = make_labeled_field_with_help(name, cb, help_texts.get(name, "No help available."))
             filter_layout.addWidget(help_widget)
             self.checkboxes[name] = cb
