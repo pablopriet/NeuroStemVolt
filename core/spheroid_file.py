@@ -31,6 +31,9 @@ class SpheroidFile:
         self.acq_freq = acq_freq
         self.calibrated_data = self.raw_data  # Initially same as raw
         self.processed_data = self.calibrated_data
+        # Track buffer subtraction for Flow Cell experiments
+        self.buffer_subtracted_data = None  # Stores data after buffer subtraction
+        self.has_buffer_subtraction = False  # Flag to track if buffer subtraction was applied
         # Default peak position for serotonin (5HT) in FSCV plots
         self.peak_position = 257
         self.window_size = None  # Default window size for rolling mean or smoothing
@@ -102,13 +105,41 @@ class SpheroidFile:
         self.calibrated_data = (self.raw_data - intercept)/ slope
         self.processed_data = self.calibrated_data  # Reset processed to calibrated
 
-    def set_processed_data_as_original(self):
+    def set_processed_data_as_original(self, preserve_buffer_subtraction=True):
         """
         Reset the processed data to the original raw input.
+        
+        Args:
+            preserve_buffer_subtraction (bool): If True and buffer subtraction was applied,
+                                                revert to buffer-subtracted data instead of raw.
+                                                If False, always revert to raw/calibrated data.
 
         Returns:
             None
         """
+        # If buffer subtraction was applied AND we want to preserve it, revert to buffer-subtracted data
+        if preserve_buffer_subtraction and self.has_buffer_subtraction and self.buffer_subtracted_data is not None:
+            self.processed_data = self.buffer_subtracted_data.copy()
+            print("[DEBUG] Reverting to buffer-subtracted data (preserving buffer subtraction)")
+        else:
+            self.processed_data = self.calibrated_data
+            print(f"[DEBUG] Reverting to calibrated/raw data (preserve_buffer_subtraction={preserve_buffer_subtraction})")
+        
+        self.metadata['peak_amplitude_positions'] = None
+        self.metadata['peak_amplitude_values'] = None
+        self.metadata['decay_validation_params'] = None
+    
+    def clear_buffer_subtraction(self):
+        """
+        Clear buffer subtraction data and revert to true raw/calibrated data.
+        This is used when the user explicitly wants to reset everything.
+        
+        Returns:
+            None
+        """
+        print("[DEBUG] Clearing buffer subtraction and reverting to raw data")
+        self.buffer_subtracted_data = None
+        self.has_buffer_subtraction = False
         self.processed_data = self.calibrated_data
         self.metadata['peak_amplitude_positions'] = None
         self.metadata['peak_amplitude_values'] = None
