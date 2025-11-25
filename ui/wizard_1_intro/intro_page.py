@@ -1,7 +1,7 @@
 from PyQt5.QtWidgets import (
-    QWizardPage, QLabel, QPushButton, QVBoxLayout, QListWidget, QMessageBox, QFileDialog, QShortcut, QDialog
+    QWizardPage, QLabel, QPushButton, QVBoxLayout, QListWidget, QMessageBox, QFileDialog, QShortcut, QDialog, QProgressDialog
 )
-from PyQt5.QtCore import Qt, QSettings
+from PyQt5.QtCore import Qt, QSettings, QCoreApplication
 from core.group_analysis import GroupAnalysis
 from core.spheroid_experiment import SpheroidExperiment
 from ui.utils.styles import apply_custom_styles
@@ -96,12 +96,14 @@ class IntroPage(QWizardPage):
         Launches a dialog window for experiment configuration.
 
         Returns:
-            None
+            bool: True if settings were accepted, False otherwise.
         """
         dlg = ExperimentSettingsDialog(self)
         if dlg.exec_() == QDialog.Accepted:
             # Here, extract the settings from the dialog and store them
             self.experiment_settings = dlg.get_settings()
+            return True
+        return False
 
     def clear_replicates(self):
         """
@@ -185,41 +187,52 @@ class IntroPage(QWizardPage):
         if not paths:
             # optional: warn “no .txt found”
             return
-        
-        # if self.number_of_files != 0 and self.number_of_files != len(paths):
-        #     QMessageBox.warning(
-        #         self,
-        #         "Warning! Missing Files!",
-        #         "Folders do not contain the same number of files.\n"
-        #         f"Expected: {self.number_of_files}, Found: {len(paths)}"
-        #     )
-        #     return
-        
-        # # If first replicate, set number_of_files
-        # if self.number_of_files == 0:
-        #     self.number_of_files = len(paths)
+        # Show a simple modal dialog
+        # create persistent progress dialog so it isn't GC'd before shown
+        progress = QProgressDialog(self)
+        progress.setWindowTitle("Please wait")
+        progress.setLabelText("Loading replicate…")
+        progress.setWindowModality(Qt.ApplicationModal)
+        progress.setCancelButton(None)
+        progress.setMinimumDuration(0)
+        progress.setAutoClose(False)
+        progress.setAutoReset(False)
+        progress.setMinimumWidth(420)
+        progress.setRange(0, 0)  # indeterminate
+        # keep as attribute to avoid GC and ensure it stays visible
+        self._loading_progress = progress
+        progress.show()
+        progress.repaint()
+        QCoreApplication.processEvents()
 
-        # We do not pass calibration to initializing the SpheroidExperiments
-        expected_keys = [
-        'file_length', 'acquisition_frequency', 'peak_position', 'treatment',
-        'waveform', 'stim_params', 'time_between_files', 'files_before_treatment', 'file_type'
-        ]
+        try:
+            # We do not pass calibration to initializing the SpheroidExperiments
+            expected_keys = [
+                'file_length', 'acquisition_frequency', 'peak_position', 'treatment',
+                'waveform', 'stim_params', 'time_between_files', 'files_before_treatment', 'file_type'
+            ]
 
-        filtered = {k: v for k, v in settings.items() if k in expected_keys}
-        exp = SpheroidExperiment(paths,**filtered)
-        
-        self.group_analysis.add_experiment(exp)
-        # store it and show it in the list
-        self.display_names_list.append(f"{os.path.basename(folder)}")
-        display_name = f"{os.path.basename(folder)}"
-        self.list_widget.addItem(display_name)
+            filtered = {k: v for k, v in settings.items() if k in expected_keys}
+            exp = SpheroidExperiment(paths, **filtered)
+            
+            self.group_analysis.add_experiment(exp)
+            # store it and show it in the list
+            self.display_names_list.append(f"{os.path.basename(folder)}")
+            display_name = f"{os.path.basename(folder)}"
+            self.list_widget.addItem(display_name)
 
-        wiz = self.wizard()
-        wiz.group_analysis = self.group_analysis
-        wiz.display_names_list = self.display_names_list
+            wiz = self.wizard()
+            wiz.group_analysis = self.group_analysis
+            wiz.display_names_list = self.display_names_list
 
-        # if your Next button is gated on isComplete(), let Qt know the page state changed:
-        self.completeChanged.emit()
+            # if your Next button is gated on isComplete(), let Qt know the page state changed:
+            self.completeChanged.emit()
+        finally:
+            # close and remove persistent reference
+            if hasattr(self, "_loading_progress"):
+                self._loading_progress.close()
+                del self._loading_progress
+            QCoreApplication.processEvents()
     
     def validatePage(self):
         """
