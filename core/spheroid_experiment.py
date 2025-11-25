@@ -153,15 +153,31 @@ class SpheroidExperiment:
         """Return time interval between files in minutes."""
         return self.time_between_files
     
-    def revert_processing(self):
+    def revert_processing(self, preserve_buffer_subtraction=True):
         """
         Revert all processed data back to its original form.
+        
+        Args:
+            preserve_buffer_subtraction (bool): If True, preserve buffer subtraction for Flow Cell experiments.
+                                                If False, clear everything including buffer subtraction.
 
         Returns:
             None
         """
         for spheroid_file in self.files:
-            spheroid_file.set_processed_data_as_original()
+            spheroid_file.set_processed_data_as_original(preserve_buffer_subtraction=preserve_buffer_subtraction)
+    
+    def clear_all_buffer_subtractions(self):
+        """
+        Clear buffer subtraction from all files and revert to true raw data.
+        This is used when user clicks "Reverse Changes" button.
+        
+        Returns:
+            None
+        """
+        print("[DEBUG] Clearing all buffer subtractions in experiment")
+        for spheroid_file in self.files:
+            spheroid_file.clear_buffer_subtraction()
 
     def set_processing_steps(self, processors = None):
         """
