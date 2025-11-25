@@ -41,6 +41,7 @@ class ProcessingOptionsDialog(QDialog):
         ]
 
         file_type = QSettings("HashemiLab", "NeuroStemVolt").value("file_type", "None", type=str)
+        self.file_type = file_type  # Store for later use
         self.checkboxes = {}
         self.param_widgets = {}
         layout = QVBoxLayout()
@@ -81,6 +82,15 @@ class ProcessingOptionsDialog(QDialog):
             help_widget = make_labeled_field_with_help(name, cb, help_texts.get(name, "No help available."))
             filter_layout.addWidget(help_widget)
             self.checkboxes[name] = cb
+
+            # Disable Single Peak Detection and Normalize for Spontaneous file type
+            if self.file_type == "Spontaneous":
+                if name == "Single Peak Detection":
+                    cb.setEnabled(False)
+                    cb.setChecked(False)
+                elif name == "Normalize":
+                    cb.setEnabled(False)
+                    cb.setChecked(False)
 
             # Parameter widget (hidden by default)
             param_widget = None
