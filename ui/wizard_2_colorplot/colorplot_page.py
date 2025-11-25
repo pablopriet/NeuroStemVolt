@@ -1,6 +1,7 @@
 from PyQt5.QtWidgets import (
-    QApplication, QComboBox, QWizardPage, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QDialog, QProgressDialog, QSlider, QToolTip,
-QCheckBox, QListWidget, QSpinBox, QDialogButtonBox, QMessageBox
+    QApplication, QComboBox, QWizardPage, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
+    QProgressDialog, QSlider, QToolTip, QCheckBox, QListWidget, QSpinBox, QDialogButtonBox,
+    QMessageBox, QGroupBox, QListWidgetItem, QDialog
 )
 from PyQt5.QtCore import QSettings, Qt, QEvent
 
@@ -21,6 +22,7 @@ from core.processing.spontaneous_peak_detector import FindAmplitudeMultiple
 import numpy as np
 import os
 import re
+from core.flow_cell_experiment import FlowCellExperiment
 
 class ColorPlotPage(QWizardPage):
     """
@@ -81,10 +83,13 @@ class ColorPlotPage(QWizardPage):
 
         #### Handle the signal from prev and next btn
 
-        self.btn_filter = QPushButton("Filter Options"); 
+        self.btn_filter = QPushButton("Filter Options")
         apply_custom_styles(self.btn_filter)
-        #btn_apply = QPushButton("Apply Filtering")
         self.btn_filter.clicked.connect(self.show_processing_options)
+        # Buffer subtraction button – this is the ONLY entry point
+        self.btn_buffer_sub = QPushButton("Buffer Subtraction…")
+        apply_custom_styles(self.btn_buffer_sub)
+        self.btn_buffer_sub.clicked.connect(self._open_buffer_sub_dialog)
         self.btn_save = QPushButton("Save Current Plots"); 
         apply_custom_styles(self.btn_save)
         self.btn_save.clicked.connect(self.save_IT_ColorPlot_Plots)
@@ -113,21 +118,24 @@ class ColorPlotPage(QWizardPage):
         apply_custom_styles(self.btn_edit_peaks)
         self.btn_edit_peaks.clicked.connect(self.on_edit_peaks_clicked)
 
+        # Layout for left panel
         left = QVBoxLayout()
         left.addWidget(self.btn_revert)
         left.addWidget(self.cbo_rep)
         left.addWidget(self.cbo_file)
 
         nav = QHBoxLayout(); nav.addWidget(self.btn_prev); nav.addWidget(self.btn_next)
-
         left.addLayout(nav)
         left.addWidget(self.btn_filter)
+
+        # Buffer subtraction button - always add to layout, visibility controlled in initializePage
+        left.addWidget(self.btn_buffer_sub)
+        self.btn_buffer_sub.setVisible(False)  # Hidden by default, shown for Flow Cell in initializePage
+
         left.addWidget(self.btn_eval)
-        #left.addWidget(btn_apply)
         left.addWidget(self.btn_save)
         left.addWidget(self.btn_export)
         left.addWidget(self.btn_export_all)
-
         left.addWidget(self.chk_peak_click)
         left.addWidget(self.btn_edit_peaks)
 
@@ -142,13 +150,12 @@ class ColorPlotPage(QWizardPage):
 
         print(f"DEBUG: File type: {file_type}")
         if file_type == "Spontaneous":
-            # Add CV plot canvas
             self.cv_plot = PlotCanvas(self, width=4, height=3)
 
         bottom = QHBoxLayout()
         bottom.addWidget(self.it_plot)
         if file_type == "Spontaneous":
-            bottom.addWidget(self.cv_plot)  # Add the CV plot here
+            bottom.addWidget(self.cv_plot)
         self.bottom_layout = bottom
 
         right = QVBoxLayout()
@@ -190,11 +197,17 @@ class ColorPlotPage(QWizardPage):
         Enables/disables UI components depending on available data.
         """
         super().initializePage()
-        # Default index
         def_index = 0
 
         group_analysis = self.wizard().group_analysis
         display_names_list = self.wizard().display_names_list
+        
+        # Show/hide buffer subtraction button based on file type
+        settings = QSettings("HashemiLab", "NeuroStemVolt")
+        file_type = settings.value("file_type", "None", type=str)
+        self.btn_buffer_sub.setVisible(file_type == "Flow Cell")
+        print(f"[DEBUG] initializePage: file_type={file_type}, buffer_sub button visible={file_type == 'Flow Cell'}")
+        
         self.cbo_rep.clear()
         self.cbo_rep.addItems(display_names_list)
         self.cbo_rep.setCurrentIndex(def_index)
@@ -656,7 +669,14 @@ class ColorPlotPage(QWizardPage):
         Displays a progress dialog while processing.
         Updates visualizations after processing is complete.
         """
-        self.revert_processing() #<- Default revert to raw data before processing to avoid cumulative effects
+        # Revert to baseline before processing, but preserve buffer subtraction for Flow Cell
+        settings = QSettings("HashemiLab", "NeuroStemVolt")
+        file_type = settings.value("file_type", "None", type=str)
+        preserve_buffer = (file_type == "Flow Cell")  # Preserve buffer subtraction for Flow Cell
+        
+        print(f"[DEBUG] run_processing: file_type={file_type}, preserve_buffer_subtraction={preserve_buffer}")
+        self.revert_processing(preserve_buffer_subtraction=preserve_buffer)
+        
         group_analysis = self.wizard().group_analysis
         peak_pos = QSettings("HashemiLab", "NeuroStemVolt").value("peak_position", type=int)
 
@@ -698,12 +718,30 @@ class ColorPlotPage(QWizardPage):
         progress.close()
 
 
-    def revert_processing(self):
+    def revert_processing(self, preserve_buffer_subtraction=False):
+        """
+        Revert processing for all experiments.
+        
+        Args:
+            preserve_buffer_subtraction (bool): If True, preserve buffer subtraction.
+                                                If False (default for manual button click),
+                                                clear everything including buffer subtraction.
+        """
+        print(f"[DEBUG] ColorPlotPage.revert_processing: preserve_buffer_subtraction={preserve_buffer_subtraction}")
         group_analysis = self.wizard().group_analysis
-        for exp in group_analysis.get_experiments():
-            exp.revert_processing()
-        # disarm the slider & clear temp point
-        # self._set_peak_controls_enabled(False)
+        
+        # If not preserving buffer subtraction, clear it completely
+        if not preserve_buffer_subtraction:
+            for exp in group_analysis.get_experiments():
+                if hasattr(exp, 'clear_all_buffer_subtractions'):
+                    exp.clear_all_buffer_subtractions()
+                else:
+                    exp.revert_processing(preserve_buffer_subtraction=False)
+        else:
+            # Just revert processing, preserving buffer subtraction
+            for exp in group_analysis.get_experiments():
+                exp.revert_processing(preserve_buffer_subtraction=True)
+        
         self.update_file_display()
         self.completeChanged.emit()
 
@@ -818,12 +856,207 @@ class ColorPlotPage(QWizardPage):
         output_folder_path = QSettings("HashemiLab", "NeuroStemVolt").value("output_folder")
         OutputManager.save_IT_profile(sph_file,output_folder_path)
 
-    # def _set_peak_controls_enabled(self, enabled: bool):
-    #     """
-    #
-    #     """
-    #     self.peak_slider.setEnabled(enabled)
-    #     self.btn_adj_peak.setEnabled(enabled)
-    #     if not enabled:
-    #         # also clear any temporary selection so nothing is drawn
-    #         self.temp_peak = None
+    def _on_subtract_buffers_clicked(self):
+        """
+        Deprecated method - buffer subtraction now happens via the dialog.
+        This should not be called anymore since the old widgets were removed.
+        """
+        QMessageBox.information(
+            self, "Use Buffer Subtraction Button",
+            "Please use the 'Buffer Subtraction...' button to perform buffer subtraction."
+        )
+
+    def _open_buffer_sub_dialog(self):
+        """Open the buffer subtraction dialog only when user clicks the button."""
+        print("[UI DEBUG] _open_buffer_sub_dialog called")
+        
+        settings = QSettings("HashemiLab", "NeuroStemVolt")
+        file_type = settings.value("file_type", "None", type=str)
+        print(f"[UI DEBUG] Current file_type from settings: {file_type}")
+        
+        if file_type != "Flow Cell":
+            print("[UI DEBUG] Not a Flow Cell experiment, showing info dialog")
+            QMessageBox.information(
+                self, "Not Flow Cell",
+                "Buffer subtraction is only available for Flow Cell experiments."
+            )
+            return
+
+        print("[UI DEBUG] Opening BufferSubtractionDialog...")
+        dlg = BufferSubtractionDialog(self, self.wizard().group_analysis)
+        result = dlg.exec_()
+        print(f"[UI DEBUG] Dialog result: {'Accepted' if result == QDialog.Accepted else 'Rejected'}")
+        
+        if result == QDialog.Accepted:
+            if hasattr(dlg, "selected_exp_index"):
+                print(f"[UI DEBUG] Dialog has selected_exp_index: {dlg.selected_exp_index}, current_rep_index: {self.current_rep_index}")
+                if dlg.selected_exp_index == self.current_rep_index:
+                    print("[UI DEBUG] Updating file display...")
+                    self.update_file_display()
+            else:
+                print("[UI DEBUG] Dialog does not have selected_exp_index attribute")
+
+
+class BufferSubtractionDialog(QDialog):
+    """
+    Modal dialog to perform buffer subtraction on Flow Cell experiments.
+    Lets user choose experiment, buffer files, and target files,
+    then calls FlowCellExperiment.run_buffer_subtraction().
+    """
+    def __init__(self, parent, group_analysis):
+        super().__init__(parent)
+        self.setWindowTitle("Buffer Subtraction")
+        self.group_analysis = group_analysis
+
+        layout = QVBoxLayout(self)
+
+        # Experiment selector
+        self.cbo_exp = QComboBox()
+        layout.addWidget(QLabel("Experiment:"))
+        layout.addWidget(self.cbo_exp)
+
+        # Buffer list
+        self.lst_buffers = QListWidget()
+        self.lst_buffers.setSelectionMode(QListWidget.MultiSelection)
+        layout.addWidget(QLabel("Buffer files:"))
+        layout.addWidget(self.lst_buffers)
+
+        # Targets list
+        self.lst_targets = QListWidget()
+        self.lst_targets.setSelectionMode(QListWidget.MultiSelection)
+        layout.addWidget(QLabel("Target files:"))
+        layout.addWidget(self.lst_targets)
+
+        # Buttons
+        btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        layout.addWidget(btns)
+        btns.accepted.connect(self._on_ok)
+        btns.rejected.connect(self.reject)
+
+        # init experiments list
+        names = parent.wizard().display_names_list
+        self.cbo_exp.addItems(names)
+        self.cbo_exp.currentIndexChanged.connect(self._refresh_lists)
+        if names:
+            self._refresh_lists(0)
+
+    def _refresh_lists(self, exp_index: int):
+        from core.flow_cell_experiment import FlowCellExperiment
+
+        print(f"[UI DEBUG] _refresh_lists called for experiment index: {exp_index}")
+        
+        try:
+            exp = self.group_analysis.get_single_experiments(exp_index)
+            print(f"[UI DEBUG] Got experiment: {type(exp).__name__}")
+        except Exception as e:
+            print(f"[UI DEBUG] ERROR: Failed to get experiment: {e}")
+            return
+
+        self.lst_buffers.clear()
+        self.lst_targets.clear()
+
+        if not isinstance(exp, FlowCellExperiment):
+            print(f"[UI DEBUG] Not a FlowCellExperiment (type: {type(exp).__name__}), lists cleared")
+            return
+
+        print(f"[UI DEBUG] Buffer indices: {exp.buffer_indices}")
+        print(f"[UI DEBUG] Total files: {exp.get_file_count()}")
+        
+        # Buffers
+        for idx in exp.buffer_indices:
+            sf = exp.get_spheroid_file(idx)
+            try:
+                fname = os.path.basename(sf.get_filepath())
+            except Exception:
+                fname = f"File {idx}"
+            print(f"[UI DEBUG] Adding buffer: {fname} (index {idx})")
+            item = QListWidgetItem(fname)
+            item.setBackground(Qt.lightGray)
+            item.setData(Qt.UserRole, idx)
+            self.lst_buffers.addItem(item)
+
+        # Non‑buffers
+        non_buf = [i for i in range(exp.get_file_count()) if i not in exp.buffer_indices]
+        print(f"[UI DEBUG] Non-buffer indices: {non_buf}")
+        
+        for idx in non_buf:
+            sf = exp.get_spheroid_file(idx)
+            try:
+                fname = os.path.basename(sf.get_filepath())
+            except Exception:
+                fname = f"File {idx}"
+            print(f"[UI DEBUG] Adding target: {fname} (index {idx})")
+            item = QListWidgetItem(fname)
+            item.setData(Qt.UserRole, idx)
+            self.lst_targets.addItem(item)
+        
+        print(f"[UI DEBUG] Refresh complete: {self.lst_buffers.count()} buffers, {self.lst_targets.count()} targets")
+
+    def _on_ok(self):
+        from core.flow_cell_experiment import FlowCellExperiment
+
+        exp_index = self.cbo_exp.currentIndex()
+        print(f"\n[UI DEBUG] Buffer subtraction dialog OK clicked, experiment index: {exp_index}")
+        
+        try:
+            exp = self.group_analysis.get_single_experiments(exp_index)
+            print(f"[UI DEBUG] Retrieved experiment: {type(exp).__name__}")
+        except Exception as e:
+            print(f"[UI DEBUG] ERROR: Failed to get experiment: {e}")
+            QMessageBox.warning(self, "No experiment", "Unable to access selected experiment.")
+            return
+
+        if not isinstance(exp, FlowCellExperiment):
+            print(f"[UI DEBUG] ERROR: Experiment is not FlowCellExperiment, it's {type(exp).__name__}")
+            QMessageBox.warning(self, "Wrong type", "Selected experiment is not a Flow Cell experiment.")
+            return
+
+        buf_indices = [it.data(Qt.UserRole) for it in self.lst_buffers.selectedItems()]
+        print(f"[UI DEBUG] Selected buffer indices: {buf_indices}")
+        
+        if not buf_indices:
+            print("[UI DEBUG] ERROR: No buffer files selected")
+            QMessageBox.warning(self, "No buffers selected", "Please select at least one buffer file.")
+            return
+
+        tgt_items = self.lst_targets.selectedItems()
+        tgt_indices = [it.data(Qt.UserRole) for it in tgt_items]
+        if not tgt_indices:
+            tgt_indices = [i for i in range(exp.get_file_count()) if i not in exp.buffer_indices]
+            print(f"[UI DEBUG] No targets selected, using all non-buffer files: {tgt_indices}")
+        else:
+            print(f"[UI DEBUG] Selected target indices: {tgt_indices}")
+
+        msg = (f"Subtract mean of {len(buf_indices)} buffer file(s)\n"
+               f"from {len(tgt_indices)} target file(s) in experiment {exp_index + 1}?")
+        reply = QMessageBox.question(self, "Confirm Buffer Subtraction", msg,
+                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply != QMessageBox.Yes:
+            print("[UI DEBUG] User cancelled buffer subtraction")
+            return
+
+        print("[UI DEBUG] Calling exp.run_buffer_subtraction()...")
+        # For Flow Cell: use processed_data to allow filtering before buffer subtraction
+        ok = exp.run_buffer_subtraction(
+            buffer_indices=buf_indices,
+            target_indices=tgt_indices,
+            use_processed_for_buffers=True,  # Use processed data for buffers
+            write_to_processed=True,
+            use_processed_as_source=True,  # Subtract from processed data of targets
+        )
+        
+        print(f"[UI DEBUG] Buffer subtraction returned: {ok}")
+        
+        if not ok:
+            print("[UI DEBUG] ERROR: Buffer subtraction failed")
+            QMessageBox.warning(self, "Subtraction failed",
+                                "Could not compute mean buffer or subtract; check data shapes.")
+            return
+
+        print("[UI DEBUG] Buffer subtraction successful!")
+        QMessageBox.information(self, "Success", 
+                               f"Buffer subtraction completed successfully!\n"
+                               f"{len(tgt_indices)} files were processed.")
+        
+        self.selected_exp_index = exp_index
+        self.accept()
