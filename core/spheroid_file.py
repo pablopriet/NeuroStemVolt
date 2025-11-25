@@ -82,6 +82,18 @@ class SpheroidFile:
         """
         return self.processed_data
     
+    def set_processed_data(self, new_data):
+        """
+        Update the processed data with new values.
+
+        Args:
+            new_data (np.ndarray): New 2D array to set as processed data.
+
+        Returns:
+            None
+        """
+        self.processed_data = new_data
+    
     def apply_calibration(self, slope, intercept):
         #print("Applying slope and intercept")
         #print(slope, intercept)
