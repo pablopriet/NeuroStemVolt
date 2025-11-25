@@ -1,47 +1,60 @@
 from .base import Processor
+import numpy as np
 
 class BaselineCorrection(Processor):
     """
-    Subtracts baseline current from FSCV data using pre-stimulation time window.
-
-    This processor identifies the time before stimulation begins (based on `stim_start`)
-    and computes the mean current across that period to use as a baseline. It then subtracts
-    this baseline from the entire signal.
-
-    Methods:
-        process(data, context): Applies baseline correction using metadata in context.
+    Subtracts baseline current from FSCV data using a pre-stimulation / pre-injection time window.
     """
+
     def process(self, data, context=None):
         """
-        Apply baseline correction to the data using the pre-stimulation region.
+        Apply baseline correction to the data using the pre-stimulation or pre-injection region.
 
         Args:
             data (np.ndarray): 2D FSCV array (voltage × time).
-            context (dict): Must contain 'stim_start', may include 'peak_position' and 'acquisition_frequency'.
+            context (dict): Must contain either 'stim_start' or 'injection_start'.
+                            May include 'peak_position' and 'acquisition_frequency'.
 
         Returns:
             np.ndarray: Baseline-corrected data.
         """
-        if context is None or "stim_start" not in context:
-            raise ValueError("Stimulation start time ('stim_start') is missing from the context.")
+        if context is None:
+            raise ValueError("Context is required for BaselineCorrection.")
 
-        # Get stimulation start time from the context
-        stim_start = context["stim_start"]
-        peak_position = context.get("peak_position", 257) # Default set to 5HT
+        has_stim = "stim_start" in context
+        has_inj  = "injection_start" in context
 
-        # Calculate the index corresponding to the stimulation start time
-        # data.shape[1] corresponds to the time dimension of the data
-        acquisition_frequency = context.get("acquisition_frequency", 10)  # Default to 10 Hz
-        stim_start_idx = int(stim_start * acquisition_frequency)
-        # Define the baseline region as the data before the stimulation start
-        baseline_region = data[:, peak_position] # IT profile
-        baseline_region = baseline_region[:stim_start_idx] 
-        # Compute the mean of the baseline region across the time dimension
-        baseline = baseline_region.mean(axis=0, keepdims=True)
-        # Store the baseline in the context for later use
+        if not has_stim and not has_inj:
+            raise ValueError(
+                "BaselineCorrection requires either 'stim_start' (stimulation) "
+                "or 'injection_start' (flow cell) in the context."
+            )
+
+        # Prefer stimulation start if available, otherwise use injection start
+        stim_or_inj_start = context.get("stim_start", None)
+        if stim_or_inj_start is None:
+            stim_or_inj_start = context.get("injection_start", 0.0)
+
+        peak_position = context.get("peak_position", 257)
+        acquisition_frequency = context.get("acquisition_frequency", 10)
+
+        # convert time (s) to sample index
+        stim_start_idx = int(stim_or_inj_start * acquisition_frequency)
+
+        # IT profile along the peak-position voltage
+        # data: 2D (voltage × time), so we index rows by voltage, columns by time
+        it_trace = data[peak_position, :]  # shape (time,)
+        baseline_region = it_trace[:stim_start_idx] if stim_start_idx > 0 else it_trace
+
+        if baseline_region.size == 0:
+            baseline = 0.0
+        else:
+            baseline = float(np.mean(baseline_region))
+
+        # store scalar baseline in context
         context["baseline"] = baseline
-        print(f"Baseline shape: {baseline}")
-        # Subtract the baseline from the entire data
-        data -= baseline
-    
+
+        # subtract from all voltages at each time point
+        data = data - baseline
+
         return data
