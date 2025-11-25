@@ -41,20 +41,20 @@ class PlotCanvas(FigureCanvas):
         fig.tight_layout()
         self.cbar = None
 
-    def plot_color(self, processed_data, peak_pos = None, title_suffix=None):
+    def plot_color(self, processed_data, peak_pos = None, metadata=None, title_suffix=None):
         """
         Display a 2D color plot of the FSCV data matrix.
 
         Args:
             processed_data (np.ndarray): 2D data array (voltage x time).
             peak_pos (int, optional): Index of the peak position for annotation.
+            metadata (dict, optional): Metadata containing acquisition frequency.
             title_suffix (str, optional): Text to append to the plot title.
 
         Returns:
             None
         """
-        from core.spheroid_file import PLOT_SETTINGS  # Ensure it's correctly imported
-
+        from core.spheroid_file import PLOT_SETTINGS
         plot_settings = PLOT_SETTINGS()
         custom_cmap = plot_settings.custom
 
@@ -64,12 +64,25 @@ class PlotCanvas(FigureCanvas):
         self.fig.clear()
         self.axes = self.fig.add_subplot(111)
 
+        # Get acquisition frequency for time axis conversion
+        # Prefer per-file frequency from metadata; fallback to global setting
+        settings = QSettings("HashemiLab", "NeuroStemVolt")
+        if metadata and 'acquisition_frequency' in metadata:
+            try:
+                freq = float(metadata['acquisition_frequency'])
+            except Exception:
+                freq = settings.value("acquisition_frequency", 10, type=int)
+        else:
+            freq = settings.value("acquisition_frequency", 10, type=int)
+
+        time_extent_seconds = processed_data.shape[0] / freq
+
         im = self.axes.imshow(
             processed_data.T,       # Transpose to align voltage steps as rows
             aspect='auto',
             cmap=custom_cmap,
             origin='lower',
-            extent=[0, processed_data.shape[0], 0, processed_data.shape[1]],
+            extent=[0, time_extent_seconds, 0, processed_data.shape[1]],
             vmin=vmin,
             vmax=vmax
         )
@@ -83,7 +96,7 @@ class PlotCanvas(FigureCanvas):
         # Add colorbar using the figure object (Qt-safe)
         self.cbar = self.fig.colorbar(im, ax=self.axes, label="Current (nA)")
 
-        self.axes.set_xlabel("Time Points")
+        self.axes.set_xlabel("Time (seconds)")
         self.axes.set_ylabel("Voltage Steps")
         title = f"Color Plot{': ' + title_suffix if title_suffix else ''}"
         self.axes.set_title(title, fontweight='bold')
@@ -106,8 +119,16 @@ class PlotCanvas(FigureCanvas):
         self.fig.clear()
         self.axes.clear()
 
+        # Prefer per-file frequency from metadata; fallback to global setting
         settings = QSettings("HashemiLab", "NeuroStemVolt")
-        freq = settings.value("acquisition_frequency", 10, type=int)
+        if metadata and 'acquisition_frequency' in metadata:
+            try:
+                freq = float(metadata['acquisition_frequency'])
+            except Exception:
+                freq = settings.value("acquisition_frequency", 10, type=int)
+        else:
+            freq = settings.value("acquisition_frequency", 10, type=int)
+
         
         # Check if calibration is enabled
         calibration_enabled = settings.value("calibration_enabled", False, type=bool)
@@ -123,7 +144,8 @@ class PlotCanvas(FigureCanvas):
         # Plot peak markers if metadata is provided
         if metadata and 'peak_amplitude_positions' in metadata:
             print("IN PLOT CANVAS")
-            print(metadata)
+            print(f"Metadata: {metadata}")
+            print(f"freq used: {freq}")
             peak_indices = metadata['peak_amplitude_positions']
             peak_values = metadata.get('peak_amplitude_values', None)
 
@@ -138,31 +160,40 @@ class PlotCanvas(FigureCanvas):
                           '#FF1493']
 
                 for i, (idx, val) in enumerate(zip(peak_indices, peak_values)):
-                    if 0 <= idx < len(profile):
+                    # Ensure idx is an integer and within bounds
+                    try:
+                        idx = int(idx)
+                    except (ValueError, TypeError):
+                        continue
+                    
+                    if 0 <= idx < len(profile) and 0 <= idx < len(t):
                         color = colors[i % len(colors)]  # Cycle through colors
-                        self.axes.scatter(t[idx], val, color=color, s=100, zorder=5,
+                        peak_time = t[idx]  # Convert index to seconds
+                        print(f"Peak {i+1}: idx={idx}, peak_time={peak_time:.3f}s, val={val:.3f}")
+                        self.axes.scatter(peak_time, val, color=color, s=100, zorder=5,
                                           label=f'Peak {i + 1}' if i < 5 else None)  # Limit legend entries
 
                         # Annotate with peak number and value
-                        self.axes.annotate(f"P{i + 1}: {val:.2f}", (t[idx], val),
+                        self.axes.annotate(f"P{i + 1}: {val:.2f}", (peak_time, val),
                                            textcoords="offset points", xytext=(0, 15),
                                            ha='center', fontsize=8, color=color, fontweight='bold')
 
-                    # Add summary text
-                    num_peaks = len(peak_indices)
-                    self.axes.text(0.02, 0.98, f"Detected {num_peaks} peaks",
-                                   transform=self.axes.transAxes, fontsize=10,
-                                   verticalalignment='top', bbox=dict(boxstyle='round',
-                                                                      facecolor='wheat', alpha=0.8))
+                # Add summary text (moved outside loop)
+                num_peaks = len(peak_indices)
+                self.axes.text(0.02, 0.98, f"Detected {num_peaks} peaks",
+                               transform=self.axes.transAxes, fontsize=10,
+                               verticalalignment='top', bbox=dict(boxstyle='round',
+                                                                  facecolor='wheat', alpha=0.8))
 
             else:
                 # Single peak (backward compatibility)
                 try:
-                    idx = int(peak_indices) if not isinstance(peak_indices, (list, np.ndarray)) else peak_indices[0]
-                    val = float(peak_values) if not isinstance(peak_values, (list, np.ndarray)) else peak_values[0]
-                    if 0 <= idx < len(profile):
-                        self.axes.scatter(t[idx], val, color='#FF3877', s=100, alpha=0.5, zorder=5, label='Current Peak')
-                        self.axes.annotate(f"{val:.2f}", (t[idx], val), textcoords="offset points",
+                    idx = int(peak_indices) if not isinstance(peak_indices, (list, np.ndarray)) else int(peak_indices[0])
+                    val = float(peak_values) if not isinstance(peak_values, (list, np.ndarray)) else float(peak_values[0])
+                    if 0 <= idx < len(profile) and 0 <= idx < len(t):
+                        peak_time = t[idx]
+                        self.axes.scatter(peak_time, val, color='#FF3877', s=100, alpha=0.5, zorder=5, label='Current Peak')
+                        self.axes.annotate(f"{val:.2f}", (peak_time, val), textcoords="offset points",
                                            xytext=(0, 10), ha='center', fontsize=9, color='#FF3877')
                 except (ValueError, TypeError, IndexError):
                     pass

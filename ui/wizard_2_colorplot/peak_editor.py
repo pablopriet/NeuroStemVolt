@@ -6,7 +6,7 @@ from PyQt5.QtCore import pyqtSignal
 class PeakEditorDialog(QDialog):
     peaks_changed = pyqtSignal(list, int)  # emits (peaks_list, active_index)
     """Edit/add/remove peaks and choose the active one; optional plot-click picking."""
-    def __init__(self, peaks, active_idx=0, max_index=10, canvas=None, canvases=None, file_type="Spontaneous", parent=None):
+    def __init__(self, peaks, active_idx=0, max_index=10, canvas=None, canvases=None, file_type="Spontaneous", acq_freq=10.0, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Edit Peaks")
         # Support one or many Matplotlib canvases (e.g., colour plot + IT plot)
@@ -21,6 +21,7 @@ class PeakEditorDialog(QDialog):
         self._peaks = [int(p) for p in peaks]
         self._active = max(0, min(int(active_idx), len(self._peaks)-1)) if self._peaks else 0
         self._file_type = file_type
+        self._acq_freq = float(acq_freq) if acq_freq else 10.0
 
         v = QVBoxLayout(self)
         v.addWidget(QLabel("Peaks (indices):"))
@@ -134,7 +135,11 @@ class PeakEditorDialog(QDialog):
 
     def _on_click(self, ev):
         if ev.inaxes is None or ev.xdata is None: return
-        idx = max(0, min(int(round(ev.xdata)), self._max_index))
+        # Both colorplot and IT plot now use seconds on x-axis
+        # Convert seconds to sample index
+        x_sec = max(0.0, float(ev.xdata))
+        idx = int(round(x_sec * self._acq_freq))
+        idx = max(0, min(idx, self._max_index))
         self.spin.setValue(idx); self._on_set_index()
         self._emit_change()
 

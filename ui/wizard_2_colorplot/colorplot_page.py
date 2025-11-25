@@ -346,26 +346,41 @@ class ColorPlotPage(QWizardPage):
         md = file_obj.get_metadata() or {}
         peaks, active = meta_get_peaks_and_active(md)
 
-        # Determine if click came from the IT axes (seconds) or colour plot (samples)
+        # Determine if click came from the IT axes (seconds) or colour plot (seconds)
         it_ax = None
+        color_ax = None
         try:
             it_ax = self.it_plot.fig.axes[0] if self.it_plot and self.it_plot.fig.axes else None
         except Exception:
             it_ax = None
-        is_it_axis = (it_ax is not None and ev.inaxes is it_ax)
-
-        # Sampling frequency for IT seconds→samples conversion
-        fs = md.get('acquisition_frequency', 1)
         try:
-            fs = float(fs)
+            color_ax = self.main_plot.fig.axes[0] if self.main_plot and self.main_plot.fig.axes else None
         except Exception:
-            fs = 1.0
-        fs = max(fs, 1.0)
+            color_ax = None
+        
+        is_it_axis = (it_ax is not None and ev.inaxes is it_ax)
+        is_color_axis = (color_ax is not None and ev.inaxes is color_ax)
+
+        # Sampling frequency for seconds→samples conversion
+        # Use same logic as plot_IT and overlays: prefer metadata, fall back to QSettings
+        settings = QSettings("HashemiLab", "NeuroStemVolt")
+        if 'acquisition_frequency' in md:
+            try:
+                fs = float(md['acquisition_frequency'])
+            except Exception:
+                fs = settings.value("acquisition_frequency", 10, type=int)
+        else:
+            fs = settings.value("acquisition_frequency", 10, type=int)
+        fs = max(float(fs), 1.0)
+        
+        print(f"Click handler: fs={fs}, ev.xdata={ev.xdata}")
 
         # Convert x to sample index
-        if is_it_axis:
+        # Both IT plot and color plot now use seconds on x-axis
+        if is_it_axis or is_color_axis:
             x_sec = max(0.0, float(ev.xdata))
             idx = int(round(x_sec * fs))
+            print(f"Converted click: x_sec={x_sec:.3f} -> idx={idx}")
         else:
             idx = int(round(ev.xdata))
 
@@ -432,9 +447,21 @@ class ColorPlotPage(QWizardPage):
                 try: ln.remove()
                 except Exception: pass
             self._peak_lines_color = []
-        # draw
+        # draw with seconds on x-axis - use same freq logic as plot_IT
+        settings = QSettings("HashemiLab", "NeuroStemVolt")
+        if 'acquisition_frequency' in md:
+            try:
+                fs = float(md['acquisition_frequency'])
+            except Exception:
+                fs = settings.value("acquisition_frequency", 10, type=int)
+        else:
+            fs = settings.value("acquisition_frequency", 10, type=int)
+        fs = max(float(fs), 1.0)
+        
         for i, p in enumerate(peaks):
-            ln = ax.axvline(x=p,
+            # Convert sample index to seconds
+            x_sec = float(p) / fs
+            ln = ax.axvline(x=x_sec,
                             color="white" if i == active else "red",
                             linewidth=(2.5 if i == active else 1.5),
                             linestyle=("--" if i == active else ":"),
@@ -454,15 +481,16 @@ class ColorPlotPage(QWizardPage):
                 try: ln.remove()
                 except Exception: pass
             self._peak_lines_it = []
-        # draw with seconds on x-axis
-        fs = md.get('acquisition_frequency', 1)
-        print("aq_freq")
-        print(fs)
-        try:
-            fs = float(fs)
-        except Exception:
-            fs = 1.0
-        fs = max(fs, 1.0)
+        # draw with seconds on x-axis - use same freq logic as plot_IT
+        settings = QSettings("HashemiLab", "NeuroStemVolt")
+        if 'acquisition_frequency' in md:
+            try:
+                fs = float(md['acquisition_frequency'])
+            except Exception:
+                fs = settings.value("acquisition_frequency", 10, type=int)
+        else:
+            fs = settings.value("acquisition_frequency", 10, type=int)
+        fs = max(float(fs), 1.0)
         for i, p in enumerate(peaks):
             print("{{{{{{{")
             print(p)
@@ -486,7 +514,7 @@ class ColorPlotPage(QWizardPage):
             peak_pos = QSettings("HashemiLab", "NeuroStemVolt").value("peak_position")
 
             # Replot Colour and IT
-            self.main_plot.plot_color(processed_data=processed, peak_pos=peak_pos)
+            self.main_plot.plot_color(processed_data=processed, peak_pos=peak_pos, metadata=metadata)
             self.it_plot.plot_IT(processed_data=processed, metadata=metadata,
                                  peak_position=peak_pos, temp_peak_detection=self.temp_peak)
 
@@ -524,8 +552,16 @@ class ColorPlotPage(QWizardPage):
         if hasattr(self.it_plot, 'fig') and hasattr(self.it_plot.fig, 'canvas'):
             canvases.append(self.it_plot.fig.canvas)
 
+        # Get acquisition frequency for time conversion
+        acq_freq = md.get('acquisition_frequency', 10)
+        try:
+            acq_freq = float(acq_freq)
+        except Exception:
+            acq_freq = 10.0
+
         file_type = QSettings("HashemiLab", "NeuroStemVolt").value("file_type", "None", type=str)
-        dlg = PeakEditorDialog(peaks, active_idx=active, max_index=max_index, canvases=canvases, file_type=file_type, parent=self)
+        dlg = PeakEditorDialog(peaks, active_idx=active, max_index=max_index, canvases=canvases, 
+                               file_type=file_type, acq_freq=acq_freq, parent=self)
 
         def _on_peaks_changed(new_peaks, new_active):
             meta_set_peaks_and_active(file_obj, new_peaks, new_active)
@@ -572,7 +608,7 @@ class ColorPlotPage(QWizardPage):
             metadata = sph_file.get_metadata()
             peak_pos = QSettings("HashemiLab", "NeuroStemVolt").value("peak_position")
 
-            self.main_plot.plot_color(processed_data=processed_data, peak_pos=peak_pos)
+            self.main_plot.plot_color(processed_data=processed_data, peak_pos=peak_pos, metadata=metadata)
             self.it_plot.plot_IT(processed_data=processed_data, metadata=metadata, peak_position=peak_pos,
                                  temp_peak_detection=self.temp_peak)
             self._redraw_all_peak_overlays(sph_file)
