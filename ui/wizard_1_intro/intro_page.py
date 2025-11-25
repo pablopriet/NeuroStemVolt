@@ -4,6 +4,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QSettings
 from core.group_analysis import GroupAnalysis
 from core.spheroid_experiment import SpheroidExperiment
+from core.flow_cell_experiment import FlowCellExperiment   # <-- add this import
 from ui.utils.styles import apply_custom_styles
 from ui.wizard_1_intro.settings_dialog import ExperimentSettingsDialog
 from ui.wizard_1_intro.settings_dialog import StimParamsDialog
@@ -178,35 +179,40 @@ class IntroPage(QWizardPage):
         if not folder:
             return
         
-        # collect all .txt files in that folder
         paths = [os.path.join(folder, f)
                  for f in os.listdir(folder)
                  if f.lower().endswith(".txt")]
         if not paths:
-            # optional: warn “no .txt found”
             return
-        
-        # if self.number_of_files != 0 and self.number_of_files != len(paths):
-        #     QMessageBox.warning(
-        #         self,
-        #         "Warning! Missing Files!",
-        #         "Folders do not contain the same number of files.\n"
-        #         f"Expected: {self.number_of_files}, Found: {len(paths)}"
-        #     )
-        #     return
-        
-        # # If first replicate, set number_of_files
-        # if self.number_of_files == 0:
-        #     self.number_of_files = len(paths)
 
-        # We do not pass calibration to initializing the SpheroidExperiments
-        expected_keys = [
-        'file_length', 'acquisition_frequency', 'peak_position', 'treatment',
-        'waveform', 'stim_params', 'time_between_files', 'files_before_treatment', 'file_type'
-        ]
+        file_type = settings.get("file_type", "Stimulation")
 
-        filtered = {k: v for k, v in settings.items() if k in expected_keys}
-        exp = SpheroidExperiment(paths,**filtered)
+        # Common kwargs for all experiment types
+        common_kwargs = {
+            "file_length":           settings.get("file_length"),
+            "acquisition_frequency": settings.get("acquisition_frequency"),
+            "peak_position":         settings.get("peak_position"),
+            "treatment":             settings.get("treatment"),
+            "waveform":              settings.get("waveform"),
+            "stim_params":           settings.get("stim_params"),
+            "time_between_files":    settings.get("time_between_files"),
+            "files_before_treatment":settings.get("files_before_treatment"),
+            "file_type":             file_type,
+        }
+
+        if file_type == "Flow Cell":
+            # Extra kwargs only FlowCellExperiment understands
+            exp = FlowCellExperiment(
+                paths,
+                injection_start      = settings.get("injection_start"),
+                injection_length     = settings.get("injection_length"),
+                calibration_points   = settings.get("calibration_concentrations"),
+                repetitions_per_cal  = settings.get("repetitions_per_cal"),
+                **common_kwargs,
+            )
+        else:
+            # Normal spheroid experiment
+            exp = SpheroidExperiment(paths, **common_kwargs)
         
         self.group_analysis.add_experiment(exp)
         # store it and show it in the list

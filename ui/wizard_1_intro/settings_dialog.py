@@ -1,6 +1,7 @@
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QFormLayout, QComboBox, QLineEdit, QHBoxLayout,
-    QPushButton, QDialogButtonBox, QFileDialog, QCheckBox, QLabel, QWidget, QMessageBox
+    QPushButton, QDialogButtonBox, QFileDialog, QCheckBox, QLabel, QWidget, QMessageBox,
+    QListWidget, QListWidgetItem, QSpinBox
 )
 from PyQt5.QtCore import QSettings
 import json
@@ -12,11 +13,10 @@ class ExperimentSettingsDialog(QDialog):
     Dialog window for configuring experiment-level parameters before analysis.
 
     This includes metadata such as acquisition frequency, peak position, and stimulation settings.
-    Parameters are persisted using QSettings for future sessions.
-
-    Args:
-        parent (QWidget, optional): Parent widget.
-        defaults (dict, optional): Optional default values to override QSettings.
+    When File Type == "Flow Cell", an InjectionParamsDialog is shown on accept to collect
+    injection start and length + calibration concentrations and repetitions.
+    Certain fields (treatment, time_between_files, files_before_treatment)
+    are disabled for Flow Cell to avoid confusion.
     """
     def __init__(self, parent=None, defaults=None):
         super().__init__(parent)
@@ -39,6 +39,11 @@ class ExperimentSettingsDialog(QDialog):
             "calibration_enabled": self.qsettings.value("calibration_enabled", False, type=bool),
             "calibration_slope": self.qsettings.value("calibration_slope", 1.0, type=float),
             "calibration_intercept": self.qsettings.value("calibration_intercept", 0.0, type=float),
+            # Flow Cell injection defaults
+            "injection_start": self.qsettings.value("injection_start", 0.0, type=float),
+            "injection_length": self.qsettings.value("injection_length", 0.0, type=float),
+            "calibration_concentrations": json.loads(self.qsettings.value("calibration_concentrations", "[]")),
+            "repetitions_per_cal": self.qsettings.value("repetitions_per_cal", 1, type=int),
         }
 
         vbox = QVBoxLayout()
@@ -50,10 +55,12 @@ class ExperimentSettingsDialog(QDialog):
         self.cb_waveform    = QComboBox();  self.cb_waveform.addItems(["5HT","HA"])
         self.cb_waveform.setCurrentText(defaults["waveform"]);                     form.addRow("Waveform:", self.cb_waveform)
 
-        self.cb_file_type = QComboBox(); self.cb_file_type.addItems(["Stimulation", "Spontaneous"])
+        self.cb_file_type = QComboBox(); self.cb_file_type.addItems(["Stimulation", "Spontaneous", "Flow Cell"])
         self.cb_file_type.setCurrentText(defaults["file_type"]);                   form.addRow("File Type:", self.cb_file_type)
+        # toggle dependent fields when file type changes
+        self.cb_file_type.currentTextChanged.connect(self._on_file_type_changed)
 
-        self.le_acq_freq = QLineEdit(str(defaults["acquisition_frequency"]))  
+        self.le_acq_freq = QLineEdit(str(defaults["acquisition_frequency"]))   
         form.addRow("Acquisition Frequency (Hz):", make_labeled_field_with_help(
             "Acquisition Frequency (Hz)", self.le_acq_freq,
             "Sampling rate of the acquisition system, in Hertz (Hz)."
@@ -121,6 +128,14 @@ class ExperimentSettingsDialog(QDialog):
         # store loaded stim_params so get_settings() can return it if user doesn’t change it
         self.stim_params = defaults["stim_params"]
 
+        # store injection params default (will be overwritten if user sets Flow Cell injection dialog)
+        self.injection_params = {
+            "start": defaults.get("injection_start", 0.0),
+            "length": defaults.get("injection_length", 0.0),
+            "concentrations": defaults.get("calibration_concentrations", []),
+            "repetitions": defaults.get("repetitions_per_cal", 1)
+        }
+
         h_output = QHBoxLayout()
         self.le_output_folder = QLineEdit(defaults["output_folder"])
         btn_browse_output = QPushButton("Browse...")
@@ -129,6 +144,9 @@ class ExperimentSettingsDialog(QDialog):
         h_output.addWidget(btn_browse_output)
         form.addRow("Output Folder:", h_output)
 
+        # apply initial enable/disable depending on file type
+        self._on_file_type_changed(self.cb_file_type.currentText())
+
         self.setLayout(vbox)
 
         # Add dialog buttons
@@ -136,6 +154,18 @@ class ExperimentSettingsDialog(QDialog):
         vbox.addWidget(buttons)
         buttons.accepted.connect(self.handle_accept)
         buttons.rejected.connect(self.reject)
+
+    def _on_file_type_changed(self, text):
+        """
+        Disable fields that are irrelevant for Flow Cell experiments to avoid user confusion.
+        """
+        is_flow = (text == "Flow Cell")
+        # disable treatment / time / files_before when Flow Cell is selected
+        self.le_treatment.setEnabled(not is_flow)
+        self.le_time_btw.setEnabled(not is_flow)
+        self.le_files_before.setEnabled(not is_flow)
+        # also hide calibration checkbox when Flow Cell
+        self.cb_calibration.setEnabled(not is_flow)
 
     def browse_output_folder(self):
         """
@@ -151,7 +181,7 @@ class ExperimentSettingsDialog(QDialog):
     def handle_accept(self):
         """
         Handler for the OK button. Validates input, optionally launches
-        the `StimParamsDialog`, and stores all parameters in QSettings.
+        the `StimParamsDialog` or `InjectionParamsDialog`, and stores all parameters in QSettings.
 
         Returns:
             None
@@ -164,6 +194,14 @@ class ExperimentSettingsDialog(QDialog):
             else:
                 return  # abort if they cancelled stim-params
 
+        # if they choose Flow Cell, pop injection params dialog
+        if self.cb_file_type.currentText() == "Flow Cell":
+            dlg = InjectionParamsDialog(self, defaults=self.injection_params)
+            if dlg.exec_() == QDialog.Accepted:
+                self.injection_params = dlg.get_params()
+            else:
+                return  # abort if they cancelled injection params
+
         # now persist *all* fields
         self.qsettings.setValue("file_type",             self.cb_file_type.currentText())
         self.qsettings.setValue("acquisition_frequency", int(self.le_acq_freq.text()))
@@ -175,9 +213,13 @@ class ExperimentSettingsDialog(QDialog):
         self.qsettings.setValue("files_before_treatment",int(self.le_files_before.text()))
         self.qsettings.setValue("output_folder", self.le_output_folder.text())
         # stim_params → JSON string
-        print("Saving stim_params:", self.stim_params)
         self.qsettings.setValue("stim_params", json.dumps(self.stim_params))
-        print("After setValue, reload raw:", self.qsettings.value("stim_params"))
+
+        # persist injection params for Flow Cell (including concentrations and repetitions)
+        self.qsettings.setValue("injection_start", float(self.injection_params.get("start", 0.0)))
+        self.qsettings.setValue("injection_length", float(self.injection_params.get("length", 0.0)))
+        self.qsettings.setValue("calibration_concentrations", json.dumps(self.injection_params.get("concentrations", [])))
+        self.qsettings.setValue("repetitions_per_cal", int(self.injection_params.get("repetitions", 1)))
 
         self.qsettings.setValue("calibration_enabled", self.cb_calibration.isChecked())
         if self.cb_calibration.isChecked():
@@ -199,7 +241,6 @@ class ExperimentSettingsDialog(QDialog):
 
         slope = QSettings("HashemiLab", "NeuroStemVolt").value("calibration_slope", type=float)
         intercept = QSettings("HashemiLab", "NeuroStemVolt").value("calibration_intercept", type=float)
-        print(slope,intercept)
 
         # close dialog
         self.accept()
@@ -219,6 +260,7 @@ class ExperimentSettingsDialog(QDialog):
                 - file_type (str)
                 - stim_params (dict)
                 - output_folder (str)
+                - injection_start, injection_length (floats; present when Flow Cell chosen)
         """
         return {
             "file_length":            int(self.le_file_length.text()),
@@ -226,15 +268,20 @@ class ExperimentSettingsDialog(QDialog):
             "peak_position":          int(self.le_peak_pos.text()),
             "treatment":              self.le_treatment.text(),
             "waveform":               self.cb_waveform.currentText(),
-            "time_between_files":     float(self.le_time_btw.text()),
-            "files_before_treatment": int(self.le_files_before.text()),
+            "time_between_files":     float(self.le_time_btw.text()) if self.le_time_btw.isEnabled() else 0.0,
+            "files_before_treatment": int(self.le_files_before.text()) if self.le_files_before.isEnabled() else 0,
             "file_type":              self.cb_file_type.currentText(),
             "stim_params":            self.stim_params,    # initialized in __init__
             "output_folder": self.le_output_folder.text(),
             "calibration_enabled": self.cb_calibration.isChecked(),
             "calibration_slope": float(self.le_slope.text()) if self.cb_calibration.isChecked() else 1.0,
             "calibration_intercept": float(self.le_intercept.text()) if self.cb_calibration.isChecked() else 0.0,
+            "injection_start": float(self.injection_params.get("start", 0.0)) if self.cb_file_type.currentText() == "Flow Cell" else None,
+            "injection_length": float(self.injection_params.get("length", 0.0)) if self.cb_file_type.currentText() == "Flow Cell" else None,
+            "calibration_concentrations": list(self.injection_params.get("concentrations", [])) if self.cb_file_type.currentText() == "Flow Cell" else None,
+            "repetitions_per_cal": int(self.injection_params.get("repetitions", 1)) if self.cb_file_type.currentText() == "Flow Cell" else None,
         }
+
 
 class StimParamsDialog(QDialog):
     def __init__(self, parent=None, defaults=None):
@@ -299,10 +346,106 @@ class StimParamsDialog(QDialog):
             pulses = params["pulses"]
             frequency = params["frequency"]
             params["duration"] = pulses / frequency if frequency != 0 else 0.0
-            print(pulses)
-            print(frequency)
-            print(params["duration"])
         except KeyError:
             params["duration"] = 0.0
 
         return params
+
+
+class InjectionParamsDialog(QDialog):
+    """
+    Dialog to collect Flow Cell injection parameters:
+    - start (seconds or minutes depending on your convention)
+    - length
+    - a list of calibration concentrations (user-editable)
+    - number of repetitions per concentration
+    """
+    def __init__(self, parent=None, defaults=None):
+        super().__init__(parent)
+        self.setWindowTitle("Injection & Calibration Parameters")
+        form = QFormLayout(self)
+        defaults = defaults or {"start": 0.0, "length": 0.0, "concentrations": [], "repetitions": 1}
+
+        # Start / Length
+        self.le_start = QLineEdit(str(defaults.get("start", 0.0)))
+        self.le_length = QLineEdit(str(defaults.get("length", 0.0)))
+        form.addRow("Injection Start (seconds):", self.le_start)
+        form.addRow("Injection Length (seconds):", self.le_length)
+
+        # Concentrations list widget + controls
+        self.lst_concs = QListWidget()
+        for c in defaults.get("concentrations", []):
+            item = QListWidgetItem(str(c))
+            self.lst_concs.addItem(item)
+
+        h_add = QHBoxLayout()
+        self.le_new_conc = QLineEdit()
+        self.le_new_conc.setPlaceholderText("e.g. 500 or 250.0")
+        btn_add = QPushButton("Add Concentration")
+        btn_remove = QPushButton("Remove Selected")
+        h_add.addWidget(self.le_new_conc)
+        h_add.addWidget(btn_add)
+        h_add.addWidget(btn_remove)
+
+        form.addRow(QLabel("Calibration Concentrations (units):"))
+        form.addRow(self.lst_concs)
+        form.addRow(h_add)
+
+        btn_add.clicked.connect(self._on_add_conc)
+        btn_remove.clicked.connect(self._on_remove_selected)
+
+        # repetitions per concentration
+        self.spin_reps = QSpinBox()
+        self.spin_reps.setMinimum(1)
+        self.spin_reps.setMaximum(100)
+        self.spin_reps.setValue(int(defaults.get("repetitions", 1)))
+        form.addRow("Repetitions per concentration:", self.spin_reps)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self._on_ok)
+        buttons.rejected.connect(self.reject)
+        form.addRow(buttons)
+
+    def _on_add_conc(self):
+        text = self.le_new_conc.text().strip()
+        if not text:
+            return
+        try:
+            # accept floats or ints
+            val = float(text) if ('.' in text or 'e' in text.lower()) else int(text)
+        except ValueError:
+            QMessageBox.warning(self, "Invalid concentration", "Please enter a numeric concentration.")
+            return
+        item = QListWidgetItem(str(val))
+        self.lst_concs.addItem(item)
+        self.le_new_conc.clear()
+
+    def _on_remove_selected(self):
+        for it in self.lst_concs.selectedItems():
+            self.lst_concs.takeItem(self.lst_concs.row(it))
+
+    def _on_ok(self):
+        # validate at least one concentration present (optional)
+        # accept regardless; caller may check
+        self.accept()
+
+    def get_params(self):
+        try:
+            start = float(self.le_start.text())
+        except ValueError:
+            start = 0.0
+        try:
+            length = float(self.le_length.text())
+        except ValueError:
+            length = 0.0
+        # collect concentrations as floats where possible
+        concs = []
+        for i in range(self.lst_concs.count()):
+            txt = self.lst_concs.item(i).text()
+            try:
+                v = float(txt) if ('.' in txt or 'e' in txt.lower()) else int(txt)
+            except ValueError:
+                continue
+            concs.append(v)
+        reps = int(self.spin_reps.value())
+        return {"start": start, "length": length, "concentrations": concs, "repetitions": reps}
