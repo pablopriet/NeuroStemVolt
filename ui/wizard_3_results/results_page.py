@@ -189,14 +189,12 @@ class ResultsPage(QWizardPage):
                 OutputManager.save_all_ITs(ga, output_folder)
                 OutputManager.save_mean_ITs(ga, output_folder)
             elif file_type == "Flow Cell":
-                # Export CVs and ITs for Flow Cell (using first experiment for single-file exports)
-                experiments = ga.get_experiments()
-                if experiments:
-                    flow_cell_exp = experiments[0]
-                    OutputManager.save_all_CVs(flow_cell_exp, output_folder)
-                    OutputManager.save_all_CVs_exclude_buffers(flow_cell_exp, output_folder)
-                    OutputManager.save_all_ITs_exclude_buffers(flow_cell_exp, output_folder)
-                    
+                # Export ITs and CVs for all experiments (with and without buffers)
+                OutputManager.save_all_ITs_group(ga, output_folder)
+                OutputManager.save_all_ITs_group_exclude_buffers(ga, output_folder)
+                OutputManager.save_all_CVs_group(ga, output_folder)
+                OutputManager.save_all_CVs_group_exclude_buffers(ga, output_folder)
+                
                 # Export calibration data using Flow Cell-specific methods (across all experiments)
                 OutputManager.save_flow_cell_concentration_statistics(ga, output_folder)
                 OutputManager.save_flow_cell_calibration_curve(ga, output_folder)

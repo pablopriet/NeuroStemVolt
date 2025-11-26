@@ -501,7 +501,8 @@ class ColorPlotPage(QWizardPage):
             # Replot Colour and IT
             self.main_plot.plot_color(processed_data=processed, peak_pos=peak_pos)
             self.it_plot.plot_IT(processed_data=processed, metadata=metadata,
-                                 peak_position=peak_pos, temp_peak_detection=self.temp_peak)
+                                 peak_position=peak_pos, temp_peak_detection=self.temp_peak,
+                                 filepath=file_obj.get_filepath() if hasattr(file_obj, 'get_filepath') else None)
 
             # Replot CV if spontaneous mode and canvas exists
             file_type = QSettings("HashemiLab", "NeuroStemVolt").value("file_type", "None", type=str)
@@ -587,7 +588,8 @@ class ColorPlotPage(QWizardPage):
 
             self.main_plot.plot_color(processed_data=processed_data, peak_pos=peak_pos)
             self.it_plot.plot_IT(processed_data=processed_data, metadata=metadata, peak_position=peak_pos,
-                                 temp_peak_detection=self.temp_peak)
+                                 temp_peak_detection=self.temp_peak,
+                                 filepath=sph_file.get_filepath() if hasattr(sph_file, 'get_filepath') else None)
             self._redraw_all_peak_overlays(sph_file)
 
             file_type = QSettings("HashemiLab", "NeuroStemVolt").value("file_type", "None", type=str)
