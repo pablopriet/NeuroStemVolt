@@ -167,6 +167,10 @@ class ResultsPage(QWizardPage):
             file_type = settings.value("file_type", "None", type=str)
             print(file_type)
             print(type(file_type))
+            
+            # Generate comprehensive experiment log
+            OutputManager.save_experiment_log(ga, output_folder, qsettings=settings)
+            
             if file_type == "Spontaneous":
                 OutputManager.save_spontaneous_peak_metrics(ga, output_folder)
             else:
