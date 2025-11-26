@@ -3,6 +3,7 @@ from matplotlib.figure import Figure
 from PyQt5.QtWidgets import QProgressDialog, QApplication
 from PyQt5.QtCore import QSettings
 import numpy as np
+import os
 from scipy.optimize import curve_fit
 
 from PyQt5.QtCore import Qt
@@ -91,7 +92,7 @@ class PlotCanvas(FigureCanvas):
         self.fig.tight_layout()
         self.draw()
 
-    def plot_IT(self, processed_data, metadata=None, peak_position=None, temp_peak_detection=None):
+    def plot_IT(self, processed_data, metadata=None, peak_position=None, temp_peak_detection=None, filepath=None):
         """
         Plot the I-T (Current vs Time) trace, with optional peak annotations.
 
@@ -99,6 +100,8 @@ class PlotCanvas(FigureCanvas):
             processed_data (np.ndarray): 2D data array (voltage x time).
             metadata (dict, optional): Dictionary with peak positions/values.
             peak_position (int, optional): Voltage index used for I-T extraction.
+            temp_peak_detection (int, optional): Temporary peak position for preview.
+            filepath (str, optional): File path to check if it's a buffer file.
 
         Returns:
             None
@@ -119,9 +122,15 @@ class PlotCanvas(FigureCanvas):
 
         # Plot the main profile
         self.axes.plot(t, profile, label="Profile", color='#4178F2', linewidth=1.5)
+        
+        # Check if this is a buffer file
+        is_buffer_file = False
+        if filepath:
+            basename = os.path.basename(filepath).lower() if isinstance(filepath, str) else ""
+            is_buffer_file = "buffer" in basename or "blank" in basename
 
-        # Plot peak markers if metadata is provided
-        if metadata and 'peak_amplitude_positions' in metadata:
+        # Plot peak markers if metadata is provided and NOT a buffer file
+        if metadata and 'peak_amplitude_positions' in metadata and not is_buffer_file:
             print("IN PLOT CANVAS")
             print(metadata)
             peak_indices = metadata['peak_amplitude_positions']
