@@ -811,17 +811,19 @@ class PlotCanvas(FigureCanvas):
         self.fig.tight_layout()
         self.draw()
 
-    def plot_flow_cell_mean_ITs(self, flow_cell_experiment):
+    def plot_flow_cell_mean_ITs(self, flow_cell_experiment_or_group):
         """
         Plot mean IT traces with standard deviation for each concentration.
         
-        For Flow Cell experiments, groups files by concentration and plots the mean
-        current-time trace with shaded standard deviation region for each concentration.
+        For Flow Cell experiments, groups files by concentration across all experiments
+        and plots the mean current-time trace with shaded standard deviation.
         
         Args:
-            flow_cell_experiment: FlowCellExperiment instance with processed data
+            flow_cell_experiment_or_group: FlowCellExperiment instance or GroupAnalysis 
+                                          containing multiple Flow Cell experiments
         """
         from core.spheroid_file import Waveforms
+        from core.group_analysis import GroupAnalysis
         
         # Show loading dialog
         progress = QProgressDialog("Processing flow cell IT data...", None, 0, 0, self)
@@ -834,8 +836,19 @@ class PlotCanvas(FigureCanvas):
         
         self.axes.clear()
         
-        # Get sorted concentrations
-        concentrations = flow_cell_experiment.get_sorted_concentrations()
+        # Handle both single experiment and GroupAnalysis
+        if isinstance(flow_cell_experiment_or_group, GroupAnalysis):
+            experiments = flow_cell_experiment_or_group.get_experiments()
+            if not experiments:
+                self.axes.set_title("No experiments available")
+                self.draw()
+                progress.close()
+                return
+        else:
+            experiments = [flow_cell_experiment_or_group]
+        
+        # Get sorted concentrations from first experiment
+        concentrations = experiments[0].get_sorted_concentrations()
         if not concentrations:
             self.axes.set_title("No concentration data available")
             self.draw()
@@ -843,7 +856,7 @@ class PlotCanvas(FigureCanvas):
             return
         
         # Get acquisition frequency for time axis
-        freq = flow_cell_experiment.get_acquisition_frequency()
+        freq = experiments[0].get_acquisition_frequency()
         
         # Color palette for different concentrations
         colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', 
@@ -851,21 +864,23 @@ class PlotCanvas(FigureCanvas):
         
         # Plot each concentration
         for idx, conc in enumerate(concentrations):
-            file_indices = flow_cell_experiment.get_files_for_concentration(conc)
-            if not file_indices:
-                continue
-            
-            # Collect IT traces for this concentration
+            # Collect IT traces from all experiments for this concentration
             it_traces = []
-            for file_idx in file_indices:
-                try:
-                    sf = flow_cell_experiment.get_spheroid_file(file_idx)
-                    it_trace = sf.get_processed_data_IT()
-                    if it_trace is not None and len(it_trace) > 0:
-                        it_traces.append(it_trace)
-                except Exception as e:
-                    print(f"Warning: Could not get IT for file {file_idx}: {e}")
+            
+            for exp in experiments:
+                file_indices = exp.get_files_for_concentration(conc)
+                if not file_indices:
                     continue
+                
+                for file_idx in file_indices:
+                    try:
+                        sf = exp.get_spheroid_file(file_idx)
+                        it_trace = sf.get_processed_data_IT()
+                        if it_trace is not None and len(it_trace) > 0:
+                            it_traces.append(it_trace)
+                    except Exception as e:
+                        print(f"Warning: Could not get IT for file {file_idx}: {e}")
+                        continue
             
             if not it_traces:
                 continue
@@ -896,13 +911,14 @@ class PlotCanvas(FigureCanvas):
             self.axes.fill_between(time_sec, mean_it - std_it, mean_it + std_it, 
                                    color=color, alpha=0.3)
         
-        # Add injection markers if available
-        if hasattr(flow_cell_experiment, 'injection_start') and flow_cell_experiment.injection_start is not None:
-            self.axes.axvline(x=flow_cell_experiment.injection_start, 
+        # Add injection markers if available (from first experiment)
+        first_exp = experiments[0]
+        if hasattr(first_exp, 'injection_start') and first_exp.injection_start is not None:
+            self.axes.axvline(x=first_exp.injection_start, 
                             color='red', linestyle='--', linewidth=1.5, 
                             label='Injection Start')
-            if hasattr(flow_cell_experiment, 'injection_end') and flow_cell_experiment.injection_end is not None:
-                self.axes.axvline(x=flow_cell_experiment.injection_end, 
+            if hasattr(first_exp, 'injection_end') and first_exp.injection_end is not None:
+                self.axes.axvline(x=first_exp.injection_end, 
                                 color='red', linestyle='--', linewidth=1.5, 
                                 label='Injection End')
         
@@ -916,19 +932,21 @@ class PlotCanvas(FigureCanvas):
         self.draw()
         progress.close()
 
-    def plot_flow_cell_mean_CVs(self, flow_cell_experiment, time_point=None):
+    def plot_flow_cell_mean_CVs(self, flow_cell_experiment_or_group, time_point=None):
         """
         Plot mean CV curves with standard deviation for each concentration.
         
-        For Flow Cell experiments, groups files by concentration and plots the mean
-        cyclic voltammogram with shaded standard deviation region for each concentration.
+        For Flow Cell experiments, groups files by concentration across all experiments
+        and plots the mean cyclic voltammogram with shaded standard deviation.
         
         Args:
-            flow_cell_experiment: FlowCellExperiment instance with processed data
+            flow_cell_experiment_or_group: FlowCellExperiment instance or GroupAnalysis 
+                                          containing multiple Flow Cell experiments
             time_point (int, optional): Time index for CV extraction. If None, uses 
                                        injection midpoint
         """
         from core.spheroid_file import Waveforms
+        from core.group_analysis import GroupAnalysis
         
         # Show loading dialog
         progress = QProgressDialog("Processing flow cell CV data...", None, 0, 0, self)
@@ -941,12 +959,25 @@ class PlotCanvas(FigureCanvas):
         
         self.axes.clear()
         
+        # Handle both single experiment and GroupAnalysis
+        if isinstance(flow_cell_experiment_or_group, GroupAnalysis):
+            experiments = flow_cell_experiment_or_group.get_experiments()
+            if not experiments:
+                self.axes.set_title("No experiments available")
+                self.draw()
+                progress.close()
+                return
+        else:
+            experiments = [flow_cell_experiment_or_group]
+        
+        first_exp = experiments[0]
+        
         # Determine time point for CV extraction
         if time_point is None:
-            if hasattr(flow_cell_experiment, 'injection_start') and hasattr(flow_cell_experiment, 'injection_length'):
-                if flow_cell_experiment.injection_start is not None and flow_cell_experiment.injection_length is not None:
-                    injection_mid_sec = flow_cell_experiment.injection_start + (flow_cell_experiment.injection_length / 2.0)
-                    freq = flow_cell_experiment.get_acquisition_frequency()
+            if hasattr(first_exp, 'injection_start') and hasattr(first_exp, 'injection_length'):
+                if first_exp.injection_start is not None and first_exp.injection_length is not None:
+                    injection_mid_sec = first_exp.injection_start + (first_exp.injection_length / 2.0)
+                    freq = first_exp.get_acquisition_frequency()
                     time_point = int(injection_mid_sec * freq)
                 else:
                     time_point = 0
@@ -954,7 +985,7 @@ class PlotCanvas(FigureCanvas):
                 time_point = 0
         
         # Get sorted concentrations
-        concentrations = flow_cell_experiment.get_sorted_concentrations()
+        concentrations = first_exp.get_sorted_concentrations()
         if not concentrations:
             self.axes.set_title("No concentration data available")
             self.draw()
@@ -973,39 +1004,41 @@ class PlotCanvas(FigureCanvas):
         
         # Plot each concentration
         for idx, conc in enumerate(concentrations):
-            file_indices = flow_cell_experiment.get_files_for_concentration(conc)
-            if not file_indices:
-                continue
-            
-            # Collect CV data for this concentration
+            # Collect CV data from all experiments for this concentration
             cv_currents = []
-            for file_idx in file_indices:
-                try:
-                    sf = flow_cell_experiment.get_spheroid_file(file_idx)
-                    processed_data = sf.get_processed_data()
-                    
-                    if processed_data is None or len(processed_data) == 0:
-                        continue
-                    
-                    # Generate voltage waveform (only need to do once)
-                    if voltage is None:
-                        try:
-                            if waveform_type == "5HT":
-                                wf = Waveforms(0.2, [1.0, -0.1], 0.2, 1000, processed_data.shape[1])
-                            else:
-                                wf = Waveforms(-0.5, [-0.7, 1.1], -0.5, 600, processed_data.shape[1])
-                            voltage = wf.voltage_waveform()
-                        except:
-                            voltage = np.linspace(-0.1, 1.0, processed_data.shape[1])
-                    
-                    # Extract current at time point
-                    tp = min(time_point, processed_data.shape[0] - 1)
-                    current = processed_data[tp, :]
-                    cv_currents.append(current)
-                    
-                except Exception as e:
-                    print(f"Warning: Could not get CV for file {file_idx}: {e}")
+            
+            for exp in experiments:
+                file_indices = exp.get_files_for_concentration(conc)
+                if not file_indices:
                     continue
+                
+                for file_idx in file_indices:
+                    try:
+                        sf = exp.get_spheroid_file(file_idx)
+                        processed_data = sf.get_processed_data()
+                        
+                        if processed_data is None or len(processed_data) == 0:
+                            continue
+                        
+                        # Generate voltage waveform (only need to do once)
+                        if voltage is None:
+                            try:
+                                if waveform_type == "5HT":
+                                    wf = Waveforms(0.2, [1.0, -0.1], 0.2, 1000, processed_data.shape[1])
+                                else:
+                                    wf = Waveforms(-0.5, [-0.7, 1.1], -0.5, 600, processed_data.shape[1])
+                                voltage = wf.voltage_waveform()
+                            except:
+                                voltage = np.linspace(-0.1, 1.0, processed_data.shape[1])
+                        
+                        # Extract current at time point
+                        tp = min(time_point, processed_data.shape[0] - 1)
+                        current = processed_data[tp, :]
+                        cv_currents.append(current)
+                        
+                    except Exception as e:
+                        print(f"Warning: Could not get CV for file {file_idx}: {e}")
+                        continue
             
             if not cv_currents:
                 continue
@@ -1026,7 +1059,7 @@ class PlotCanvas(FigureCanvas):
         self.axes.set_ylabel('Current (nA)', fontsize=12)
         
         # Add time point info to title
-        freq = flow_cell_experiment.get_acquisition_frequency()
+        freq = first_exp.get_acquisition_frequency()
         time_sec = time_point / freq
         self.axes.set_title(f'Mean CV Curves by Concentration (at {time_sec:.1f}s)', 
                            fontsize=14, fontweight='bold')
@@ -1037,19 +1070,21 @@ class PlotCanvas(FigureCanvas):
         self.draw()
         progress.close()
 
-    def plot_flow_cell_calibration_curve(self, flow_cell_experiment, fit_type='linear', weighted=False):
+    def plot_flow_cell_calibration_curve(self, flow_cell_experiment_or_group, fit_type='linear', weighted=False):
         """
         Plot peak amplitudes vs concentration with calibration curve fit.
         
-        Extracts peak amplitudes for each concentration, computes mean and std,
-        and fits a calibration curve through the data points.
+        Extracts peak amplitudes for each concentration across all experiments,
+        computes mean and std, and fits a calibration curve through the data points.
         
         Args:
-            flow_cell_experiment: FlowCellExperiment instance with processed data
+            flow_cell_experiment_or_group: FlowCellExperiment instance or GroupAnalysis 
+                                          containing multiple Flow Cell experiments
             fit_type (str): 'linear' for y=mx+b or 'zero_intercept' for y=mx
             weighted (bool): If True, weight fit by inverse variance
         """
         from scipy.stats import linregress
+        from core.group_analysis import GroupAnalysis
         
         # Show loading dialog
         progress = QProgressDialog("Fitting calibration curve...", None, 0, 0, self)
@@ -1062,41 +1097,54 @@ class PlotCanvas(FigureCanvas):
         
         self.axes.clear()
         
-        # Get sorted concentrations
-        concentrations = flow_cell_experiment.get_sorted_concentrations()
+        # Handle both single experiment and GroupAnalysis
+        if isinstance(flow_cell_experiment_or_group, GroupAnalysis):
+            experiments = flow_cell_experiment_or_group.get_experiments()
+            if not experiments:
+                self.axes.set_title("No experiments available")
+                self.draw()
+                progress.close()
+                return
+        else:
+            experiments = [flow_cell_experiment_or_group]
+        
+        # Get sorted concentrations from first experiment
+        concentrations = experiments[0].get_sorted_concentrations()
         if not concentrations:
             self.axes.set_title("No concentration data available")
             self.draw()
             progress.close()
             return
         
-        # Collect peak amplitudes for each concentration
+        # Collect peak amplitudes for each concentration across all experiments
         conc_list = []
         mean_peaks = []
         std_peaks = []
         
         for conc in concentrations:
-            file_indices = flow_cell_experiment.get_files_for_concentration(conc)
-            if not file_indices:
-                continue
+            all_peaks = []  # Collect from all experiments
             
-            peaks = []
-            for file_idx in file_indices:
-                try:
-                    sf = flow_cell_experiment.get_spheroid_file(file_idx)
-                    it_trace = sf.get_processed_data_IT()
-                    if it_trace is not None and len(it_trace) > 0:
-                        # Get peak amplitude (max value in IT trace)
-                        peak_amp = np.max(it_trace)
-                        peaks.append(peak_amp)
-                except Exception as e:
-                    print(f"Warning: Could not get peak for file {file_idx}: {e}")
+            for exp in experiments:
+                file_indices = exp.get_files_for_concentration(conc)
+                if not file_indices:
                     continue
+                
+                for file_idx in file_indices:
+                    try:
+                        sf = exp.get_spheroid_file(file_idx)
+                        it_trace = sf.get_processed_data_IT()
+                        if it_trace is not None and len(it_trace) > 0:
+                            # Get peak amplitude (max value in IT trace)
+                            peak_amp = np.max(it_trace)
+                            all_peaks.append(peak_amp)
+                    except Exception as e:
+                        print(f"Warning: Could not get peak for file {file_idx}: {e}")
+                        continue
             
-            if peaks:
+            if all_peaks:
                 conc_list.append(conc)
-                mean_peaks.append(np.mean(peaks))
-                std_peaks.append(np.std(peaks))
+                mean_peaks.append(np.mean(all_peaks))
+                std_peaks.append(np.std(all_peaks))
         
         if len(conc_list) < 2:
             self.axes.set_title("Insufficient data for calibration curve")

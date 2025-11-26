@@ -1208,6 +1208,278 @@ class OutputManager:
         return params_path
 
     @staticmethod
+    def save_flow_cell_concentration_statistics(flow_cell_experiment, output_folder_path):
+        """
+        Save peak amplitude statistics for each concentration in a Flow Cell experiment.
+        
+        For Flow Cell experiments, files are grouped by concentration within a single experiment.
+        This method extracts peak data from each concentration group and computes statistics.
+        
+        Args:
+            flow_cell_experiment: FlowCellExperiment instance with concentration grouping
+            output_folder_path (str): Directory where CSV files will be saved
+        
+        Returns:
+            str: Path to saved CSV file, or None if no data available
+        """
+        # Get sorted concentrations
+        if not hasattr(flow_cell_experiment, 'get_sorted_concentrations'):
+            print("Warning: Experiment is not a Flow Cell experiment")
+            return None
+        
+        concentrations = flow_cell_experiment.get_sorted_concentrations()
+        if not concentrations:
+            print("Warning: No concentrations found in Flow Cell experiment")
+            return None
+        
+        # Collect peak data for each concentration
+        data_rows = []
+        
+        for conc in sorted(concentrations, reverse=True):  # High to low
+            file_indices = flow_cell_experiment.get_files_for_concentration(conc)
+            if not file_indices:
+                continue
+            
+            # Extract peak amplitudes from each file
+            peaks = []
+            for file_idx in file_indices:
+                try:
+                    sf = flow_cell_experiment.get_spheroid_file(file_idx)
+                    it_trace = sf.get_processed_data_IT()
+                    if it_trace is not None and len(it_trace) > 0:
+                        peak_amp = np.max(it_trace)
+                        peaks.append(peak_amp)
+                except Exception as e:
+                    print(f"Warning: Could not extract peak for file {file_idx}: {e}")
+                    continue
+            
+            if peaks:
+                data_rows.append({
+                    'Concentration (nM)': conc,
+                    'Mean Peak (nA)': np.mean(peaks),
+                    'Std Dev (nA)': np.std(peaks, ddof=1) if len(peaks) > 1 else 0.0,
+                    'N': len(peaks),
+                    'Individual Peaks': ', '.join([f"{p:.4f}" for p in peaks])
+                })
+        
+        if not data_rows:
+            print("Warning: No peak data could be extracted")
+            return None
+        
+        # Create DataFrame and save
+        df = pd.DataFrame(data_rows)
+        
+        output_folder = os.path.join(output_folder_path, "concentration_statistics")
+        os.makedirs(output_folder, exist_ok=True)
+        output_path = os.path.join(output_folder, "concentration_peak_statistics.csv")
+        
+        df.to_csv(output_path, index=False)
+        print(f"Saved concentration peak statistics to {output_path}")
+        
+        # Save summary without individual peaks
+        df_summary = df[['Concentration (nM)', 'Mean Peak (nA)', 'Std Dev (nA)', 'N']].copy()
+        summary_path = os.path.join(output_folder, "concentration_peak_summary.csv")
+        df_summary.to_csv(summary_path, index=False)
+        print(f"Saved concentration peak summary to {summary_path}")
+        
+        return output_path
+
+    @staticmethod
+    def save_flow_cell_calibration_curve(group_experiments: GroupAnalysis, output_folder_path,
+                                         fit_type='linear', weighted=False):
+        """
+        Fit and save calibration curve for multiple Flow Cell experiments.
+        
+        Extracts peak data from all experiments (different electrodes) for each concentration,
+        computes mean and std across replicates, fits a calibration curve, and exports parameters.
+        
+        Args:
+            group_experiments (GroupAnalysis): Group containing multiple Flow Cell experiments
+            output_folder_path (str): Directory where CSV files will be saved
+            fit_type (str): 'linear' (y=mx+b) or 'zero_intercept' (y=mx)
+            weighted (bool): If True, weight by inverse variance
+        
+        Returns:
+            str: Path to saved fit parameters file, or None if fitting failed
+        """
+        from scipy.stats import linregress
+        
+        experiments = group_experiments.get_experiments()
+        if not experiments:
+            print("Warning: No experiments found in GroupAnalysis")
+            return None
+        
+        # Verify all experiments are Flow Cell type
+        for exp in experiments:
+            if not hasattr(exp, 'get_sorted_concentrations'):
+                print("Warning: Not all experiments are Flow Cell experiments")
+                return None
+        
+        # Get concentrations from first experiment
+        concentrations = experiments[0].get_sorted_concentrations()
+        if not concentrations:
+            print("Warning: No concentrations found")
+            return None
+        
+        # Collect peak data for each concentration across all experiments
+        conc_list = []
+        mean_peaks = []
+        std_peaks = []
+        
+        for conc in sorted(concentrations):  # Low to high for fitting
+            all_peaks = []  # Collect from all experiments
+            
+            for exp in experiments:
+                file_indices = exp.get_files_for_concentration(conc)
+                if not file_indices:
+                    continue
+                
+                for file_idx in file_indices:
+                    try:
+                        sf = exp.get_spheroid_file(file_idx)
+                        it_trace = sf.get_processed_data_IT()
+                        if it_trace is not None and len(it_trace) > 0:
+                            peak = np.max(it_trace)
+                            all_peaks.append(peak)
+                    except Exception as e:
+                        print(f"Warning: Could not extract peak: {e}")
+                        continue
+            
+            if all_peaks:
+                conc_list.append(conc)
+                mean_peaks.append(np.mean(all_peaks))
+                std_peaks.append(np.std(all_peaks, ddof=1) if len(all_peaks) > 1 else 0.0)
+        
+        if len(conc_list) < 2:
+            print("Error: Need at least 2 concentrations for calibration curve fitting")
+            return None
+        
+        # Convert to arrays
+        x = np.array(conc_list)
+        y = np.array(mean_peaks)
+        y_std = np.array(std_peaks)
+        
+        # Prepare weights
+        weights = None
+        if weighted and np.all(y_std > 0):
+            weights = 1.0 / (y_std ** 2)
+        
+        # Perform fit
+        if fit_type == 'zero_intercept':
+            # Force through origin
+            if weighted and weights is not None:
+                slope = np.sum(weights * x * y) / np.sum(weights * x ** 2)
+            else:
+                slope = np.sum(x * y) / np.sum(x ** 2)
+            intercept = 0.0
+            
+            # Calculate R² manually
+            fitted_values = slope * x
+            ss_res = np.sum((y - fitted_values) ** 2)
+            ss_tot = np.sum(y ** 2)
+            r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+            
+        else:  # linear
+            if weighted and weights is not None:
+                # Weighted least squares
+                poly_coeffs = np.polyfit(x, y, 1, w=np.sqrt(weights))
+                slope = poly_coeffs[0]
+                intercept = poly_coeffs[1]
+                
+                # Calculate weighted R²
+                fitted_values = slope * x + intercept
+                ss_res = np.sum(weights * (y - fitted_values) ** 2)
+                ss_tot = np.sum(weights * (y - np.average(y, weights=weights)) ** 2)
+                r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+            else:
+                # Ordinary least squares
+                result = linregress(x, y)
+                slope = result.slope
+                intercept = result.intercept
+                r_squared = result.rvalue ** 2
+                fitted_values = slope * x + intercept
+        
+        # Compute residuals and RMSE
+        residuals = y - fitted_values
+        rmse = np.sqrt(np.mean(residuals ** 2))
+        
+        # Create output directory
+        output_folder = os.path.join(output_folder_path, "calibration_curve")
+        os.makedirs(output_folder, exist_ok=True)
+        
+        # Save fit parameters
+        equation = f"y = {slope:.6f}*x + {intercept:.6f}" if fit_type == 'linear' else f"y = {slope:.6f}*x"
+        
+        params_data = {
+            'Parameter': [
+                'Fit Type', 'Equation', 'Slope (nA/nM)', 'Intercept (nA)',
+                'R² (Coefficient of Determination)', 'RMSE (Root Mean Square Error)',
+                'Number of Data Points', 'Weighted Fit'
+            ],
+            'Value': [
+                fit_type, equation, f"{slope:.8f}", f"{intercept:.8f}",
+                f"{r_squared:.6f}", f"{rmse:.6f}", len(conc_list),
+                'Yes' if weighted else 'No'
+            ]
+        }
+        
+        df_params = pd.DataFrame(params_data)
+        params_path = os.path.join(output_folder, "calibration_curve_fit_parameters.csv")
+        df_params.to_csv(params_path, index=False)
+        print(f"Saved calibration curve fit parameters to {params_path}")
+        
+        # Save data points with fitted values
+        data_points = {
+            'Concentration (nM)': conc_list,
+            'Mean Peak (nA)': [f"{val:.6f}" for val in y],
+            'Std Dev (nA)': [f"{val:.6f}" for val in y_std],
+            'Fitted Peak (nA)': [f"{val:.6f}" for val in fitted_values],
+            'Residual (nA)': [f"{val:.6f}" for val in residuals]
+        }
+        
+        if weights is not None:
+            data_points['Weight'] = [f"{w:.6f}" for w in weights]
+        
+        df_data = pd.DataFrame(data_points)
+        data_path = os.path.join(output_folder, "calibration_curve_data_points.csv")
+        df_data.to_csv(data_path, index=False)
+        print(f"Saved calibration curve data points to {data_path}")
+        
+        # Save summary
+        summary_lines = [
+            "CALIBRATION CURVE SUMMARY",
+            "=" * 60,
+            f"Fit Type: {fit_type}",
+            f"Equation: {equation}",
+            "",
+            f"Slope: {slope:.8f} nA/nM",
+            f"Intercept: {intercept:.8f} nA",
+            "",
+            f"R² (Coefficient of Determination): {r_squared:.6f}",
+            f"RMSE (Root Mean Square Error): {rmse:.6f} nA",
+            f"Number of Data Points: {len(conc_list)}",
+            f"Weighted Fit: {'Yes' if weighted else 'No'}",
+            "",
+            "=" * 60,
+            "Data Points:",
+            ""
+        ]
+        
+        for i, conc in enumerate(conc_list):
+            summary_lines.append(
+                f"{conc:>6.1f} nM: Observed = {y[i]:>8.4f} nA, "
+                f"Fitted = {fitted_values[i]:>8.4f} nA, "
+                f"Residual = {residuals[i]:>+8.4f} nA"
+            )
+        
+        summary_path = os.path.join(output_folder, "calibration_curve_summary.txt")
+        with open(summary_path, 'w') as f:
+            f.write('\n'.join(summary_lines))
+        print(f"Saved calibration curve summary to {summary_path}")
+        
+        return params_path
+
+    @staticmethod
     def save_all_CVs(flow_cell_experiment, output_folder_path, time_point=None):
         """
         Export cyclic voltammograms (CV) data for all files in a flow cell experiment.
