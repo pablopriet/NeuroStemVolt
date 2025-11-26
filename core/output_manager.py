@@ -1065,15 +1065,49 @@ class OutputManager:
 
             log_file.write(f"File Type: {file_type}\n")
             log_file.write(f"Waveform: {waveform}\n")
-            log_file.write(f"Treatment: {treatment}\n")
+            
+            # For Flow Cell, treatment and time-based params are not relevant
+            if file_type != "Flow Cell":
+                log_file.write(f"Treatment: {treatment}\n")
+            
             log_file.write(f"Acquisition Frequency: {acquisition_freq} Hz\n")
             log_file.write(f"File Length: {file_length} seconds\n")
             log_file.write(f"Peak Position (voltage index): {peak_position}\n")
-            log_file.write(f"Time Between Files: {time_between_files} minutes\n")
-            log_file.write(f"Files Before Treatment: {files_before_treatment}\n\n")
+            
+            # Time-based settings only for non-Flow Cell experiments
+            if file_type != "Flow Cell":
+                log_file.write(f"Time Between Files: {time_between_files} minutes\n")
+                log_file.write(f"Files Before Treatment: {files_before_treatment}\n")
+            
+            log_file.write("\n")
 
-            # Stimulation parameters (if applicable)
-            if file_type != "Spontaneous":
+            # Flow Cell injection parameters (if applicable)
+            if file_type == "Flow Cell":
+                log_file.write("-" * 80 + "\n")
+                log_file.write("FLOW CELL INJECTION PARAMETERS\n")
+                log_file.write("-" * 80 + "\n")
+                try:
+                    injection_start = qsettings.value("injection_start", 0.0, type=float)
+                    injection_length = qsettings.value("injection_length", 0.0, type=float)
+                    concentrations_str = qsettings.value("calibration_concentrations", "[]")
+                    concentrations = json.loads(concentrations_str) if concentrations_str else []
+                    repetitions = qsettings.value("repetitions_per_cal", 1, type=int)
+                    
+                    log_file.write(f"Injection Start: {injection_start} seconds\n")
+                    log_file.write(f"Injection Length: {injection_length} seconds\n")
+                    log_file.write(f"Repetitions per Concentration: {repetitions}\n")
+                    
+                    if concentrations:
+                        log_file.write(f"Calibration Concentrations (nM): {', '.join(str(c) for c in concentrations)}\n")
+                        log_file.write(f"Expected Total Files: {len(concentrations) * repetitions} concentration files + buffer files\n")
+                    else:
+                        log_file.write("No calibration concentrations configured.\n")
+                except Exception as e:
+                    log_file.write(f"Error reading injection parameters: {e}\n")
+                log_file.write("\n")
+
+            # Stimulation parameters (if applicable - not for Spontaneous or Flow Cell)
+            if file_type not in ["Spontaneous", "Flow Cell"]:
                 log_file.write("-" * 80 + "\n")
                 log_file.write("STIMULATION PARAMETERS\n")
                 log_file.write("-" * 80 + "\n")
@@ -1153,95 +1187,197 @@ class OutputManager:
 
             # ===== REPLICATE DATA =====
             log_file.write("=" * 80 + "\n")
-            log_file.write("REPLICATE DATA\n")
+            if file_type == "Flow Cell":
+                log_file.write("FLOW CELL DATA\n")
+            else:
+                log_file.write("REPLICATE DATA\n")
             log_file.write("=" * 80 + "\n\n")
-            log_file.write(f"Total Number of Replicates: {len(experiments)}\n\n")
+            
+            if file_type == "Flow Cell":
+                log_file.write(f"Total Number of Flow Cell Experiments: {len(experiments)}\n\n")
+            else:
+                log_file.write(f"Total Number of Replicates: {len(experiments)}\n\n")
 
             for exp_idx, exp in enumerate(experiments, 1):
                 log_file.write("-" * 80 + "\n")
-                log_file.write(f"REPLICATE {exp_idx}\n")
+                if file_type == "Flow Cell":
+                    log_file.write(f"FLOW CELL EXPERIMENT {exp_idx}\n")
+                else:
+                    log_file.write(f"REPLICATE {exp_idx}\n")
                 log_file.write("-" * 80 + "\n")
                 
                 # Experiment-level info
                 try:
-                    log_file.write(f"Treatment: {getattr(exp, 'treatment', 'N/A')}\n")
-                    log_file.write(f"Waveform: {getattr(exp, 'waveform', 'N/A')}\n")
-                    log_file.write(f"Number of Files (Timepoints): {exp.get_file_count()}\n")
-                    log_file.write(f"File Length: {exp.get_file_length()} seconds\n")
-                    log_file.write(f"Acquisition Frequency: {exp.get_acquisition_frequency()} Hz\n")
-                    log_file.write(f"Time Between Files: {exp.get_time_between_files()} minutes\n")
-                    log_file.write(f"Files Before Treatment: {exp.get_number_of_files_before_treatment()}\n")
+                    if file_type == "Flow Cell":
+                        # Flow Cell specific information
+                        log_file.write(f"Waveform: {getattr(exp, 'waveform', 'N/A')}\n")
+                        log_file.write(f"Number of Files: {exp.get_file_count()}\n")
+                        log_file.write(f"File Length: {exp.get_file_length()} seconds\n")
+                        log_file.write(f"Acquisition Frequency: {exp.get_acquisition_frequency()} Hz\n")
+                        
+                        # Flow Cell specific attributes
+                        if hasattr(exp, 'buffer_indices') and exp.buffer_indices:
+                            log_file.write(f"Buffer Files: {len(exp.buffer_indices)}\n")
+                        if hasattr(exp, 'concentration_indices') and exp.concentration_indices:
+                            log_file.write(f"Concentration Files: {len(exp.concentration_indices)}\n")
+                        if hasattr(exp, 'injection_start') and exp.injection_start is not None:
+                            log_file.write(f"Injection Start: {exp.injection_start} seconds\n")
+                        if hasattr(exp, 'injection_end') and exp.injection_end is not None:
+                            log_file.write(f"Injection End: {exp.injection_end} seconds\n")
+                    else:
+                        # Standard replicate information
+                        log_file.write(f"Treatment: {getattr(exp, 'treatment', 'N/A')}\n")
+                        log_file.write(f"Waveform: {getattr(exp, 'waveform', 'N/A')}\n")
+                        log_file.write(f"Number of Files (Timepoints): {exp.get_file_count()}\n")
+                        log_file.write(f"File Length: {exp.get_file_length()} seconds\n")
+                        log_file.write(f"Acquisition Frequency: {exp.get_acquisition_frequency()} Hz\n")
+                        log_file.write(f"Time Between Files: {exp.get_time_between_files()} minutes\n")
+                        log_file.write(f"Files Before Treatment: {exp.get_number_of_files_before_treatment()}\n")
                 except Exception as e:
                     log_file.write(f"Error retrieving experiment info: {e}\n")
                 
                 log_file.write("\n")
 
                 # Data files
-                log_file.write("Data Files:\n")
-                try:
-                    for file_idx in range(exp.get_file_count()):
-                        sf = exp.get_spheroid_file(file_idx)
-                        filepath = sf.get_filepath()
-                        filename = os.path.basename(filepath)
-                        
-                        # Calculate time in minutes
-                        time_min = file_idx * exp.get_time_between_files()
-                        baseline_marker = " [BASELINE]" if file_idx < exp.get_number_of_files_before_treatment() else ""
-                        
-                        log_file.write(f"  {file_idx + 1}. {filename} (t={time_min} min){baseline_marker}\n")
-                        log_file.write(f"     Path: {filepath}\n")
-                        
-                        # File metadata
-                        try:
-                            meta = sf.get_metadata()
-                            if meta:
-                                # Peak amplitude
-                                if 'peak_amplitude_values' in meta and meta['peak_amplitude_values'] is not None:
-                                    amp_val = meta['peak_amplitude_values']
-                                    if isinstance(amp_val, (list, np.ndarray)):
-                                        if len(amp_val) > 0:
-                                            if file_type == "Spontaneous":
-                                                log_file.write(f"     Peaks Detected: {len(amp_val)}\n")
-                                                log_file.write(f"     Mean Amplitude: {np.mean(amp_val):.4f} nA\n")
-                                            else:
-                                                log_file.write(f"     Peak Amplitude: {amp_val[0]:.4f} nA\n")
-                                    else:
-                                        log_file.write(f"     Peak Amplitude: {amp_val:.4f} nA\n")
-                                
-                                # Peak position
-                                if 'peak_amplitude_positions' in meta and meta['peak_amplitude_positions'] is not None:
-                                    pos_val = meta['peak_amplitude_positions']
-                                    if isinstance(pos_val, (list, np.ndarray)) and len(pos_val) > 0:
-                                        if file_type != "Spontaneous":
-                                            pos_sec = pos_val[0] / exp.get_acquisition_frequency()
-                                            log_file.write(f"     Peak Position: {pos_val[0]} samples ({pos_sec:.2f} s)\n")
-                                    elif not isinstance(pos_val, (list, np.ndarray)):
-                                        pos_sec = pos_val / exp.get_acquisition_frequency()
-                                        log_file.write(f"     Peak Position: {pos_val} samples ({pos_sec:.2f} s)\n")
-                                
-                                # Exponential fitting (for stimulated data)
-                                if file_type != "Spontaneous" and 'exponential fitting parameters' in meta:
-                                    fit_params = meta['exponential fitting parameters']
-                                    if fit_params and isinstance(fit_params, dict):
-                                        log_file.write(f"     Exponential Fit:\n")
-                                        log_file.write(f"       - Amplitude (A): {fit_params.get('A', 'N/A'):.4f}\n")
-                                        log_file.write(f"       - Tau (τ): {fit_params.get('tau', 'N/A'):.4f}\n")
-                                        log_file.write(f"       - Constant (C): {fit_params.get('C', 'N/A'):.4f}\n")
-                                        log_file.write(f"       - Half-life (t½): {fit_params.get('t_half', 'N/A'):.4f}\n")
-                                
-                                # Baseline info
-                                if 'baseline' in meta and meta['baseline'] is not None:
-                                    baseline = meta['baseline']
-                                    if isinstance(baseline, (list, np.ndarray)) and len(baseline) > 0:
-                                        log_file.write(f"     Baseline: {baseline[0]:.4f} nA\n")
-                                    elif not isinstance(baseline, (list, np.ndarray)):
-                                        log_file.write(f"     Baseline: {baseline:.4f} nA\n")
-                        except Exception as e:
-                            log_file.write(f"     Error reading metadata: {e}\n")
-                        
+                if file_type == "Flow Cell":
+                    log_file.write("Data Files (organized by type):\n\n")
+                    
+                    # List buffer files first
+                    if hasattr(exp, 'buffer_indices') and exp.buffer_indices:
+                        log_file.write("  Buffer/Blank Files:\n")
+                        for buf_idx in exp.buffer_indices:
+                            try:
+                                sf = exp.get_spheroid_file(buf_idx)
+                                filepath = sf.get_filepath()
+                                filename = os.path.basename(filepath)
+                                log_file.write(f"    {buf_idx + 1}. {filename}\n")
+                                log_file.write(f"       Path: {filepath}\n")
+                            except Exception as e:
+                                log_file.write(f"    Error reading buffer file {buf_idx}: {e}\n")
                         log_file.write("\n")
-                except Exception as e:
-                    log_file.write(f"Error listing files: {e}\n")
+                    
+                    # List concentration files grouped by concentration
+                    if hasattr(exp, 'files_by_concentration') and exp.files_by_concentration:
+                        log_file.write("  Concentration Files:\n")
+                        sorted_concs = sorted([c for c, idxs in exp.files_by_concentration.items() if idxs])
+                        
+                        for conc in sorted_concs:
+                            file_indices = exp.files_by_concentration[conc]
+                            log_file.write(f"\n    {conc} nM ({len(file_indices)} files):\n")
+                            
+                            for file_idx in file_indices:
+                                try:
+                                    sf = exp.get_spheroid_file(file_idx)
+                                    filepath = sf.get_filepath()
+                                    filename = os.path.basename(filepath)
+                                    log_file.write(f"      {file_idx + 1}. {filename}\n")
+                                    log_file.write(f"         Path: {filepath}\n")
+                                    
+                                    # Optionally log metadata if available (but skip peak detection)
+                                    try:
+                                        meta = sf.get_metadata()
+                                        if meta and 'baseline' in meta and meta['baseline'] is not None:
+                                            baseline = meta['baseline']
+                                            if isinstance(baseline, (list, np.ndarray)) and len(baseline) > 0:
+                                                log_file.write(f"         Baseline: {baseline[0]:.4f} nA\n")
+                                            elif not isinstance(baseline, (list, np.ndarray)):
+                                                log_file.write(f"         Baseline: {baseline:.4f} nA\n")
+                                    except Exception:
+                                        pass
+                                    
+                                except Exception as e:
+                                    log_file.write(f"      Error reading file {file_idx}: {e}\n")
+                        log_file.write("\n")
+                    
+                    # List any unorganized files
+                    all_organized = set()
+                    if hasattr(exp, 'buffer_indices'):
+                        all_organized.update(exp.buffer_indices)
+                    if hasattr(exp, 'files_by_concentration'):
+                        for idxs in exp.files_by_concentration.values():
+                            all_organized.update(idxs)
+                    
+                    unorganized = [i for i in range(exp.get_file_count()) if i not in all_organized]
+                    if unorganized:
+                        log_file.write("  Unorganized Files:\n")
+                        for file_idx in unorganized:
+                            try:
+                                sf = exp.get_spheroid_file(file_idx)
+                                filepath = sf.get_filepath()
+                                filename = os.path.basename(filepath)
+                                log_file.write(f"    {file_idx + 1}. {filename}\n")
+                                log_file.write(f"       Path: {filepath}\n")
+                            except Exception as e:
+                                log_file.write(f"    Error reading file {file_idx}: {e}\n")
+                        log_file.write("\n")
+                        
+                else:
+                    # Standard replicate file listing
+                    log_file.write("Data Files:\n")
+                    try:
+                        for file_idx in range(exp.get_file_count()):
+                            sf = exp.get_spheroid_file(file_idx)
+                            filepath = sf.get_filepath()
+                            filename = os.path.basename(filepath)
+                            
+                            # Calculate time in minutes
+                            time_min = file_idx * exp.get_time_between_files()
+                            baseline_marker = " [BASELINE]" if file_idx < exp.get_number_of_files_before_treatment() else ""
+                            
+                            log_file.write(f"  {file_idx + 1}. {filename} (t={time_min} min){baseline_marker}\n")
+                            log_file.write(f"     Path: {filepath}\n")
+                            
+                            # File metadata (skip for Flow Cell buffers)
+                            try:
+                                meta = sf.get_metadata()
+                                if meta:
+                                    # Peak amplitude
+                                    if 'peak_amplitude_values' in meta and meta['peak_amplitude_values'] is not None:
+                                        amp_val = meta['peak_amplitude_values']
+                                        if isinstance(amp_val, (list, np.ndarray)):
+                                            if len(amp_val) > 0:
+                                                if file_type == "Spontaneous":
+                                                    log_file.write(f"     Peaks Detected: {len(amp_val)}\n")
+                                                    log_file.write(f"     Mean Amplitude: {np.mean(amp_val):.4f} nA\n")
+                                                else:
+                                                    log_file.write(f"     Peak Amplitude: {amp_val[0]:.4f} nA\n")
+                                        else:
+                                            log_file.write(f"     Peak Amplitude: {amp_val:.4f} nA\n")
+                                    
+                                    # Peak position
+                                    if 'peak_amplitude_positions' in meta and meta['peak_amplitude_positions'] is not None:
+                                        pos_val = meta['peak_amplitude_positions']
+                                        if isinstance(pos_val, (list, np.ndarray)) and len(pos_val) > 0:
+                                            if file_type != "Spontaneous":
+                                                pos_sec = pos_val[0] / exp.get_acquisition_frequency()
+                                                log_file.write(f"     Peak Position: {pos_val[0]} samples ({pos_sec:.2f} s)\n")
+                                        elif not isinstance(pos_val, (list, np.ndarray)):
+                                            pos_sec = pos_val / exp.get_acquisition_frequency()
+                                            log_file.write(f"     Peak Position: {pos_val} samples ({pos_sec:.2f} s)\n")
+                                    
+                                    # Exponential fitting (for stimulated data, not Flow Cell)
+                                    if file_type not in ["Spontaneous", "Flow Cell"] and 'exponential fitting parameters' in meta:
+                                        fit_params = meta['exponential fitting parameters']
+                                        if fit_params and isinstance(fit_params, dict):
+                                            log_file.write(f"     Exponential Fit:\n")
+                                            log_file.write(f"       - Amplitude (A): {fit_params.get('A', 'N/A'):.4f}\n")
+                                            log_file.write(f"       - Tau (τ): {fit_params.get('tau', 'N/A'):.4f}\n")
+                                            log_file.write(f"       - Constant (C): {fit_params.get('C', 'N/A'):.4f}\n")
+                                            log_file.write(f"       - Half-life (t½): {fit_params.get('t_half', 'N/A'):.4f}\n")
+                                    
+                                    # Baseline info
+                                    if 'baseline' in meta and meta['baseline'] is not None:
+                                        baseline = meta['baseline']
+                                        if isinstance(baseline, (list, np.ndarray)) and len(baseline) > 0:
+                                            log_file.write(f"     Baseline: {baseline[0]:.4f} nA\n")
+                                        elif not isinstance(baseline, (list, np.ndarray)):
+                                            log_file.write(f"     Baseline: {baseline:.4f} nA\n")
+                            except Exception as e:
+                                log_file.write(f"     Error reading metadata: {e}\n")
+                            
+                            log_file.write("\n")
+                    except Exception as e:
+                        log_file.write(f"Error listing files: {e}\n")
                 
                 log_file.write("\n")
 
