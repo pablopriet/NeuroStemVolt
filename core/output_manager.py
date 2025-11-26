@@ -1480,6 +1480,393 @@ class OutputManager:
         return params_path
 
     @staticmethod
+    def save_all_ITs_group(group_experiments: GroupAnalysis, output_folder_path):
+        """
+        Save IT traces for all files across all Flow Cell experiments in a GroupAnalysis.
+        Creates a CSV with time in first column and IT traces for each file in subsequent columns.
+        Includes all files (with buffers).
+        
+        Args:
+            group_experiments (GroupAnalysis): Group containing multiple Flow Cell experiments
+            output_folder_path (str): Directory where CSV will be saved
+        
+        Returns:
+            str: Path to saved CSV file
+        """
+        experiments = group_experiments.get_experiments()
+        if not experiments:
+            print("No experiments found in GroupAnalysis")
+            return None
+        
+        # Collect IT data from all experiments
+        all_it_data = []  # List of (exp_idx, file_idx, filename, it_trace)
+        time_array = None
+        
+        for exp_idx, exp in enumerate(experiments):
+            for file_idx in range(exp.get_file_count()):
+                try:
+                    sf = exp.get_spheroid_file(file_idx)
+                    it_trace = sf.get_processed_data_IT()
+                    
+                    if it_trace is None or len(it_trace) == 0:
+                        continue
+                    
+                    # Generate time array (only need to do this once)
+                    if time_array is None:
+                        freq = exp.get_acquisition_frequency()
+                        time_array = np.arange(len(it_trace)) / freq
+                    
+                    filename = os.path.basename(sf.get_filepath())
+                    all_it_data.append((exp_idx, file_idx, filename, it_trace))
+                    
+                except Exception as e:
+                    print(f"Warning: Could not extract IT for exp {exp_idx}, file {file_idx}: {e}")
+                    continue
+        
+        if not all_it_data or time_array is None:
+            print("No IT data could be extracted")
+            return None
+        
+        # Create output folder
+        it_folder = os.path.join(output_folder_path, "all_replicates_ITs")
+        os.makedirs(it_folder, exist_ok=True)
+        
+        # Build CSV
+        csv_path = os.path.join(it_folder, "All_ITs_all_experiments_with_buffers.csv")
+        
+        # Create header
+        header = ["Time_s"]
+        for exp_idx, file_idx, filename, _ in all_it_data:
+            header.append(f"Exp{exp_idx+1}_File{file_idx+1}_{filename}")
+        
+        # Write CSV
+        with open(csv_path, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(header)
+            
+            for i in range(len(time_array)):
+                row = [time_array[i]]
+                for _, _, _, it_trace in all_it_data:
+                    row.append(it_trace[i] if i < len(it_trace) else np.nan)
+                writer.writerow(row)
+        
+        print(f"Saved all ITs (with buffers) to {csv_path}")
+        return csv_path
+    
+    @staticmethod
+    def save_all_ITs_group_exclude_buffers(group_experiments: GroupAnalysis, output_folder_path):
+        """
+        Save IT traces for all concentration files across all Flow Cell experiments.
+        Excludes buffer/blank files.
+        
+        Args:
+            group_experiments (GroupAnalysis): Group containing multiple Flow Cell experiments
+            output_folder_path (str): Directory where CSV will be saved
+        
+        Returns:
+            str: Path to saved CSV file
+        """
+        experiments = group_experiments.get_experiments()
+        if not experiments:
+            print("No experiments found in GroupAnalysis")
+            return None
+        
+        # Collect IT data from all experiments (excluding buffers)
+        all_it_data = []  # List of (exp_idx, file_idx, filename, it_trace)
+        time_array = None
+        
+        for exp_idx, exp in enumerate(experiments):
+            # Get concentration indices if available
+            if hasattr(exp, 'concentration_indices'):
+                file_indices = exp.concentration_indices
+            else:
+                # Fallback: check filename for buffer/blank
+                file_indices = []
+                for file_idx in range(exp.get_file_count()):
+                    try:
+                        sf = exp.get_spheroid_file(file_idx)
+                        filepath = sf.get_filepath()
+                        basename = os.path.basename(filepath).lower()
+                        if "buffer" not in basename and "blank" not in basename:
+                            file_indices.append(file_idx)
+                    except:
+                        continue
+            
+            for file_idx in file_indices:
+                try:
+                    sf = exp.get_spheroid_file(file_idx)
+                    it_trace = sf.get_processed_data_IT()
+                    
+                    if it_trace is None or len(it_trace) == 0:
+                        continue
+                    
+                    # Generate time array (only need to do this once)
+                    if time_array is None:
+                        freq = exp.get_acquisition_frequency()
+                        time_array = np.arange(len(it_trace)) / freq
+                    
+                    filename = os.path.basename(sf.get_filepath())
+                    all_it_data.append((exp_idx, file_idx, filename, it_trace))
+                    
+                except Exception as e:
+                    print(f"Warning: Could not extract IT for exp {exp_idx}, file {file_idx}: {e}")
+                    continue
+        
+        if not all_it_data or time_array is None:
+            print("No IT data could be extracted")
+            return None
+        
+        # Create output folder
+        it_folder = os.path.join(output_folder_path, "all_replicates_ITs")
+        os.makedirs(it_folder, exist_ok=True)
+        
+        # Build CSV
+        csv_path = os.path.join(it_folder, "All_ITs_all_experiments_exclude_buffers.csv")
+        
+        # Create header
+        header = ["Time_s"]
+        for exp_idx, file_idx, filename, _ in all_it_data:
+            header.append(f"Exp{exp_idx+1}_File{file_idx+1}_{filename}")
+        
+        # Write CSV
+        with open(csv_path, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(header)
+            
+            for i in range(len(time_array)):
+                row = [time_array[i]]
+                for _, _, _, it_trace in all_it_data:
+                    row.append(it_trace[i] if i < len(it_trace) else np.nan)
+                writer.writerow(row)
+        
+        print(f"Saved all ITs (excluding buffers) to {csv_path}")
+        return csv_path
+    
+    @staticmethod
+    def save_all_CVs_group(group_experiments: GroupAnalysis, output_folder_path, time_point=None):
+        """
+        Export CV data for all files across all Flow Cell experiments in a GroupAnalysis.
+        Includes all files (with buffers).
+        
+        Args:
+            group_experiments (GroupAnalysis): Group containing multiple Flow Cell experiments
+            output_folder_path (str): Directory where CSV will be saved
+            time_point (int, optional): Time index for CV extraction. If None, uses injection midpoint
+        
+        Returns:
+            str: Path to saved CSV file
+        """
+        from core.spheroid_file import Waveforms
+        from PyQt5.QtCore import QSettings
+        
+        experiments = group_experiments.get_experiments()
+        if not experiments:
+            print("No experiments found in GroupAnalysis")
+            return None
+        
+        # Determine time point for CV extraction (from first experiment)
+        first_exp = experiments[0]
+        if time_point is None:
+            if hasattr(first_exp, 'injection_start') and hasattr(first_exp, 'injection_length'):
+                if first_exp.injection_start is not None and first_exp.injection_length is not None:
+                    injection_mid_sec = first_exp.injection_start + (first_exp.injection_length / 2.0)
+                    freq = first_exp.get_acquisition_frequency()
+                    time_point = int(injection_mid_sec * freq)
+                else:
+                    time_point = 0
+            else:
+                time_point = 0
+        
+        # Get waveform settings
+        qsettings = QSettings("HashemiLab", "NeuroStemVolt")
+        waveform_type = qsettings.value("waveform", "None", type=str)
+        
+        # Collect CV data from all experiments
+        all_cv_data = []  # List of (exp_idx, file_idx, filename, current_array)
+        voltage = None
+        
+        for exp_idx, exp in enumerate(experiments):
+            for file_idx in range(exp.get_file_count()):
+                try:
+                    sf = exp.get_spheroid_file(file_idx)
+                    processed_data = sf.get_processed_data()
+                    
+                    if processed_data is None or len(processed_data) == 0:
+                        continue
+                    
+                    # Generate voltage waveform (only need to do this once)
+                    if voltage is None:
+                        try:
+                            if waveform_type == "5HT":
+                                wf = Waveforms(0.2, [1.0, -0.1], 0.2, 1000, processed_data.shape[1])
+                            else:
+                                wf = Waveforms(-0.5, [-0.7, 1.1], -0.5, 600, processed_data.shape[1])
+                            voltage = wf.voltage_waveform()
+                        except:
+                            voltage = np.linspace(-0.1, 1.0, processed_data.shape[1])
+                    
+                    # Extract current at time point
+                    tp = min(time_point, processed_data.shape[0] - 1)
+                    current = processed_data[tp, :]
+                    
+                    filename = os.path.basename(sf.get_filepath())
+                    all_cv_data.append((exp_idx, file_idx, filename, current))
+                    
+                except Exception as e:
+                    print(f"Warning: Could not extract CV for exp {exp_idx}, file {file_idx}: {e}")
+                    continue
+        
+        if not all_cv_data or voltage is None:
+            print("No CV data could be extracted")
+            return None
+        
+        # Create output folder
+        cv_folder = os.path.join(output_folder_path, "all_CVs")
+        os.makedirs(cv_folder, exist_ok=True)
+        
+        # Build CSV
+        csv_path = os.path.join(cv_folder, "All_CVs_all_experiments_with_buffers.csv")
+        
+        # Create header
+        header = ["Voltage_V"]
+        for exp_idx, file_idx, filename, _ in all_cv_data:
+            header.append(f"Exp{exp_idx+1}_File{file_idx+1}_{filename}")
+        
+        # Write CSV
+        with open(csv_path, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(header)
+            
+            for i in range(len(voltage)):
+                row = [voltage[i]]
+                for _, _, _, current in all_cv_data:
+                    row.append(current[i])
+                writer.writerow(row)
+        
+        print(f"Saved all CVs (with buffers) to {csv_path}")
+        return csv_path
+    
+    @staticmethod
+    def save_all_CVs_group_exclude_buffers(group_experiments: GroupAnalysis, output_folder_path, time_point=None):
+        """
+        Export CV data for concentration files across all Flow Cell experiments.
+        Excludes buffer/blank files.
+        
+        Args:
+            group_experiments (GroupAnalysis): Group containing multiple Flow Cell experiments
+            output_folder_path (str): Directory where CSV will be saved
+            time_point (int, optional): Time index for CV extraction. If None, uses injection midpoint
+        
+        Returns:
+            str: Path to saved CSV file
+        """
+        from core.spheroid_file import Waveforms
+        from PyQt5.QtCore import QSettings
+        
+        experiments = group_experiments.get_experiments()
+        if not experiments:
+            print("No experiments found in GroupAnalysis")
+            return None
+        
+        # Determine time point for CV extraction (from first experiment)
+        first_exp = experiments[0]
+        if time_point is None:
+            if hasattr(first_exp, 'injection_start') and hasattr(first_exp, 'injection_length'):
+                if first_exp.injection_start is not None and first_exp.injection_length is not None:
+                    injection_mid_sec = first_exp.injection_start + (first_exp.injection_length / 2.0)
+                    freq = first_exp.get_acquisition_frequency()
+                    time_point = int(injection_mid_sec * freq)
+                else:
+                    time_point = 0
+            else:
+                time_point = 0
+        
+        # Get waveform settings
+        qsettings = QSettings("HashemiLab", "NeuroStemVolt")
+        waveform_type = qsettings.value("waveform", "None", type=str)
+        
+        # Collect CV data from all experiments (excluding buffers)
+        all_cv_data = []  # List of (exp_idx, file_idx, filename, current_array)
+        voltage = None
+        
+        for exp_idx, exp in enumerate(experiments):
+            # Get concentration indices if available
+            if hasattr(exp, 'concentration_indices'):
+                file_indices = exp.concentration_indices
+            else:
+                # Fallback: check filename for buffer/blank
+                file_indices = []
+                for file_idx in range(exp.get_file_count()):
+                    try:
+                        sf = exp.get_spheroid_file(file_idx)
+                        filepath = sf.get_filepath()
+                        basename = os.path.basename(filepath).lower()
+                        if "buffer" not in basename and "blank" not in basename:
+                            file_indices.append(file_idx)
+                    except:
+                        continue
+            
+            for file_idx in file_indices:
+                try:
+                    sf = exp.get_spheroid_file(file_idx)
+                    processed_data = sf.get_processed_data()
+                    
+                    if processed_data is None or len(processed_data) == 0:
+                        continue
+                    
+                    # Generate voltage waveform (only need to do this once)
+                    if voltage is None:
+                        try:
+                            if waveform_type == "5HT":
+                                wf = Waveforms(0.2, [1.0, -0.1], 0.2, 1000, processed_data.shape[1])
+                            else:
+                                wf = Waveforms(-0.5, [-0.7, 1.1], -0.5, 600, processed_data.shape[1])
+                            voltage = wf.voltage_waveform()
+                        except:
+                            voltage = np.linspace(-0.1, 1.0, processed_data.shape[1])
+                    
+                    # Extract current at time point
+                    tp = min(time_point, processed_data.shape[0] - 1)
+                    current = processed_data[tp, :]
+                    
+                    filename = os.path.basename(sf.get_filepath())
+                    all_cv_data.append((exp_idx, file_idx, filename, current))
+                    
+                except Exception as e:
+                    print(f"Warning: Could not extract CV for exp {exp_idx}, file {file_idx}: {e}")
+                    continue
+        
+        if not all_cv_data or voltage is None:
+            print("No CV data could be extracted")
+            return None
+        
+        # Create output folder
+        cv_folder = os.path.join(output_folder_path, "all_CVs")
+        os.makedirs(cv_folder, exist_ok=True)
+        
+        # Build CSV
+        csv_path = os.path.join(cv_folder, "All_CVs_all_experiments_exclude_buffers.csv")
+        
+        # Create header
+        header = ["Voltage_V"]
+        for exp_idx, file_idx, filename, _ in all_cv_data:
+            header.append(f"Exp{exp_idx+1}_File{file_idx+1}_{filename}")
+        
+        # Write CSV
+        with open(csv_path, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(header)
+            
+            for i in range(len(voltage)):
+                row = [voltage[i]]
+                for _, _, _, current in all_cv_data:
+                    row.append(current[i])
+                writer.writerow(row)
+        
+        print(f"Saved all CVs (excluding buffers) to {csv_path}")
+        return csv_path
+
+    @staticmethod
     def save_all_CVs(flow_cell_experiment, output_folder_path, time_point=None):
         """
         Export cyclic voltammograms (CV) data for all files in a flow cell experiment.

@@ -189,22 +189,17 @@ class ResultsPage(QWizardPage):
                 OutputManager.save_all_ITs(ga, output_folder)
                 OutputManager.save_mean_ITs(ga, output_folder)
             elif file_type == "Flow Cell":
-                # Get the first experiment (assuming all are Flow Cell experiments)
+                # Export CVs and ITs for Flow Cell (using first experiment for single-file exports)
                 experiments = ga.get_experiments()
                 if experiments:
                     flow_cell_exp = experiments[0]
-                    # Export CVs and ITs for Flow Cell
                     OutputManager.save_all_CVs(flow_cell_exp, output_folder)
                     OutputManager.save_all_CVs_exclude_buffers(flow_cell_exp, output_folder)
-                    OutputManager.save_all_ITs(flow_cell_exp, output_folder)
                     OutputManager.save_all_ITs_exclude_buffers(flow_cell_exp, output_folder)
                     
-                    # Export calibration data if concentrations are defined
-                    if hasattr(flow_cell_exp, 'calibration_points') and flow_cell_exp.calibration_points:
-                        concentrations = flow_cell_exp.calibration_points
-                        repetitions = getattr(flow_cell_exp, 'repetitions_per_cal', 1)
-                        OutputManager.save_concentration_peak_statistics(ga, output_folder, concentrations, repetitions)
-                        OutputManager.save_concentration_calibration_curve(ga, output_folder, concentrations, repetitions)
+                # Export calibration data using Flow Cell-specific methods (across all experiments)
+                OutputManager.save_flow_cell_concentration_statistics(ga, output_folder)
+                OutputManager.save_flow_cell_calibration_curve(ga, output_folder)
             else:
                 OutputManager.save_all_peak_amplitudes(ga, output_folder)
                 OutputManager.save_all_reuptake_curves(ga, output_folder)
@@ -406,7 +401,7 @@ class ResultsPage(QWizardPage):
     def handle_flow_cell_calibration(self):
         """
         Display the calibration curve for Flow Cell experiments.
-        Plots peak amplitude vs concentration with linear fit.
+        Plots peak amplitude vs concentration with linear fit across all replicates.
         """
         group_analysis = self.wizard().group_analysis
         experiments = group_analysis.get_experiments()
@@ -414,21 +409,19 @@ class ResultsPage(QWizardPage):
             QMessageBox.warning(self, "No Data", "No experiments loaded.")
             return
         
-        # Get the first experiment (assuming it's a FlowCellExperiment)
-        flow_cell_exp = experiments[0]
-        
-        # Check if it's actually a Flow Cell experiment
-        if not hasattr(flow_cell_exp, 'get_sorted_concentrations'):
+        # Check if experiments are Flow Cell type
+        if not hasattr(experiments[0], 'get_sorted_concentrations'):
             QMessageBox.warning(self, "Invalid Experiment", 
                               "This experiment does not appear to be a Flow Cell experiment.")
             return
         
-        # Plot the calibration curve
-        self.result_plot.plot_flow_cell_calibration_curve(flow_cell_exp, fit_type='linear', weighted=False)
+        # Plot the calibration curve (pass GroupAnalysis to handle multiple experiments)
+        self.result_plot.plot_flow_cell_calibration_curve(group_analysis, fit_type='linear', weighted=False)
 
     def handle_flow_cell_its(self):
         """
         Display mean IT traces grouped by concentration for Flow Cell experiments.
+        Computes means across all replicates for each concentration.
         """
         group_analysis = self.wizard().group_analysis
         experiments = group_analysis.get_experiments()
@@ -436,22 +429,19 @@ class ResultsPage(QWizardPage):
             QMessageBox.warning(self, "No Data", "No experiments loaded.")
             return
         
-        # Get the first experiment (assuming it's a FlowCellExperiment)
-        flow_cell_exp = experiments[0]
-        
-        # Check if it's actually a Flow Cell experiment
-        if not hasattr(flow_cell_exp, 'get_sorted_concentrations'):
+        # Check if experiments are Flow Cell type
+        if not hasattr(experiments[0], 'get_sorted_concentrations'):
             QMessageBox.warning(self, "Invalid Experiment", 
                               "This experiment does not appear to be a Flow Cell experiment.")
             return
         
-        # Plot mean ITs by concentration
-        self.result_plot.plot_flow_cell_mean_ITs(flow_cell_exp)
+        # Plot mean ITs by concentration (pass GroupAnalysis to handle multiple experiments)
+        self.result_plot.plot_flow_cell_mean_ITs(group_analysis)
 
     def handle_flow_cell_cvs(self):
         """
         Display mean CV curves grouped by concentration for Flow Cell experiments.
-        CV is extracted at injection midpoint by default.
+        CV is extracted at injection midpoint by default. Computes means across all replicates.
         """
         group_analysis = self.wizard().group_analysis
         experiments = group_analysis.get_experiments()
@@ -459,14 +449,11 @@ class ResultsPage(QWizardPage):
             QMessageBox.warning(self, "No Data", "No experiments loaded.")
             return
         
-        # Get the first experiment (assuming it's a FlowCellExperiment)
-        flow_cell_exp = experiments[0]
-        
-        # Check if it's actually a Flow Cell experiment
-        if not hasattr(flow_cell_exp, 'get_sorted_concentrations'):
+        # Check if experiments are Flow Cell type
+        if not hasattr(experiments[0], 'get_sorted_concentrations'):
             QMessageBox.warning(self, "Invalid Experiment", 
                               "This experiment does not appear to be a Flow Cell experiment.")
             return
         
-        # Plot mean CVs by concentration (at injection midpoint)
-        self.result_plot.plot_flow_cell_mean_CVs(flow_cell_exp)
+        # Plot mean CVs by concentration (pass GroupAnalysis to handle multiple experiments)
+        self.result_plot.plot_flow_cell_mean_CVs(group_analysis)
