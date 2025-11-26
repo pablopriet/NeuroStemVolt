@@ -1135,6 +1135,13 @@ class OutputManager:
                                     log_file.write(f"   - Region: start={param_info[0]}s, end={param_info[1]}s\n")
                                 elif step == "Savitzky-Golay Filter":
                                     log_file.write(f"   - Window: {param_info[0]}, Order: {param_info[1]}\n")
+                                elif step == "Butterworth Filter":
+                                    log_file.write(f"   - Order (p): {param_info[0]}\n")
+                                    log_file.write(f"   - Cutoff cx: {param_info[1]} Hz\n")
+                                    log_file.write(f"   - Cutoff cy: {param_info[2]} Hz\n")
+                                else:
+                                    # Generic handling for other list/tuple parameters
+                                    log_file.write(f"   - Parameters: {', '.join(str(p) for p in param_info)}\n")
                             else:
                                 log_file.write(f"   - Parameter: {param_info}\n")
                         log_file.write("\n")
