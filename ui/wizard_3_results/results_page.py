@@ -102,6 +102,18 @@ class ResultsPage(QWizardPage):
             btn_amp.clicked.connect(lambda _, f=lambda: self.result_plot.show_amplitudes_over_time(self.wizard().group_analysis): self._reveal_and_call(f))
             btn_freq.clicked.connect(lambda: self._reveal_and_call(lambda: self.result_plot.show_frequency_over_time(self.wizard().group_analysis)))
             self.analysis_buttons = [btn_avg, btn_amp, btn_freq]
+        elif file_type == "Flow Cell":
+            btn_calib = QPushButton("Plot Calibration Curve"); apply_custom_styles(btn_calib)
+            btn_its = QPushButton("Plot Mean ITs by Concentration"); apply_custom_styles(btn_its)
+            btn_cvs = QPushButton("Plot Mean CVs by Concentration"); apply_custom_styles(btn_cvs)
+            self.analysis.addWidget(btn_calib, 0, 0)
+            self.analysis.addWidget(btn_its, 0, 1)
+            self.analysis.addWidget(btn_cvs, 1, 0)
+            # connect
+            btn_calib.clicked.connect(lambda: self._reveal_and_call(self.handle_flow_cell_calibration))
+            btn_its.clicked.connect(lambda: self._reveal_and_call(self.handle_flow_cell_its))
+            btn_cvs.clicked.connect(lambda: self._reveal_and_call(self.handle_flow_cell_cvs))
+            self.analysis_buttons = [btn_calib, btn_its, btn_cvs]
         else:
             btn_avg = QPushButton("Mean Amplitude Over Experiments"); apply_custom_styles(btn_avg)
             btn_fit = QPushButton("Decay Exponential Fitting"); apply_custom_styles(btn_fit)
@@ -140,6 +152,7 @@ class ResultsPage(QWizardPage):
             - Reuptake curves
             - Exponential fit parameters
             - AUC values
+            - Flow Cell specific: CVs and calibration data
 
         Displays status dialogs and error messages as needed.
         """
@@ -173,13 +186,32 @@ class ResultsPage(QWizardPage):
             
             if file_type == "Spontaneous":
                 OutputManager.save_spontaneous_peak_metrics(ga, output_folder)
+                OutputManager.save_all_ITs(ga, output_folder)
+                OutputManager.save_mean_ITs(ga, output_folder)
+            elif file_type == "Flow Cell":
+                # Get the first experiment (assuming all are Flow Cell experiments)
+                experiments = ga.get_experiments()
+                if experiments:
+                    flow_cell_exp = experiments[0]
+                    # Export CVs and ITs for Flow Cell
+                    OutputManager.save_all_CVs(flow_cell_exp, output_folder)
+                    OutputManager.save_all_CVs_exclude_buffers(flow_cell_exp, output_folder)
+                    OutputManager.save_all_ITs(flow_cell_exp, output_folder)
+                    OutputManager.save_all_ITs_exclude_buffers(flow_cell_exp, output_folder)
+                    
+                    # Export calibration data if concentrations are defined
+                    if hasattr(flow_cell_exp, 'calibration_points') and flow_cell_exp.calibration_points:
+                        concentrations = flow_cell_exp.calibration_points
+                        repetitions = getattr(flow_cell_exp, 'repetitions_per_cal', 1)
+                        OutputManager.save_concentration_peak_statistics(ga, output_folder, concentrations, repetitions)
+                        OutputManager.save_concentration_calibration_curve(ga, output_folder, concentrations, repetitions)
             else:
                 OutputManager.save_all_peak_amplitudes(ga, output_folder)
                 OutputManager.save_all_reuptake_curves(ga, output_folder)
                 OutputManager.save_all_exponential_fitting_params(ga, output_folder)
                 OutputManager.save_all_AUC(ga, output_folder)
-            OutputManager.save_all_ITs(ga, output_folder)
-            OutputManager.save_mean_ITs(ga, output_folder)
+                OutputManager.save_all_ITs(ga, output_folder)
+                OutputManager.save_mean_ITs(ga, output_folder)
 
 
         except Exception as e:
@@ -222,6 +254,7 @@ class ResultsPage(QWizardPage):
             - Tau parameter over time
             - Exponential decay fits
             - Amplitude trajectories
+            - Flow Cell specific: calibration curve, mean ITs, mean CVs
 
         Displays a progress dialog during export and handles exceptions.
         """
@@ -243,17 +276,41 @@ class ResultsPage(QWizardPage):
         QApplication.processEvents()      # force a repaint
 
         try:
-            # Save all group-level plots using OutputManager
-            OutputManager.save_mean_ITs_plot(group_analysis, output_folder)
-            OutputManager.save_plot_all_amplitudes_over_time(group_analysis, output_folder)
-            OutputManager.save_plot_mean_amplitudes_over_time(group_analysis, output_folder)
-
-            if not file_type == "Spontaneous":
-                OutputManager.save_plot_tau_over_time(group_analysis, output_folder)
-                OutputManager.save_plot_exponential_fit_aligned(group_analysis, output_folder)
+            if file_type == "Flow Cell":
+                # Flow Cell specific plots
+                experiments = group_analysis.get_experiments()
+                if experiments:
+                    flow_cell_exp = experiments[0]
+                    
+                    # Create plots folder
+                    plots_folder = os.path.join(output_folder, "plots")
+                    os.makedirs(plots_folder, exist_ok=True)
+                    
+                    # Save calibration curve
+                    self.result_plot.plot_flow_cell_calibration_curve(flow_cell_exp)
+                    calib_path = os.path.join(plots_folder, "flow_cell_calibration_curve.png")
+                    self.result_plot.fig.savefig(calib_path, dpi=300, bbox_inches='tight')
+                    
+                    # Save mean ITs
+                    self.result_plot.plot_flow_cell_mean_ITs(flow_cell_exp)
+                    its_path = os.path.join(plots_folder, "flow_cell_mean_ITs.png")
+                    self.result_plot.fig.savefig(its_path, dpi=300, bbox_inches='tight')
+                    
+                    # Save mean CVs
+                    self.result_plot.plot_flow_cell_mean_CVs(flow_cell_exp)
+                    cvs_path = os.path.join(plots_folder, "flow_cell_mean_CVs.png")
+                    self.result_plot.fig.savefig(cvs_path, dpi=300, bbox_inches='tight')
             else:
-                OutputManager.save_plot_frequency_over_time(group_analysis, output_folder)
-            # Add more OutputManager plot saves as needed
+                # Standard plots for other file types
+                OutputManager.save_mean_ITs_plot(group_analysis, output_folder)
+                OutputManager.save_plot_all_amplitudes_over_time(group_analysis, output_folder)
+                OutputManager.save_plot_mean_amplitudes_over_time(group_analysis, output_folder)
+
+                if not file_type == "Spontaneous":
+                    OutputManager.save_plot_tau_over_time(group_analysis, output_folder)
+                    OutputManager.save_plot_exponential_fit_aligned(group_analysis, output_folder)
+                else:
+                    OutputManager.save_plot_frequency_over_time(group_analysis, output_folder)
         except Exception as e:
             QMessageBox.critical(
                 self, "Export Failed",
@@ -345,3 +402,71 @@ class ResultsPage(QWizardPage):
                     self.result_plot.show_amplitudes_for_timepoint(group_analysis, replicate_time_point=idx)
                 except AttributeError:
                     QMessageBox.warning(self, "Not Implemented", "Single-file amplitude plot is not implemented in PlotCanvas.")
+
+    def handle_flow_cell_calibration(self):
+        """
+        Display the calibration curve for Flow Cell experiments.
+        Plots peak amplitude vs concentration with linear fit.
+        """
+        group_analysis = self.wizard().group_analysis
+        experiments = group_analysis.get_experiments()
+        if not experiments:
+            QMessageBox.warning(self, "No Data", "No experiments loaded.")
+            return
+        
+        # Get the first experiment (assuming it's a FlowCellExperiment)
+        flow_cell_exp = experiments[0]
+        
+        # Check if it's actually a Flow Cell experiment
+        if not hasattr(flow_cell_exp, 'get_sorted_concentrations'):
+            QMessageBox.warning(self, "Invalid Experiment", 
+                              "This experiment does not appear to be a Flow Cell experiment.")
+            return
+        
+        # Plot the calibration curve
+        self.result_plot.plot_flow_cell_calibration_curve(flow_cell_exp, fit_type='linear', weighted=False)
+
+    def handle_flow_cell_its(self):
+        """
+        Display mean IT traces grouped by concentration for Flow Cell experiments.
+        """
+        group_analysis = self.wizard().group_analysis
+        experiments = group_analysis.get_experiments()
+        if not experiments:
+            QMessageBox.warning(self, "No Data", "No experiments loaded.")
+            return
+        
+        # Get the first experiment (assuming it's a FlowCellExperiment)
+        flow_cell_exp = experiments[0]
+        
+        # Check if it's actually a Flow Cell experiment
+        if not hasattr(flow_cell_exp, 'get_sorted_concentrations'):
+            QMessageBox.warning(self, "Invalid Experiment", 
+                              "This experiment does not appear to be a Flow Cell experiment.")
+            return
+        
+        # Plot mean ITs by concentration
+        self.result_plot.plot_flow_cell_mean_ITs(flow_cell_exp)
+
+    def handle_flow_cell_cvs(self):
+        """
+        Display mean CV curves grouped by concentration for Flow Cell experiments.
+        CV is extracted at injection midpoint by default.
+        """
+        group_analysis = self.wizard().group_analysis
+        experiments = group_analysis.get_experiments()
+        if not experiments:
+            QMessageBox.warning(self, "No Data", "No experiments loaded.")
+            return
+        
+        # Get the first experiment (assuming it's a FlowCellExperiment)
+        flow_cell_exp = experiments[0]
+        
+        # Check if it's actually a Flow Cell experiment
+        if not hasattr(flow_cell_exp, 'get_sorted_concentrations'):
+            QMessageBox.warning(self, "Invalid Experiment", 
+                              "This experiment does not appear to be a Flow Cell experiment.")
+            return
+        
+        # Plot mean CVs by concentration (at injection midpoint)
+        self.result_plot.plot_flow_cell_mean_CVs(flow_cell_exp)

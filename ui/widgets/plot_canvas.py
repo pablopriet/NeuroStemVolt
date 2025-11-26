@@ -811,3 +811,374 @@ class PlotCanvas(FigureCanvas):
         self.fig.tight_layout()
         self.draw()
 
+    def plot_flow_cell_mean_ITs(self, flow_cell_experiment):
+        """
+        Plot mean IT traces with standard deviation for each concentration.
+        
+        For Flow Cell experiments, groups files by concentration and plots the mean
+        current-time trace with shaded standard deviation region for each concentration.
+        
+        Args:
+            flow_cell_experiment: FlowCellExperiment instance with processed data
+        """
+        from core.spheroid_file import Waveforms
+        
+        # Show loading dialog
+        progress = QProgressDialog("Processing flow cell IT data...", None, 0, 0, self)
+        progress.setWindowModality(Qt.ApplicationModal)
+        progress.setAutoClose(True)
+        progress.setAutoReset(True)
+        progress.setMinimumDuration(0)
+        progress.show()
+        QApplication.processEvents()
+        
+        self.axes.clear()
+        
+        # Get sorted concentrations
+        concentrations = flow_cell_experiment.get_sorted_concentrations()
+        if not concentrations:
+            self.axes.set_title("No concentration data available")
+            self.draw()
+            progress.close()
+            return
+        
+        # Get acquisition frequency for time axis
+        freq = flow_cell_experiment.get_acquisition_frequency()
+        
+        # Color palette for different concentrations
+        colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', 
+                  '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+        
+        # Plot each concentration
+        for idx, conc in enumerate(concentrations):
+            file_indices = flow_cell_experiment.get_files_for_concentration(conc)
+            if not file_indices:
+                continue
+            
+            # Collect IT traces for this concentration
+            it_traces = []
+            for file_idx in file_indices:
+                try:
+                    sf = flow_cell_experiment.get_spheroid_file(file_idx)
+                    it_trace = sf.get_processed_data_IT()
+                    if it_trace is not None and len(it_trace) > 0:
+                        it_traces.append(it_trace)
+                except Exception as e:
+                    print(f"Warning: Could not get IT for file {file_idx}: {e}")
+                    continue
+            
+            if not it_traces:
+                continue
+            
+            # Convert to array and compute statistics
+            # Pad shorter traces with NaN if needed
+            max_len = max(len(trace) for trace in it_traces)
+            padded_traces = []
+            for trace in it_traces:
+                if len(trace) < max_len:
+                    padded = np.full(max_len, np.nan)
+                    padded[:len(trace)] = trace
+                    padded_traces.append(padded)
+                else:
+                    padded_traces.append(trace)
+            
+            it_array = np.array(padded_traces)
+            mean_it = np.nanmean(it_array, axis=0)
+            std_it = np.nanstd(it_array, axis=0)
+            
+            # Create time axis in seconds
+            time_sec = np.arange(len(mean_it)) / freq
+            
+            # Plot mean with shaded std
+            color = colors[idx % len(colors)]
+            self.axes.plot(time_sec, mean_it, color=color, linewidth=2, 
+                          label=f'{conc} nM (n={len(it_traces)})')
+            self.axes.fill_between(time_sec, mean_it - std_it, mean_it + std_it, 
+                                   color=color, alpha=0.3)
+        
+        # Add injection markers if available
+        if hasattr(flow_cell_experiment, 'injection_start') and flow_cell_experiment.injection_start is not None:
+            self.axes.axvline(x=flow_cell_experiment.injection_start, 
+                            color='red', linestyle='--', linewidth=1.5, 
+                            label='Injection Start')
+            if hasattr(flow_cell_experiment, 'injection_end') and flow_cell_experiment.injection_end is not None:
+                self.axes.axvline(x=flow_cell_experiment.injection_end, 
+                                color='red', linestyle='--', linewidth=1.5, 
+                                label='Injection End')
+        
+        self.axes.set_xlabel('Time (s)', fontsize=12)
+        self.axes.set_ylabel('Current (nA)', fontsize=12)
+        self.axes.set_title('Mean IT Traces by Concentration', fontsize=14, fontweight='bold')
+        self.axes.legend(fontsize=9, frameon=True, fancybox=True)
+        self.axes.grid(True, alpha=0.3)
+        
+        self.fig.tight_layout()
+        self.draw()
+        progress.close()
+
+    def plot_flow_cell_mean_CVs(self, flow_cell_experiment, time_point=None):
+        """
+        Plot mean CV curves with standard deviation for each concentration.
+        
+        For Flow Cell experiments, groups files by concentration and plots the mean
+        cyclic voltammogram with shaded standard deviation region for each concentration.
+        
+        Args:
+            flow_cell_experiment: FlowCellExperiment instance with processed data
+            time_point (int, optional): Time index for CV extraction. If None, uses 
+                                       injection midpoint
+        """
+        from core.spheroid_file import Waveforms
+        
+        # Show loading dialog
+        progress = QProgressDialog("Processing flow cell CV data...", None, 0, 0, self)
+        progress.setWindowModality(Qt.ApplicationModal)
+        progress.setAutoClose(True)
+        progress.setAutoReset(True)
+        progress.setMinimumDuration(0)
+        progress.show()
+        QApplication.processEvents()
+        
+        self.axes.clear()
+        
+        # Determine time point for CV extraction
+        if time_point is None:
+            if hasattr(flow_cell_experiment, 'injection_start') and hasattr(flow_cell_experiment, 'injection_length'):
+                if flow_cell_experiment.injection_start is not None and flow_cell_experiment.injection_length is not None:
+                    injection_mid_sec = flow_cell_experiment.injection_start + (flow_cell_experiment.injection_length / 2.0)
+                    freq = flow_cell_experiment.get_acquisition_frequency()
+                    time_point = int(injection_mid_sec * freq)
+                else:
+                    time_point = 0
+            else:
+                time_point = 0
+        
+        # Get sorted concentrations
+        concentrations = flow_cell_experiment.get_sorted_concentrations()
+        if not concentrations:
+            self.axes.set_title("No concentration data available")
+            self.draw()
+            progress.close()
+            return
+        
+        # Generate voltage waveform
+        qsettings = QSettings("HashemiLab", "NeuroStemVolt")
+        waveform_type = qsettings.value("waveform", "None", type=str)
+        
+        voltage = None
+        
+        # Color palette for different concentrations
+        colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', 
+                  '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+        
+        # Plot each concentration
+        for idx, conc in enumerate(concentrations):
+            file_indices = flow_cell_experiment.get_files_for_concentration(conc)
+            if not file_indices:
+                continue
+            
+            # Collect CV data for this concentration
+            cv_currents = []
+            for file_idx in file_indices:
+                try:
+                    sf = flow_cell_experiment.get_spheroid_file(file_idx)
+                    processed_data = sf.get_processed_data()
+                    
+                    if processed_data is None or len(processed_data) == 0:
+                        continue
+                    
+                    # Generate voltage waveform (only need to do once)
+                    if voltage is None:
+                        try:
+                            if waveform_type == "5HT":
+                                wf = Waveforms(0.2, [1.0, -0.1], 0.2, 1000, processed_data.shape[1])
+                            else:
+                                wf = Waveforms(-0.5, [-0.7, 1.1], -0.5, 600, processed_data.shape[1])
+                            voltage = wf.voltage_waveform()
+                        except:
+                            voltage = np.linspace(-0.1, 1.0, processed_data.shape[1])
+                    
+                    # Extract current at time point
+                    tp = min(time_point, processed_data.shape[0] - 1)
+                    current = processed_data[tp, :]
+                    cv_currents.append(current)
+                    
+                except Exception as e:
+                    print(f"Warning: Could not get CV for file {file_idx}: {e}")
+                    continue
+            
+            if not cv_currents:
+                continue
+            
+            # Convert to array and compute statistics
+            cv_array = np.array(cv_currents)
+            mean_cv = np.nanmean(cv_array, axis=0)
+            std_cv = np.nanstd(cv_array, axis=0)
+            
+            # Plot mean with shaded std
+            color = colors[idx % len(colors)]
+            self.axes.plot(voltage, mean_cv, color=color, linewidth=2, 
+                          label=f'{conc} nM (n={len(cv_currents)})')
+            self.axes.fill_between(voltage, mean_cv - std_cv, mean_cv + std_cv, 
+                                   color=color, alpha=0.3)
+        
+        self.axes.set_xlabel('Voltage (V)', fontsize=12)
+        self.axes.set_ylabel('Current (nA)', fontsize=12)
+        
+        # Add time point info to title
+        freq = flow_cell_experiment.get_acquisition_frequency()
+        time_sec = time_point / freq
+        self.axes.set_title(f'Mean CV Curves by Concentration (at {time_sec:.1f}s)', 
+                           fontsize=14, fontweight='bold')
+        self.axes.legend(fontsize=9, frameon=True, fancybox=True)
+        self.axes.grid(True, alpha=0.3)
+        
+        self.fig.tight_layout()
+        self.draw()
+        progress.close()
+
+    def plot_flow_cell_calibration_curve(self, flow_cell_experiment, fit_type='linear', weighted=False):
+        """
+        Plot peak amplitudes vs concentration with calibration curve fit.
+        
+        Extracts peak amplitudes for each concentration, computes mean and std,
+        and fits a calibration curve through the data points.
+        
+        Args:
+            flow_cell_experiment: FlowCellExperiment instance with processed data
+            fit_type (str): 'linear' for y=mx+b or 'zero_intercept' for y=mx
+            weighted (bool): If True, weight fit by inverse variance
+        """
+        from scipy.stats import linregress
+        
+        # Show loading dialog
+        progress = QProgressDialog("Fitting calibration curve...", None, 0, 0, self)
+        progress.setWindowModality(Qt.ApplicationModal)
+        progress.setAutoClose(True)
+        progress.setAutoReset(True)
+        progress.setMinimumDuration(0)
+        progress.show()
+        QApplication.processEvents()
+        
+        self.axes.clear()
+        
+        # Get sorted concentrations
+        concentrations = flow_cell_experiment.get_sorted_concentrations()
+        if not concentrations:
+            self.axes.set_title("No concentration data available")
+            self.draw()
+            progress.close()
+            return
+        
+        # Collect peak amplitudes for each concentration
+        conc_list = []
+        mean_peaks = []
+        std_peaks = []
+        
+        for conc in concentrations:
+            file_indices = flow_cell_experiment.get_files_for_concentration(conc)
+            if not file_indices:
+                continue
+            
+            peaks = []
+            for file_idx in file_indices:
+                try:
+                    sf = flow_cell_experiment.get_spheroid_file(file_idx)
+                    it_trace = sf.get_processed_data_IT()
+                    if it_trace is not None and len(it_trace) > 0:
+                        # Get peak amplitude (max value in IT trace)
+                        peak_amp = np.max(it_trace)
+                        peaks.append(peak_amp)
+                except Exception as e:
+                    print(f"Warning: Could not get peak for file {file_idx}: {e}")
+                    continue
+            
+            if peaks:
+                conc_list.append(conc)
+                mean_peaks.append(np.mean(peaks))
+                std_peaks.append(np.std(peaks))
+        
+        if len(conc_list) < 2:
+            self.axes.set_title("Insufficient data for calibration curve")
+            self.draw()
+            progress.close()
+            return
+        
+        # Convert to arrays
+        conc_array = np.array(conc_list)
+        mean_array = np.array(mean_peaks)
+        std_array = np.array(std_peaks)
+        
+        # Perform linear fit
+        if fit_type == 'zero_intercept':
+            # Force through origin: y = mx
+            if weighted and np.all(std_array > 0):
+                weights = 1.0 / (std_array ** 2)
+                slope = np.sum(weights * conc_array * mean_array) / np.sum(weights * conc_array ** 2)
+            else:
+                slope = np.sum(conc_array * mean_array) / np.sum(conc_array ** 2)
+            intercept = 0.0
+            
+            # Calculate R² manually for zero-intercept fit
+            fitted_values = slope * conc_array
+            ss_res = np.sum((mean_array - fitted_values) ** 2)
+            ss_tot = np.sum(mean_array ** 2)
+            r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+            
+        else:  # linear with intercept
+            if weighted and np.all(std_array > 0):
+                weights = 1.0 / (std_array ** 2)
+                # Weighted least squares
+                W = np.diag(weights)
+                X = np.column_stack([conc_array, np.ones(len(conc_array))])
+                params = np.linalg.lstsq(X.T @ W @ X, X.T @ W @ mean_array, rcond=None)[0]
+                slope, intercept = params
+            else:
+                # Regular linear regression
+                result = linregress(conc_array, mean_array)
+                slope = result.slope
+                intercept = result.intercept
+                r_squared = result.rvalue ** 2
+            
+            # Calculate R² for weighted case
+            if weighted and np.all(std_array > 0):
+                fitted_values = slope * conc_array + intercept
+                ss_res = np.sum((mean_array - fitted_values) ** 2)
+                ss_tot = np.sum((mean_array - np.mean(mean_array)) ** 2)
+                r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+        
+        # Plot data points with error bars
+        self.axes.errorbar(conc_array, mean_array, yerr=std_array, 
+                          fmt='o', markersize=8, capsize=5, capthick=2,
+                          color='#1f77b4', ecolor='#1f77b4', 
+                          label='Data (mean ± std)')
+        
+        # Plot fit line
+        conc_fit = np.linspace(0, max(conc_array) * 1.1, 100)
+        if fit_type == 'zero_intercept':
+            current_fit = slope * conc_fit
+            equation = f'I = {slope:.4f} × C'
+        else:
+            current_fit = slope * conc_fit + intercept
+            equation = f'I = {slope:.4f} × C + {intercept:.4f}'
+        
+        self.axes.plot(conc_fit, current_fit, 'r-', linewidth=2, 
+                      label=f'{equation}\nR² = {r_squared:.4f}')
+        
+        # Force origin visibility if zero-intercept
+        if fit_type == 'zero_intercept':
+            xlim = self.axes.get_xlim()
+            ylim = self.axes.get_ylim()
+            self.axes.set_xlim(0, xlim[1])
+            self.axes.set_ylim(0, ylim[1])
+        
+        self.axes.set_xlabel('Concentration (nM)', fontsize=12)
+        self.axes.set_ylabel('Peak Current (nA)', fontsize=12)
+        self.axes.set_title('Calibration Curve', fontsize=14, fontweight='bold')
+        self.axes.legend(fontsize=10, frameon=True, fancybox=True, loc='upper left')
+        self.axes.grid(True, alpha=0.3)
+        
+        self.fig.tight_layout()
+        self.draw()
+        progress.close()
+
