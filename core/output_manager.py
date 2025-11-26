@@ -6,6 +6,7 @@ import numpy as np
 from scipy.stats import sem
 from datetime import datetime
 import json
+import csv
 
 class OutputManager:
     @staticmethod
@@ -1205,6 +1206,308 @@ class OutputManager:
         print(f"Saved calibration curve summary to {summary_path}")
         
         return params_path
+
+    @staticmethod
+    def save_all_CVs(flow_cell_experiment, output_folder_path, time_point=None):
+        """
+        Export cyclic voltammograms (CV) data for all files in a flow cell experiment.
+        
+        For each file, extracts the current values at the specified time point across all 
+        voltage steps, along with the generated voltage waveform. The result is a CSV with
+        voltage in the first column and current for each file in subsequent columns.
+        
+        Args:
+            flow_cell_experiment: FlowCellExperiment instance with processed data
+            output_folder_path (str): Directory where CSV will be saved
+            time_point (int, optional): Time index for CV extraction. If None, uses injection
+                                       midpoint (injection_start + injection_length/2)
+        
+        Returns:
+            str: Path to saved CSV file
+        """
+        from core.spheroid_file import Waveforms
+        from PyQt5.QtCore import QSettings
+        
+        # Determine time point for CV extraction
+        if time_point is None:
+            if hasattr(flow_cell_experiment, 'injection_start') and hasattr(flow_cell_experiment, 'injection_length'):
+                if flow_cell_experiment.injection_start is not None and flow_cell_experiment.injection_length is not None:
+                    # Use injection midpoint
+                    injection_mid_sec = flow_cell_experiment.injection_start + (flow_cell_experiment.injection_length / 2.0)
+                    freq = flow_cell_experiment.get_acquisition_frequency()
+                    time_point = int(injection_mid_sec * freq)
+                else:
+                    time_point = 0
+            else:
+                time_point = 0
+        
+        # Get waveform settings
+        qsettings = QSettings("HashemiLab", "NeuroStemVolt")
+        waveform_type = qsettings.value("waveform", "None", type=str)
+        
+        # Collect CV data for all files
+        cv_data = {}  # {file_idx: current_array}
+        voltage = None
+        
+        for file_idx in range(flow_cell_experiment.get_file_count()):
+            try:
+                sf = flow_cell_experiment.get_spheroid_file(file_idx)
+                processed_data = sf.get_processed_data()
+                
+                if processed_data is None or len(processed_data) == 0:
+                    continue
+                
+                # Generate voltage waveform (only need to do this once)
+                if voltage is None:
+                    try:
+                        if waveform_type == "5HT":
+                            wf = Waveforms(0.2, [1.0, -0.1], 0.2, 1000, processed_data.shape[1])
+                        else:
+                            wf = Waveforms(-0.5, [-0.7, 1.1], -0.5, 600, processed_data.shape[1])
+                        voltage = wf.voltage_waveform()
+                    except:
+                        # Fallback voltage
+                        voltage = np.linspace(-0.1, 1.0, processed_data.shape[1])
+                
+                # Extract current at time point
+                if time_point >= processed_data.shape[0]:
+                    tp = processed_data.shape[0] - 1
+                else:
+                    tp = time_point
+                
+                current = processed_data[tp, :]
+                cv_data[file_idx] = current
+                
+            except Exception as e:
+                print(f"Warning: Could not extract CV for file {file_idx}: {e}")
+                continue
+        
+        if not cv_data or voltage is None:
+            print("No CV data could be extracted")
+            return None
+        
+        # Create output folder
+        cv_folder = os.path.join(output_folder_path, "all_CVs")
+        os.makedirs(cv_folder, exist_ok=True)
+        
+        # Build CSV
+        csv_path = os.path.join(cv_folder, "all_CVs_with_buffers.csv")
+        
+        # Create header
+        header = ["Voltage_V"]
+        for file_idx in sorted(cv_data.keys()):
+            sf = flow_cell_experiment.get_spheroid_file(file_idx)
+            filename = os.path.basename(sf.get_filepath())
+            header.append(f"File{file_idx+1}_{filename}")
+        
+        # Write CSV
+        with open(csv_path, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(header)
+            
+            for i in range(len(voltage)):
+                row = [voltage[i]]
+                for file_idx in sorted(cv_data.keys()):
+                    row.append(cv_data[file_idx][i])
+                writer.writerow(row)
+        
+        print(f"Saved all CVs (with buffers) to {csv_path}")
+        return csv_path
+
+    @staticmethod
+    def save_all_CVs_exclude_buffers(flow_cell_experiment, output_folder_path, time_point=None):
+        """
+        Export cyclic voltammograms (CV) data for concentration files only (excluding buffers).
+        
+        Similar to save_all_CVs but only includes files identified as concentration files,
+        skipping any buffer/blank files.
+        
+        Args:
+            flow_cell_experiment: FlowCellExperiment instance with buffer detection
+            output_folder_path (str): Directory where CSV will be saved
+            time_point (int, optional): Time index for CV extraction. If None, uses injection
+                                       midpoint (injection_start + injection_length/2)
+        
+        Returns:
+            str: Path to saved CSV file
+        """
+        from core.spheroid_file import Waveforms
+        from PyQt5.QtCore import QSettings
+        
+        # Get concentration file indices (non-buffer files)
+        if not hasattr(flow_cell_experiment, 'concentration_indices'):
+            print("Warning: Flow cell experiment does not have concentration_indices attribute")
+            return None
+        
+        concentration_indices = flow_cell_experiment.concentration_indices
+        if not concentration_indices:
+            print("No concentration files found")
+            return None
+        
+        # Determine time point for CV extraction
+        if time_point is None:
+            if hasattr(flow_cell_experiment, 'injection_start') and hasattr(flow_cell_experiment, 'injection_length'):
+                if flow_cell_experiment.injection_start is not None and flow_cell_experiment.injection_length is not None:
+                    injection_mid_sec = flow_cell_experiment.injection_start + (flow_cell_experiment.injection_length / 2.0)
+                    freq = flow_cell_experiment.get_acquisition_frequency()
+                    time_point = int(injection_mid_sec * freq)
+                else:
+                    time_point = 0
+            else:
+                time_point = 0
+        
+        # Get waveform settings
+        qsettings = QSettings("HashemiLab", "NeuroStemVolt")
+        waveform_type = qsettings.value("waveform", "None", type=str)
+        
+        # Collect CV data for concentration files only
+        cv_data = {}  # {file_idx: current_array}
+        voltage = None
+        
+        for file_idx in concentration_indices:
+            try:
+                sf = flow_cell_experiment.get_spheroid_file(file_idx)
+                processed_data = sf.get_processed_data()
+                
+                if processed_data is None or len(processed_data) == 0:
+                    continue
+                
+                # Generate voltage waveform (only need to do this once)
+                if voltage is None:
+                    try:
+                        if waveform_type == "5HT":
+                            wf = Waveforms(0.2, [1.0, -0.1], 0.2, 1000, processed_data.shape[1])
+                        else:
+                            wf = Waveforms(-0.5, [-0.7, 1.1], -0.5, 600, processed_data.shape[1])
+                        voltage = wf.voltage_waveform()
+                    except:
+                        # Fallback voltage
+                        voltage = np.linspace(-0.1, 1.0, processed_data.shape[1])
+                
+                # Extract current at time point
+                if time_point >= processed_data.shape[0]:
+                    tp = processed_data.shape[0] - 1
+                else:
+                    tp = time_point
+                
+                current = processed_data[tp, :]
+                cv_data[file_idx] = current
+                
+            except Exception as e:
+                print(f"Warning: Could not extract CV for file {file_idx}: {e}")
+                continue
+        
+        if not cv_data or voltage is None:
+            print("No CV data could be extracted")
+            return None
+        
+        # Create output folder
+        cv_folder = os.path.join(output_folder_path, "all_CVs")
+        os.makedirs(cv_folder, exist_ok=True)
+        
+        # Build CSV
+        csv_path = os.path.join(cv_folder, "all_CVs_exclude_buffers.csv")
+        
+        # Create header
+        header = ["Voltage_V"]
+        for file_idx in sorted(cv_data.keys()):
+            sf = flow_cell_experiment.get_spheroid_file(file_idx)
+            filename = os.path.basename(sf.get_filepath())
+            header.append(f"File{file_idx+1}_{filename}")
+        
+        # Write CSV
+        with open(csv_path, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(header)
+            
+            for i in range(len(voltage)):
+                row = [voltage[i]]
+                for file_idx in sorted(cv_data.keys()):
+                    row.append(cv_data[file_idx][i])
+                writer.writerow(row)
+        
+        print(f"Saved all CVs (excluding buffers) to {csv_path}")
+        return csv_path
+
+    @staticmethod
+    def save_all_ITs_exclude_buffers(flow_cell_experiment, output_folder_path):
+        """
+        Export IT (current over time) data for concentration files only (excluding buffers).
+        
+        Creates a CSV with time in the first column and current traces for each concentration
+        file in subsequent columns. Buffer/blank files are excluded.
+        
+        Args:
+            flow_cell_experiment: FlowCellExperiment instance with buffer detection
+            output_folder_path (str): Directory where CSV will be saved
+        
+        Returns:
+            str: Path to saved CSV file
+        """
+        # Get concentration file indices (non-buffer files)
+        if not hasattr(flow_cell_experiment, 'concentration_indices'):
+            print("Warning: Flow cell experiment does not have concentration_indices attribute")
+            return None
+        
+        concentration_indices = flow_cell_experiment.concentration_indices
+        if not concentration_indices:
+            print("No concentration files found")
+            return None
+        
+        # Collect IT data for concentration files only
+        it_data = {}  # {file_idx: current_array}
+        time_array = None
+        
+        for file_idx in concentration_indices:
+            try:
+                sf = flow_cell_experiment.get_spheroid_file(file_idx)
+                it_trace = sf.get_processed_data_IT()
+                
+                if it_trace is None or len(it_trace) == 0:
+                    continue
+                
+                # Generate time array (only need to do this once)
+                if time_array is None:
+                    freq = flow_cell_experiment.get_acquisition_frequency()
+                    time_array = np.arange(len(it_trace)) / freq
+                
+                it_data[file_idx] = it_trace
+                
+            except Exception as e:
+                print(f"Warning: Could not extract IT for file {file_idx}: {e}")
+                continue
+        
+        if not it_data or time_array is None:
+            print("No IT data could be extracted")
+            return None
+        
+        # Create output folder
+        it_folder = os.path.join(output_folder_path, "all_replicates_ITs")
+        os.makedirs(it_folder, exist_ok=True)
+        
+        # Build CSV
+        csv_path = os.path.join(it_folder, "all_ITs_exclude_buffers.csv")
+        
+        # Create header
+        header = ["Time_s"]
+        for file_idx in sorted(it_data.keys()):
+            sf = flow_cell_experiment.get_spheroid_file(file_idx)
+            filename = os.path.basename(sf.get_filepath())
+            header.append(f"File{file_idx+1}_{filename}")
+        
+        # Write CSV
+        with open(csv_path, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(header)
+            
+            for i in range(len(time_array)):
+                row = [time_array[i]]
+                for file_idx in sorted(it_data.keys()):
+                    row.append(it_data[file_idx][i])
+                writer.writerow(row)
+        
+        print(f"Saved all ITs (excluding buffers) to {csv_path}")
+        return csv_path
 
     @staticmethod
     def save_experiment_log(group_experiments: GroupAnalysis, output_folder_path, qsettings=None):
