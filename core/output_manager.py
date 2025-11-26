@@ -1151,6 +1151,35 @@ class OutputManager:
                 log_file.write(f"Error reading processing pipeline: {e}\n")
             log_file.write("\n")
 
+            # ===== SUMMARY =====
+            log_file.write("=" * 80 + "\n")
+            log_file.write("SUMMARY\n")
+            log_file.write("=" * 80 + "\n\n")
+
+            try:
+                total_files = sum(exp.get_file_count() for exp in experiments)
+                log_file.write(f"Total Files Processed: {total_files}\n")
+                
+                # Get unique folder paths
+                folders = set()
+                for exp in experiments:
+                    for file_idx in range(exp.get_file_count()):
+                        try:
+                            filepath = exp.get_spheroid_file(file_idx).get_filepath()
+                            folder = os.path.dirname(filepath)
+                            folders.add(folder)
+                        except:
+                            pass
+                
+                log_file.write(f"Source Folders: {len(folders)}\n")
+                for folder in sorted(folders):
+                    log_file.write(f"  - {folder}\n")
+                
+            except Exception as e:
+                log_file.write(f"Error computing summary statistics: {e}\n")
+
+            log_file.write("\n")
+
             # ===== REPLICATE DATA =====
             log_file.write("=" * 80 + "\n")
             log_file.write("REPLICATE DATA\n")
@@ -1244,35 +1273,6 @@ class OutputManager:
                     log_file.write(f"Error listing files: {e}\n")
                 
                 log_file.write("\n")
-
-            # ===== SUMMARY =====
-            log_file.write("=" * 80 + "\n")
-            log_file.write("SUMMARY\n")
-            log_file.write("=" * 80 + "\n\n")
-
-            try:
-                total_files = sum(exp.get_file_count() for exp in experiments)
-                log_file.write(f"Total Files Processed: {total_files}\n")
-                
-                # Get unique folder paths
-                folders = set()
-                for exp in experiments:
-                    for file_idx in range(exp.get_file_count()):
-                        try:
-                            filepath = exp.get_spheroid_file(file_idx).get_filepath()
-                            folder = os.path.dirname(filepath)
-                            folders.add(folder)
-                        except:
-                            pass
-                
-                log_file.write(f"Source Folders: {len(folders)}\n")
-                for folder in sorted(folders):
-                    log_file.write(f"  - {folder}\n")
-                
-            except Exception as e:
-                log_file.write(f"Error computing summary statistics: {e}\n")
-
-            log_file.write("\n")
 
             # Footer
             log_file.write("=" * 80 + "\n")
