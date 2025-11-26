@@ -1071,6 +1071,142 @@ class OutputManager:
         return output_path
 
     @staticmethod
+    def save_concentration_calibration_curve(group_experiments: GroupAnalysis, output_folder_path,
+                                            concentrations, repetitions_per_concentration,
+                                            fit_type='linear', weighted=False):
+        """
+        Fit and save a concentration calibration curve with fit parameters to CSV files.
+        
+        This method fits a linear calibration curve through concentration vs peak amplitude data
+        and exports the fit parameters, data points, and goodness-of-fit metrics to CSV files.
+        
+        Args:
+            group_experiments (GroupAnalysis): Group containing experiments organized by concentration.
+            output_folder_path (str): Directory where CSV files will be saved.
+            concentrations (list): List of concentration values (e.g., [500, 250, 100, 50, 25, 10]).
+            repetitions_per_concentration (int): Number of replicate experiments per concentration.
+            fit_type (str): Type of fit - 'linear' (y=mx+b) or 'linear_origin' (y=mx). Default 'linear'.
+            weighted (bool): If True, use inverse variance weighting. Default False.
+        
+        Returns:
+            str: Path to the main fit parameters CSV file, or None if fitting failed.
+        
+        Output Files:
+            1. calibration_curve_fit_parameters.csv - Main fit parameters and statistics
+            2. calibration_curve_data_points.csv - Individual concentration data points with fits
+        
+        Example:
+            >>> concentrations = [500, 250, 100, 50, 25, 10]
+            >>> reps = 3
+            >>> OutputManager.save_concentration_calibration_curve(
+            ...     group_analysis, output_folder, concentrations, reps,
+            ...     fit_type='linear', weighted=False
+            ... )
+        """
+        import pandas as pd
+        
+        if not group_experiments.get_experiments():
+            print("Warning: No experiments found in group analysis.")
+            return None
+        
+        # Perform the calibration curve fit
+        fit_results = group_experiments.fit_concentration_calibration_curve(
+            concentrations=concentrations,
+            repetitions_per_concentration=repetitions_per_concentration,
+            fit_type=fit_type,
+            weighted=weighted
+        )
+        
+        if not fit_results:
+            print("Warning: Calibration curve fitting failed.")
+            return None
+        
+        # Create output directory
+        output_folder = os.path.join(output_folder_path, "calibration_curve")
+        os.makedirs(output_folder, exist_ok=True)
+        
+        # ===== FILE 1: Fit Parameters and Statistics =====
+        params_data = {
+            'Parameter': [
+                'Fit Type',
+                'Equation',
+                'Slope (nA/nM)',
+                'Intercept (nA)',
+                'R² (Coefficient of Determination)',
+                'RMSE (Root Mean Square Error)',
+                'Number of Data Points',
+                'Weighted Fit'
+            ],
+            'Value': [
+                fit_results['fit_type'],
+                fit_results['equation'],
+                f"{fit_results['slope']:.8f}",
+                f"{fit_results['intercept']:.8f}",
+                f"{fit_results['r_squared']:.6f}",
+                f"{fit_results['rmse']:.6f}",
+                fit_results['n_points'],
+                'Yes' if weighted else 'No'
+            ]
+        }
+        
+        df_params = pd.DataFrame(params_data)
+        params_path = os.path.join(output_folder, "calibration_curve_fit_parameters.csv")
+        df_params.to_csv(params_path, index=False)
+        print(f"Saved calibration curve fit parameters to {params_path}")
+        
+        # ===== FILE 2: Data Points with Fitted Values =====
+        data_points = {
+            'Concentration (nM)': fit_results['concentrations'],
+            'Mean Peak (nA)': [f"{val:.6f}" for val in fit_results['mean_peaks']],
+            'Std Dev (nA)': [f"{val:.6f}" for val in fit_results['std_peaks']],
+            'Fitted Peak (nA)': [f"{val:.6f}" for val in fit_results['fitted_values']],
+            'Residual (nA)': [f"{val:.6f}" for val in fit_results['residuals']]
+        }
+        
+        if fit_results['weights'] is not None:
+            data_points['Weight'] = [f"{w:.6f}" for w in fit_results['weights']]
+        
+        df_data = pd.DataFrame(data_points)
+        data_path = os.path.join(output_folder, "calibration_curve_data_points.csv")
+        df_data.to_csv(data_path, index=False)
+        print(f"Saved calibration curve data points to {data_path}")
+        
+        # ===== FILE 3: Summary with Equation =====
+        summary_lines = [
+            "CALIBRATION CURVE SUMMARY",
+            "=" * 60,
+            f"Fit Type: {fit_results['fit_type']}",
+            f"Equation: {fit_results['equation']}",
+            "",
+            f"Slope: {fit_results['slope']:.8f} nA/nM",
+            f"Intercept: {fit_results['intercept']:.8f} nA",
+            "",
+            f"R² (Coefficient of Determination): {fit_results['r_squared']:.6f}",
+            f"RMSE (Root Mean Square Error): {fit_results['rmse']:.6f} nA",
+            f"Number of Data Points: {fit_results['n_points']}",
+            f"Weighted Fit: {'Yes' if weighted else 'No'}",
+            "",
+            "=" * 60,
+            "Data Points:",
+            ""
+        ]
+        
+        # Add data point information
+        for i, conc in enumerate(fit_results['concentrations']):
+            summary_lines.append(
+                f"{conc:>6.1f} nM: Observed = {fit_results['mean_peaks'][i]:>8.4f} nA, "
+                f"Fitted = {fit_results['fitted_values'][i]:>8.4f} nA, "
+                f"Residual = {fit_results['residuals'][i]:>+8.4f} nA"
+            )
+        
+        summary_path = os.path.join(output_folder, "calibration_curve_summary.txt")
+        with open(summary_path, 'w') as f:
+            f.write('\n'.join(summary_lines))
+        print(f"Saved calibration curve summary to {summary_path}")
+        
+        return params_path
+
+    @staticmethod
     def save_experiment_log(group_experiments: GroupAnalysis, output_folder_path, qsettings=None):
         """
         Generate and save a comprehensive log file documenting all experiment metadata,

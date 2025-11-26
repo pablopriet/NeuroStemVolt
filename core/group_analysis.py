@@ -1504,6 +1504,118 @@ class GroupAnalysis:
         # 7) Return the figure, axis, and calculated AUC in case further processing is desired
         return fig, ax, auc_value
 
+    def compute_concentration_peak_statistics(self, concentrations, repetitions_per_concentration):
+        """
+        Compute mean and standard deviation of peak amplitudes for each concentration.
+        
+        This method assumes experiments are organized in sequential order where each group
+        of experiments corresponds to repetitions of the same concentration. It extracts
+        peak amplitude values from the first file of each experiment and groups them
+        by concentration.
+        
+        Args:
+            concentrations (list): List of concentration values (e.g., [500, 250, 100, 50, 25, 10]).
+                                  Should be in the order that matches the experimental sequence.
+            repetitions_per_concentration (int): Number of replicate experiments per concentration.
+        
+        Returns:
+            dict: Dictionary with concentration as key and dict of statistics as value:
+                  {
+                      concentration: {
+                          'mean': float,
+                          'std': float,
+                          'n': int,
+                          'peaks': list of peak values
+                      }
+                  }
+        
+        Example:
+            >>> concentrations = [500, 250, 100, 50, 25, 10]
+            >>> reps_per_conc = 3
+            >>> stats = group_analysis.compute_concentration_peak_statistics(concentrations, reps_per_conc)
+            >>> print(stats[500]['mean'])  # Mean peak for 500 nM
+        """
+        n_experiments = len(self.experiments)
+        
+        if n_experiments == 0:
+            print("Warning: No experiments found in group analysis.")
+            return {}
+        
+        # Calculate expected total experiments
+        expected_total = len(concentrations) * repetitions_per_concentration
+        
+        if n_experiments < expected_total:
+            print(f"Warning: Found {n_experiments} experiments but expected {expected_total} "
+                  f"({len(concentrations)} concentrations × {repetitions_per_concentration} reps).")
+        
+        # Initialize results dictionary
+        concentration_stats = {}
+        
+        # Process experiments in groups according to repetitions_per_concentration
+        for conc_idx, concentration in enumerate(concentrations):
+            start_idx = conc_idx * repetitions_per_concentration
+            end_idx = start_idx + repetitions_per_concentration
+            
+            # Get the experiments for this concentration
+            conc_experiments = self.experiments[start_idx:end_idx]
+            
+            if not conc_experiments:
+                print(f"Warning: No experiments found for concentration {concentration}")
+                concentration_stats[concentration] = {
+                    'mean': np.nan,
+                    'std': np.nan,
+                    'n': 0,
+                    'peaks': []
+                }
+                continue
+            
+            # Extract peak amplitudes from first file of each experiment
+            peak_values = []
+            
+            for exp in conc_experiments:
+                try:
+                    # Get the first file (baseline or first measurement)
+                    first_file = exp.get_spheroid_file(0)
+                    metadata = first_file.get_metadata()
+                    
+                    # Extract peak amplitude value(s)
+                    peak_amp = metadata.get('peak_amplitude_values', None)
+                    
+                    if peak_amp is not None:
+                        # Handle different formats (scalar, array, list)
+                        if isinstance(peak_amp, (list, tuple, np.ndarray)):
+                            peak_amp_array = np.array(peak_amp, dtype=float).ravel()
+                            if peak_amp_array.size > 0:
+                                # Take the mean if multiple peaks, or first value
+                                peak_val = float(np.nanmean(np.abs(peak_amp_array)))
+                            else:
+                                peak_val = np.nan
+                        else:
+                            peak_val = float(peak_amp)
+                        
+                        peak_values.append(peak_val)
+                    else:
+                        print(f"Warning: No peak amplitude found for experiment at index "
+                              f"{start_idx + len(peak_values)}")
+                        peak_values.append(np.nan)
+                        
+                except Exception as e:
+                    print(f"Error extracting peak for concentration {concentration}: {e}")
+                    peak_values.append(np.nan)
+            
+            # Calculate statistics
+            peak_values_array = np.array(peak_values)
+            valid_peaks = peak_values_array[np.isfinite(peak_values_array)]
+            
+            concentration_stats[concentration] = {
+                'mean': float(np.mean(valid_peaks)) if len(valid_peaks) > 0 else np.nan,
+                'std': float(np.std(valid_peaks, ddof=1)) if len(valid_peaks) > 1 else np.nan,
+                'n': len(valid_peaks),
+                'peaks': valid_peaks.tolist()
+            }
+        
+        return concentration_stats
+
 
     def fit_concentration_calibration_curve(self, concentrations, repetitions_per_concentration, 
                                            fit_type='linear', weighted=False):
