@@ -996,6 +996,81 @@ class OutputManager:
             print(f"Saved mean processed matrix for {base_names[file_idx]} to {output_path}")
 
     @staticmethod
+    def save_concentration_peak_statistics(group_experiments: GroupAnalysis, output_folder_path, 
+                                          concentrations, repetitions_per_concentration):
+        """
+        Save peak amplitude statistics (mean and std) for each concentration to a CSV file.
+        
+        This method computes statistics for flow cell experiments where multiple replicates
+        are performed for each concentration level. The output is sorted from highest to 
+        lowest concentration.
+        
+        Args:
+            group_experiments (GroupAnalysis): Group containing experiments organized by concentration.
+            output_folder_path (str): Directory where the CSV file will be saved.
+            concentrations (list): List of concentration values (e.g., [500, 250, 100, 50, 25, 10]).
+                                  Should match the order of experiments in group_experiments.
+            repetitions_per_concentration (int): Number of replicate experiments per concentration.
+        
+        Returns:
+            str: Path to the saved CSV file, or None if no data was available.
+        
+        Example:
+            >>> concentrations = [500, 250, 100, 50, 25, 10]
+            >>> reps = 3
+            >>> OutputManager.save_concentration_peak_statistics(
+            ...     group_analysis, output_folder, concentrations, reps
+            ... )
+        """
+        import pandas as pd
+        
+        if not group_experiments.get_experiments():
+            print("Warning: No experiments found in group analysis.")
+            return None
+        
+        # Compute statistics using the group_analysis method
+        stats = group_experiments.compute_concentration_peak_statistics(
+            concentrations, repetitions_per_concentration
+        )
+        
+        if not stats:
+            print("Warning: No statistics computed.")
+            return None
+        
+        # Prepare data for DataFrame
+        data_rows = []
+        
+        for concentration in sorted(stats.keys(), reverse=True):  # Sort from highest to lowest
+            stat_dict = stats[concentration]
+            
+            data_rows.append({
+                'Concentration (nM)': concentration,
+                'Mean Peak (nA)': stat_dict['mean'],
+                'Std Dev (nA)': stat_dict['std'],
+                'N': stat_dict['n'],
+                'Individual Peaks': ', '.join([f"{p:.4f}" for p in stat_dict['peaks']])
+            })
+        
+        # Create DataFrame
+        df = pd.DataFrame(data_rows)
+        
+        # Save to CSV
+        output_folder = os.path.join(output_folder_path, "concentration_statistics")
+        os.makedirs(output_folder, exist_ok=True)
+        output_path = os.path.join(output_folder, "concentration_peak_statistics.csv")
+        
+        df.to_csv(output_path, index=False)
+        print(f"Saved concentration peak statistics to {output_path}")
+        
+        # Also save a summary with just concentration, mean, and std
+        df_summary = df[['Concentration (nM)', 'Mean Peak (nA)', 'Std Dev (nA)', 'N']].copy()
+        summary_path = os.path.join(output_folder, "concentration_peak_summary.csv")
+        df_summary.to_csv(summary_path, index=False)
+        print(f"Saved concentration peak summary to {summary_path}")
+        
+        return output_path
+
+    @staticmethod
     def save_experiment_log(group_experiments: GroupAnalysis, output_folder_path, qsettings=None):
         """
         Generate and save a comprehensive log file documenting all experiment metadata,

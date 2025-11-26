@@ -1504,6 +1504,151 @@ class GroupAnalysis:
         # 7) Return the figure, axis, and calculated AUC in case further processing is desired
         return fig, ax, auc_value
 
+
+    def fit_concentration_calibration_curve(self, concentrations, repetitions_per_concentration, 
+                                           fit_type='linear', weighted=False):
+        """
+        Fit a calibration curve (line) through concentration vs peak amplitude data.
+        
+        This method computes mean peak amplitudes for each concentration and fits a line
+        through the data points, starting from the lowest concentration to the highest.
+        The fit can be linear (y = mx + b) or linear through origin (y = mx).
+        
+        Args:
+            concentrations (list): List of concentration values (e.g., [500, 250, 100, 50, 25, 10]).
+                                  Should match the order of experiments in group_experiments.
+            repetitions_per_concentration (int): Number of replicate experiments per concentration.
+            fit_type (str): Type of fit to perform:
+                           - 'linear': y = mx + b (default)
+                           - 'linear_origin': y = mx (forced through origin)
+            weighted (bool): If True, use inverse variance as weights (1/std²). Default False.
+        
+        Returns:
+            dict: Dictionary containing fit parameters and statistics:
+                  {
+                      'fit_type': str,
+                      'slope': float,
+                      'intercept': float,  # 0 for linear_origin
+                      'r_squared': float,
+                      'rmse': float,  # Root mean square error
+                      'concentrations': list,  # Sorted low to high
+                      'mean_peaks': list,
+                      'std_peaks': list,
+                      'fitted_values': list,
+                      'residuals': list,
+                      'n_points': int,
+                      'weights': list or None
+                  }
+        
+        Example:
+            >>> concentrations = [500, 250, 100, 50, 25, 10]
+            >>> reps = 3
+            >>> fit_params = group_analysis.fit_concentration_calibration_curve(
+            ...     concentrations, reps, fit_type='linear'
+            ... )
+            >>> print(f"Slope: {fit_params['slope']:.6f} nA/nM")
+            >>> print(f"Intercept: {fit_params['intercept']:.6f} nA")
+            >>> print(f"R²: {fit_params['r_squared']:.4f}")
+        """
+        from scipy import stats
+        
+        # First, compute concentration statistics
+        conc_stats = self.compute_concentration_peak_statistics(
+            concentrations, repetitions_per_concentration
+        )
+        
+        if not conc_stats:
+            print("Error: No concentration statistics available for fitting.")
+            return None
+        
+        # Extract data and sort from lowest to highest concentration
+        conc_list = []
+        mean_peaks = []
+        std_peaks = []
+        
+        for conc in sorted(conc_stats.keys()):  # Sort ascending (low to high)
+            stat = conc_stats[conc]
+            if np.isfinite(stat['mean']) and stat['n'] > 0:
+                conc_list.append(conc)
+                mean_peaks.append(stat['mean'])
+                std_peaks.append(stat['std'] if np.isfinite(stat['std']) else 0.0)
+        
+        if len(conc_list) < 2:
+            print("Error: Need at least 2 valid concentration points for fitting.")
+            return None
+        
+        # Convert to numpy arrays
+        x = np.array(conc_list)
+        y = np.array(mean_peaks)
+        y_std = np.array(std_peaks)
+        
+        # Prepare weights if requested
+        weights = None
+        if weighted:
+            # Use inverse variance as weights, avoiding division by zero
+            weights = np.where(y_std > 0, 1.0 / (y_std ** 2), 1.0)
+            weights = weights / np.sum(weights) * len(weights)  # Normalize
+        
+        # Perform linear regression
+        if fit_type == 'linear_origin':
+            # Force through origin: y = mx
+            if weighted and weights is not None:
+                slope = np.sum(weights * x * y) / np.sum(weights * x * x)
+            else:
+                slope = np.sum(x * y) / np.sum(x * x)
+            intercept = 0.0
+            
+        else:  # 'linear' (default)
+            if weighted and weights is not None:
+                # Weighted least squares
+                slope, intercept, r_value, p_value, std_err = stats.linregress(x, y, alternative='two-sided')
+                # Note: scipy linregress doesn't support weights directly, so we use polyfit
+                poly_coeffs = np.polyfit(x, y, 1, w=np.sqrt(weights))
+                slope = poly_coeffs[0]
+                intercept = poly_coeffs[1]
+                # Compute r_squared manually for weighted fit
+                y_pred = slope * x + intercept
+                ss_res = np.sum(weights * (y - y_pred) ** 2)
+                ss_tot = np.sum(weights * (y - np.average(y, weights=weights)) ** 2)
+                r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0.0
+            else:
+                # Ordinary least squares
+                slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
+                r_squared = r_value ** 2
+        
+        # Compute fitted values and residuals
+        fitted_values = slope * x + intercept
+        residuals = y - fitted_values
+        
+        # Compute R² for origin fit (manual calculation)
+        if fit_type == 'linear_origin':
+            ss_res = np.sum(residuals ** 2)
+            ss_tot = np.sum((y - np.mean(y)) ** 2)
+            r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0.0
+        
+        # Compute RMSE (Root Mean Square Error)
+        rmse = np.sqrt(np.mean(residuals ** 2))
+        
+        # Prepare output dictionary
+        fit_results = {
+            'fit_type': fit_type,
+            'slope': float(slope),
+            'intercept': float(intercept),
+            'r_squared': float(r_squared),
+            'rmse': float(rmse),
+            'concentrations': conc_list,  # Low to high
+            'mean_peaks': mean_peaks,
+            'std_peaks': std_peaks,
+            'fitted_values': fitted_values.tolist(),
+            'residuals': residuals.tolist(),
+            'n_points': len(conc_list),
+            'weights': weights.tolist() if weights is not None else None,
+            'equation': f"y = {slope:.6f}*x + {intercept:.6f}" if fit_type == 'linear' 
+                       else f"y = {slope:.6f}*x"
+        }
+        
+        return fit_results
+    
 if __name__ == "__main__":
     import time
     start_time = time.time()
