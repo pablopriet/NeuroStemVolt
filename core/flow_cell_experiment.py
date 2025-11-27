@@ -106,7 +106,7 @@ class FlowCellExperiment(SpheroidExperiment):
             return files_by_conc
 
         # simple relative tolerance for matching parsed number to calibration point
-        rel_tol = 0.05  # 5%
+        rel_tol = 0.00  # 0% in order for 501 nM to match only exactly 501 nM
 
         for idx in self.concentration_indices:
             f = self.files[idx]
