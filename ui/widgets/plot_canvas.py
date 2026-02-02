@@ -104,7 +104,7 @@ class PlotCanvas(FigureCanvas):
         self.fig.tight_layout()
         self.draw()
 
-    def plot_IT(self, processed_data, metadata=None, peak_position=None, temp_peak_detection=None):
+    def plot_IT(self, processed_data, metadata=None, peak_position=None, temp_peak_detection=None, show_peak_detection=False):
         """
         Plot the I-T (Current vs Time) trace, with optional peak annotations.
 
@@ -112,6 +112,7 @@ class PlotCanvas(FigureCanvas):
             processed_data (np.ndarray): 2D data array (voltage x time).
             metadata (dict, optional): Dictionary with peak positions/values.
             peak_position (int, optional): Voltage index used for I-T extraction.
+            show_peak_detection (bool, optional): If True, visualize peak detection algorithm with rise/decay windows.
 
         Returns:
             None
@@ -225,6 +226,50 @@ class PlotCanvas(FigureCanvas):
             if 'decay_validation_params' in metadata and metadata['decay_validation_params'] is not None:
                 is_valid = metadata['decay_validation_params'].get('peak_passed_validation', False)
                 validation_status = " (Valid)" if is_valid else " (Invalid)"
+        
+        # Visualize peak detection algorithm if requested
+        if show_peak_detection and metadata and 'peak_amplitude_positions' in metadata and not is_buffer_file:
+            peak_indices = metadata['peak_amplitude_positions']
+            
+            # Handle single or multiple peaks
+            if not isinstance(peak_indices, (list, np.ndarray)):
+                peak_indices = [peak_indices]
+            
+            # Get validation parameters if available
+            validation_params = metadata.get('decay_validation_params', {})
+            
+            if validation_params and 'rise_window_samples' in validation_params:
+                rise_samples = validation_params.get('rise_window_samples', 20)
+                decay_samples = validation_params.get('decay_window_samples', 400)
+                
+                # Visualize for the first peak (most prominent)
+                if len(peak_indices) > 0:
+                    peak_idx = int(peak_indices[0])
+                    
+                    if 0 <= peak_idx < len(profile):
+                        # Rise window (before peak)
+                        rise_start = max(0, peak_idx - rise_samples)
+                        rise_end = peak_idx
+                        self.axes.axvspan(t[rise_start], t[rise_end], 
+                                        alpha=0.2, color='green', 
+                                        label='Rise Window')
+                        
+                        # Decay window (after peak)
+                        decay_start = peak_idx
+                        decay_end = min(len(profile) - 1, peak_idx + decay_samples)
+                        self.axes.axvspan(t[decay_start], t[decay_end], 
+                                        alpha=0.2, color='orange', 
+                                        label='Decay Window')
+                        
+                        # Add annotation showing window durations
+                        rise_time = rise_samples / freq
+                        decay_time = decay_samples / freq
+                        annotation_text = f"Rise: {rise_time:.1f}s | Decay: {decay_time:.1f}s"
+                        self.axes.text(0.5, 0.02, annotation_text,
+                                     transform=self.axes.transAxes,
+                                     fontsize=9, ha='center',
+                                     bbox=dict(boxstyle='round', facecolor='white', 
+                                             edgecolor='gray', alpha=0.9))
 
         # Axis labeling and formatting
         self.axes.set_xlabel("Time (seconds)")
@@ -846,3 +891,278 @@ class PlotCanvas(FigureCanvas):
         self.fig.tight_layout()
         self.draw()
 
+
+    def plot_it_time_series_single_experiment(self, group_analysis, experiment_index=0):
+        """
+        Plot consecutive IT traces from a single experiment with a color gradient.
+        
+        Each file's IT trace is plotted with increasing color intensity based on
+        its position in the experimental timeline. Uses a colorbar instead of 
+        individual legends for each timepoint.
+        
+        If calibration is enabled, plots concentration vs time instead of current vs time.
+        
+        Args:
+            group_analysis: GroupAnalysis object containing experiments
+            experiment_index (int): Index of the experiment to visualize
+        """
+        import matplotlib.cm as cm
+        from matplotlib.colors import Normalize as MplNormalize
+        
+        # Show loading dialog
+        progress = QProgressDialog("Processing IT time series...", None, 0, 0, self)
+        progress.setWindowModality(Qt.ApplicationModal)
+        progress.setAutoClose(True)
+        progress.setAutoReset(True)
+        progress.setMinimumDuration(0)
+        progress.show()
+        QApplication.processEvents()
+        
+        experiments = group_analysis.get_experiments()
+        if not experiments or experiment_index >= len(experiments):
+            self.axes.clear()
+            self.axes.set_title("No experiment data available")
+            self.draw()
+            progress.close()
+            return
+        
+        experiment = experiments[experiment_index]
+        n_files = experiment.get_file_count()
+        
+        if n_files == 0:
+            self.axes.clear()
+            self.axes.set_title("No files in experiment")
+            self.draw()
+            progress.close()
+            return
+        
+        # Get settings
+        settings = QSettings("HashemiLab", "NeuroStemVolt")
+        freq = settings.value("acquisition_frequency", 10, type=int)
+        calibration_enabled = settings.value("calibration_enabled", False, type=bool)
+        time_between_files = experiment.get_time_between_files()
+        
+        # Clear the figure and create new axes
+        self.fig.clear()
+        self.axes = self.fig.add_subplot(111)
+        
+        # Create a colormap - using viridis which goes from purple/blue to yellow/green
+        cmap = cm.viridis
+        norm = MplNormalize(vmin=0, vmax=n_files - 1)
+        
+        # Plot each file's IT trace
+        for file_idx in range(n_files):
+            try:
+                sf = experiment.get_spheroid_file(file_idx)
+                it_trace = sf.get_processed_data_IT()
+                
+                if it_trace is None or len(it_trace) == 0:
+                    continue
+                
+                # Create time axis in seconds
+                time_sec = np.arange(len(it_trace)) / freq
+                
+                # Get color from colormap based on file index
+                color = cmap(norm(file_idx))
+                
+                # Plot the trace
+                self.axes.plot(time_sec, it_trace, color=color, linewidth=1.0, alpha=0.8)
+                
+            except Exception as e:
+                print(f"Warning: Could not plot IT for file {file_idx}: {e}")
+                continue
+        
+        # Add colorbar
+        sm = cm.ScalarMappable(cmap=cmap, norm=norm)
+        sm.set_array([])
+        
+        # Calculate time values for colorbar ticks
+        time_values = np.arange(n_files) * time_between_files
+        
+        cbar = self.fig.colorbar(sm, ax=self.axes)
+        cbar.set_label('Time in Experiment (min)', fontsize=10)
+        
+        # Set colorbar ticks to show time values
+        # Tick positions should be in the data space (0 to n_files-1), not normalized
+        n_ticks = min(6, n_files)  # Limit number of ticks
+        tick_indices = np.linspace(0, n_files - 1, n_ticks, dtype=int)
+        tick_labels = [f'{time_values[i]:.0f}' for i in tick_indices]
+        cbar.set_ticks(tick_indices)  # Use actual file indices as tick positions
+        cbar.set_ticklabels(tick_labels)
+        
+        # Axis labels
+        self.axes.set_xlabel('Time (seconds)', fontsize=12)
+        y_label = 'Concentration (nM)' if calibration_enabled else 'Current (nA)'
+        self.axes.set_ylabel(y_label, fontsize=12)
+        
+        # Title
+        trace_type = 'C-T' if calibration_enabled else 'I-T'
+        treatment = getattr(experiment, 'treatment', None)
+        title = f'{trace_type} Time Series - Experiment {experiment_index + 1}'
+        if treatment:
+            title += f' ({treatment})'
+        self.axes.set_title(title, fontsize=14, fontweight='bold')
+        
+        self.axes.grid(True, alpha=0.3)
+        
+        # Set x-axis ticks
+        if n_files > 0:
+            try:
+                sf = experiment.get_spheroid_file(0)
+                it_trace = sf.get_processed_data_IT()
+                max_t = len(it_trace) / freq if it_trace is not None else 60
+                tick_interval = 5  # seconds
+                ticks = np.arange(0, max_t + tick_interval, tick_interval)
+                self.axes.set_xticks(ticks)
+            except:
+                pass
+        
+        self.fig.tight_layout()
+        self.draw()
+        progress.close()
+
+    def plot_amplitudes_vs_timepoint_single_experiment(self, group_analysis, experiment_index=0):
+        """
+        Plot peak amplitudes across timepoints/files for a single stimulation experiment.
+        
+        Shows one amplitude value per file (extracted from peak detection), plotted 
+        against file index or time. Each file collected at regular intervals 
+        (e.g., every 10 min) shows one peak amplitude.
+        
+        If calibration is enabled, plots concentration instead of current.
+        
+        Args:
+            group_analysis: GroupAnalysis object containing experiments
+            experiment_index (int): Index of the experiment to visualize
+        """
+        # Show loading dialog
+        progress = QProgressDialog("Processing amplitude data...", None, 0, 0, self)
+        progress.setWindowModality(Qt.ApplicationModal)
+        progress.setAutoClose(True)
+        progress.setAutoReset(True)
+        progress.setMinimumDuration(0)
+        progress.show()
+        QApplication.processEvents()
+        
+        experiments = group_analysis.get_experiments()
+        if not experiments or experiment_index >= len(experiments):
+            self.axes.clear()
+            self.axes.set_title("No experiment data available")
+            self.draw()
+            progress.close()
+            return
+        
+        experiment = experiments[experiment_index]
+        n_files = experiment.get_file_count()
+        
+        if n_files == 0:
+            self.axes.clear()
+            self.axes.set_title("No files in experiment")
+            self.draw()
+            progress.close()
+            return
+        
+        # Get settings
+        settings = QSettings("HashemiLab", "NeuroStemVolt")
+        calibration_enabled = settings.value("calibration_enabled", False, type=bool)
+        time_between_files = experiment.get_time_between_files()
+        files_before_treatment = experiment.get_number_of_files_before_treatment()
+        
+        # Collect amplitudes from each file
+        timepoints = []
+        amplitudes = []
+        file_indices = []
+        
+        for file_idx in range(n_files):
+            try:
+                sf = experiment.get_spheroid_file(file_idx)
+                metadata = sf.get_metadata()
+                
+                if metadata is None:
+                    continue
+                
+                peak_amplitude_values = metadata.get('peak_amplitude_values', None)
+                
+                if peak_amplitude_values is None:
+                    continue
+                
+                # Handle both single and multiple peak values
+                if isinstance(peak_amplitude_values, (list, np.ndarray)):
+                    if len(peak_amplitude_values) > 0:
+                        # For stimulation files, typically take the main peak (first or max)
+                        amp = float(np.max(np.abs(peak_amplitude_values)))
+                    else:
+                        continue
+                else:
+                    amp = float(peak_amplitude_values)
+                
+                # Calculate time point
+                time_min = file_idx * time_between_files
+                
+                timepoints.append(time_min)
+                amplitudes.append(amp)
+                file_indices.append(file_idx)
+                
+            except Exception as e:
+                print(f"Warning: Could not get amplitude for file {file_idx}: {e}")
+                continue
+        
+        if not amplitudes:
+            self.axes.clear()
+            self.axes.set_title("No amplitude data available")
+            self.draw()
+            progress.close()
+            return
+        
+        # Convert to arrays
+        timepoints = np.array(timepoints)
+        amplitudes = np.array(amplitudes)
+        
+        # Clear and plot
+        self.fig.clear()
+        self.axes = self.fig.add_subplot(111)
+        
+        # Plot amplitudes as connected line with markers
+        self.axes.plot(timepoints, amplitudes, 'o-', color='#1f77b4', 
+                      markersize=8, linewidth=2, label='Peak Amplitude')
+        
+        # Add treatment start line if applicable
+        if files_before_treatment > 0:
+            treatment_time = files_before_treatment * time_between_files
+            self.axes.axvline(x=treatment_time, color='red', linestyle='--', 
+                            linewidth=2, label='Treatment Start')
+        
+        # Axis labels
+        self.axes.set_xlabel('Time (minutes)', fontsize=12)
+        y_label = 'Peak Concentration (nM)' if calibration_enabled else 'Peak Amplitude (nA)'
+        self.axes.set_ylabel(y_label, fontsize=12)
+        
+        # Title
+        value_type = 'Concentration' if calibration_enabled else 'Amplitude'
+        treatment = getattr(experiment, 'treatment', None)
+        title = f'Peak {value_type} vs Timepoint - Experiment {experiment_index + 1}'
+        if treatment:
+            title += f' ({treatment})'
+        self.axes.set_title(title, fontsize=14, fontweight='bold')
+        
+        self.axes.legend(fontsize=10, frameon=True, fancybox=True)
+        self.axes.grid(True, alpha=0.3)
+        
+        # Set x-axis ticks at file collection intervals
+        max_time = timepoints[-1] if len(timepoints) > 0 else 0
+        tick_interval = time_between_files
+        # Adjust tick interval if there are too many ticks
+        if max_time / tick_interval > 15:
+            tick_interval = max_time / 10
+        ticks = np.arange(0, max_time + tick_interval, tick_interval)
+        self.axes.set_xticks(ticks)
+        
+        # Add annotation showing number of files
+        info_text = f'Files: {len(amplitudes)} | Interval: {time_between_files:.0f} min'
+        self.axes.text(0.02, 0.98, info_text, transform=self.axes.transAxes,
+                      fontsize=9, verticalalignment='top',
+                      bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+        
+        self.fig.tight_layout()
+        self.draw()
+        progress.close()

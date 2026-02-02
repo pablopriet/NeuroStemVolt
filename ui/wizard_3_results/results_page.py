@@ -8,7 +8,7 @@ from core.processing import *
 
 from ui.utils.styles import apply_custom_styles
 from ui.widgets.plot_canvas import PlotCanvas
-from ui.wizard_3_results.timepoint_dialog import TimepointSelectionDialog
+from ui.wizard_3_results.timepoint_dialog import TimepointSelectionDialog, ExperimentSelectionDialog
 import os
 
 ### Third Page
@@ -107,16 +107,22 @@ class ResultsPage(QWizardPage):
             btn_fit = QPushButton("Decay Exponential Fitting"); apply_custom_styles(btn_fit)
             btn_param = QPushButton("Tau Over Time"); apply_custom_styles(btn_param)
             btn_amp = QPushButton("Individual Amplitudes Over Time"); apply_custom_styles(btn_amp)
+            btn_it_series = QPushButton("IT Time Series (Single Exp)"); apply_custom_styles(btn_it_series)
+            btn_amp_timeline = QPushButton("Amplitudes vs Timepoint (Single Exp)"); apply_custom_styles(btn_amp_timeline)
             self.analysis.addWidget(btn_avg, 0, 0)
             self.analysis.addWidget(btn_amp, 0, 1)
             self.analysis.addWidget(btn_param, 1, 0)
             self.analysis.addWidget(btn_fit, 1, 1)
+            self.analysis.addWidget(btn_it_series, 2, 0)
+            self.analysis.addWidget(btn_amp_timeline, 2, 1)
             # connect
             btn_avg.clicked.connect(lambda _, f=lambda: self.result_plot.show_average_over_experiments(self.wizard().group_analysis): self._reveal_and_call(f))
             btn_fit.clicked.connect(lambda _, f=self.handle_decay_fit: self._reveal_and_call(f))
             btn_param.clicked.connect(lambda _, f=lambda: self.result_plot.show_tau_param_over_time(self.wizard().group_analysis): self._reveal_and_call(f))
             btn_amp.clicked.connect(lambda _, f=lambda: self.result_plot.show_amplitudes_over_time(self.wizard().group_analysis): self._reveal_and_call(f))
-            self.analysis_buttons = [btn_avg, btn_fit, btn_param, btn_amp]
+            btn_it_series.clicked.connect(lambda: self._reveal_and_call(self.handle_it_time_series))
+            btn_amp_timeline.clicked.connect(lambda: self._reveal_and_call(self.handle_amplitudes_vs_timepoint))
+            self.analysis_buttons = [btn_avg, btn_fit, btn_param, btn_amp, btn_it_series, btn_amp_timeline]
 
     def _reveal_and_call(self, plot_fn):
         """
@@ -248,12 +254,22 @@ class ResultsPage(QWizardPage):
             OutputManager.save_plot_all_amplitudes_over_time(group_analysis, output_folder)
             OutputManager.save_plot_mean_amplitudes_over_time(group_analysis, output_folder)
 
-            if not file_type == "Spontaneous":
-                OutputManager.save_plot_tau_over_time(group_analysis, output_folder)
-                OutputManager.save_plot_exponential_fit_aligned(group_analysis, output_folder)
-            else:
-                OutputManager.save_plot_frequency_over_time(group_analysis, output_folder)
-            # Add more OutputManager plot saves as needed
+                if not file_type == "Spontaneous":
+                    OutputManager.save_plot_tau_over_time(group_analysis, output_folder)
+                    OutputManager.save_plot_exponential_fit_aligned(group_analysis, output_folder)
+                    
+                    # Diagnostic plots to showcase processing features
+                    OutputManager.save_diagnostic_AUC_plot(group_analysis, output_folder)
+                    OutputManager.save_diagnostic_reuptake_fits_plot(group_analysis, output_folder)
+                else:
+                    OutputManager.save_plot_frequency_over_time(group_analysis, output_folder)
+                
+                # Processing diagnostic plots (applicable to all file types)
+                OutputManager.save_diagnostic_butterworth_filter_plot(group_analysis, output_folder)
+                OutputManager.save_diagnostic_processing_pipeline_plot(group_analysis, output_folder)
+                OutputManager.save_diagnostic_filter_comparison_plot(group_analysis, output_folder)
+                OutputManager.save_diagnostic_peak_detection_plot(group_analysis, output_folder)
+                OutputManager.save_diagnostic_color_plot_comparison(group_analysis, output_folder)
         except Exception as e:
             QMessageBox.critical(
                 self, "Export Failed",
@@ -345,3 +361,66 @@ class ResultsPage(QWizardPage):
                     self.result_plot.show_amplitudes_for_timepoint(group_analysis, replicate_time_point=idx)
                 except AttributeError:
                     QMessageBox.warning(self, "Not Implemented", "Single-file amplitude plot is not implemented in PlotCanvas.")
+
+    def handle_it_time_series(self):
+        """
+        Display consecutive ITs from a single experiment with a color gradient.
+        The color intensity increases with time within the experiment.
+        If calibration is enabled, displays concentration vs time instead of current vs time.
+        """
+        group_analysis = self.wizard().group_analysis
+        experiments = group_analysis.get_experiments()
+        if not experiments:
+            QMessageBox.warning(self, "No Data", "No experiments loaded.")
+            return
+        
+        # Create experiment names for selection dialog
+        experiment_names = []
+        for i, exp in enumerate(experiments):
+            # Try to get treatment name or use index
+            treatment = getattr(exp, 'treatment', None)
+            if treatment:
+                experiment_names.append(f"Experiment {i+1}: {treatment}")
+            else:
+                experiment_names.append(f"Experiment {i+1}")
+        
+        # Show selection dialog
+        dlg = ExperimentSelectionDialog(experiment_names, self, title="Select Experiment for IT Time Series")
+        if dlg.exec_() == QDialog.Accepted:
+            exp_idx = dlg.get_selected_index()
+            self.result_plot.plot_it_time_series_single_experiment(group_analysis, exp_idx)
+
+    def handle_amplitudes_vs_timepoint(self):
+        """
+        Display peak amplitudes across timepoints/files for a single stimulation experiment.
+        Shows one amplitude value per file, plotted against file index or time.
+        Only works for stimulation files (not spontaneous).
+        """
+        group_analysis = self.wizard().group_analysis
+        experiments = group_analysis.get_experiments()
+        if not experiments:
+            QMessageBox.warning(self, "No Data", "No experiments loaded.")
+            return
+        
+        # Check file type - only for stimulation files
+        settings = QSettings("HashemiLab", "NeuroStemVolt")
+        file_type = settings.value("file_type", "None", type=str)
+        if file_type == "Spontaneous":
+            QMessageBox.warning(self, "Invalid File Type", 
+                              "This plot is only available for stimulation files, not spontaneous recordings.")
+            return
+        
+        # Create experiment names for selection dialog
+        experiment_names = []
+        for i, exp in enumerate(experiments):
+            treatment = getattr(exp, 'treatment', None)
+            if treatment:
+                experiment_names.append(f"Experiment {i+1}: {treatment}")
+            else:
+                experiment_names.append(f"Experiment {i+1}")
+        
+        # Show selection dialog
+        dlg = ExperimentSelectionDialog(experiment_names, self, title="Select Experiment for Amplitude Timeline")
+        if dlg.exec_() == QDialog.Accepted:
+            exp_idx = dlg.get_selected_index()
+            self.result_plot.plot_amplitudes_vs_timepoint_single_experiment(group_analysis, exp_idx)
