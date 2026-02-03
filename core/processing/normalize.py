@@ -1,39 +1,60 @@
 from .base import Processor
-from .base import Processor
 import numpy as np
-from scipy.signal import find_peaks
+
 
 class Normalize(Processor):
     """
-    Normalize data by the mean peak value in the I-T profile.
+    Normalize data by the peak amplitude found by FindAmplitude.
 
-    If a peak value is already present in the context under "experiment_first_peak",
-    use it for normalization. Otherwise, compute and store it from the current trace.
+    Expects FindAmplitude to run BEFORE this processor and set 'peak_amplitude_values'
+    in the context. The first file's peak value is stored as 'experiment_first_peak'
+    and used to normalize all subsequent files in the experiment.
 
     Args:
-        peak_position (int): Index in voltage axis used for I-T profile.
+        peak_position (int): Index in voltage axis (kept for API compatibility).
     """
     def __init__(self, peak_position=257):
         self.peak_position = peak_position
-    def process(self, data,context=None):
+
+    def process(self, data, context=None):
         """
-        Normalize each scan in the data using the first peak amplitude.
+        Normalize data using the peak amplitude from FindAmplitude.
+
+        The first file processed will have its peak amplitude stored in context
+        as 'experiment_first_peak'. All subsequent files will be normalized 
+        using that same baseline value.
 
         Args:
             data (np.ndarray): 2D FSCV array (voltage × time).
-            context (dict, optional): Stores or uses 'experiment_first_peak'.
+            context (dict, optional): Must contain 'peak_amplitude_values' from FindAmplitude.
 
         Returns:
             np.ndarray: Normalized data.
         """
-        if context is not None:
-            if "experiment_first_peak" in context:
-                # Normalize each scan by the first peak value
-                normalized_data = data / context["experiment_first_peak"]
-            else:
-                fx = data[:, self.peak_position]
-                peaks, _ = find_peaks(fx, prominence=0.2, distance=10, height=0.1)
-                peak_values = fx[peaks]
-                context["experiment_first_peak"] = np.mean(peak_values, axis=0)
-                normalized_data = data / context["experiment_first_peak"]
+        # Check if we already have the normalization factor from a previous file
+        if context is not None and "experiment_first_peak" in context:
+            norm_factor = context["experiment_first_peak"]
+        elif context is not None and "peak_amplitude_values" in context:
+            # First file: use the peak value found by FindAmplitude
+            norm_factor = context["peak_amplitude_values"]
+            
+            # Validate the normalization factor
+            if norm_factor == 0 or np.isnan(norm_factor) or np.abs(norm_factor) < 1e-10:
+                print("Warning: Invalid normalization factor from FindAmplitude, defaulting to 1.0")
+                norm_factor = 1.0
+            
+            # Store for subsequent files
+            context["experiment_first_peak"] = norm_factor
+            print(f"Normalization baseline set from first file: {norm_factor:.6f}")
+        else:
+            # Fallback if FindAmplitude didn't run or context is None
+            print("Warning: No peak amplitude in context. Using max value as fallback.")
+            fx = data[:, self.peak_position]
+            norm_factor = np.max(np.abs(fx))
+            if norm_factor == 0 or np.isnan(norm_factor):
+                norm_factor = 1.0
+            if context is not None:
+                context["experiment_first_peak"] = norm_factor
+        
+        normalized_data = data / norm_factor
         return normalized_data
