@@ -502,16 +502,35 @@ class ColorPlotPage(QWizardPage):
         Opens the processing options dialog and updates selected processors.
 
         Retrieves the user’s choices and instantiates corresponding Processor objects.
+        When Normalize is selected, FindAmplitude is automatically inserted before it
+        to provide the normalization factor, then FindAmplitude runs again after Normalize.
         """
         dlg = ProcessingOptionsDialog(self)
         if dlg.exec_() == QDialog.Accepted:
             selected_names = dlg.get_selected_processors()
             peak_pos = QSettings("HashemiLab", "NeuroStemVolt").value("peak_position", type=int)
-            self.selected_processors = [
-                dlg.get_processor_instance(name, peak_pos)
-                for name in selected_names
-                if dlg.get_processor_instance(name, peak_pos) is not None
-            ]
+            
+            # Build processor list, inserting FindAmplitude before Normalize if needed
+            processors = []
+            normalize_enabled = "Normalize" in selected_names
+            
+            for name in selected_names:
+                # If Normalize is enabled, insert FindAmplitude right before it
+                if name == "Normalize" and normalize_enabled:
+                    # Add FindAmplitude first pass (for normalization factor)
+                    processors.append(dlg.get_processor_instance("Find Amplitude", peak_pos))
+                
+                proc = dlg.get_processor_instance(name, peak_pos)
+                if proc is not None:
+                    processors.append(proc)
+            
+            # Always add Find Amplitude at the end (on potentially normalized data)
+            # This is the "real" amplitude finding pass
+            find_amp = dlg.get_processor_instance("Find Amplitude", peak_pos)
+            if find_amp is not None:
+                processors.append(find_amp)
+            
+            self.selected_processors = processors
 
     def _missing_peaks(self):
         """Return a list of (rep_index, file_index) that do not have peak metadata."""
