@@ -42,6 +42,23 @@ class PlotCanvas(FigureCanvas):
         fig.tight_layout()
         self.cbar = None
 
+    def _clear_figure(self):
+        """
+        Clear the figure and remove any existing colorbar.
+        This ensures colorbars don't persist between different plot types.
+        """
+        # Remove colorbar if it exists
+        if self.cbar is not None:
+            try:
+                self.cbar.remove()
+            except Exception:
+                pass
+            self.cbar = None
+        # Clear the entire figure
+        self.fig.clear()
+        # Recreate the axes
+        self.axes = self.fig.add_subplot(111)
+
     def plot_color(self, processed_data, peak_pos = None, title_suffix=None):
         """
         Display a 2D color plot of the FSCV data matrix.
@@ -698,8 +715,7 @@ class PlotCanvas(FigureCanvas):
         """
         from core.spheroid_file import Waveforms
 
-        self.fig.clear()
-        self.axes = self.fig.add_subplot(111)
+        self._clear_figure()
 
         # Generate voltage waveform (assuming 5HT waveform parameters)
         waveform_type = QSettings("HashemiLab", "NeuroStemVolt").value("waveform", "None", type=str)
@@ -810,8 +826,7 @@ class PlotCanvas(FigureCanvas):
         """
         from core.spheroid_file import Waveforms
 
-        self.fig.clear()
-        self.axes = self.fig.add_subplot(111)
+        self._clear_figure()
 
         waveform_type = QSettings("HashemiLab", "NeuroStemVolt").value("waveform", "None", type=str)
 
@@ -1334,9 +1349,8 @@ class PlotCanvas(FigureCanvas):
         calibration_enabled = settings.value("calibration_enabled", False, type=bool)
         time_between_files = experiment.get_time_between_files()
         
-        # Clear the figure and create new axes
-        self.fig.clear()
-        self.axes = self.fig.add_subplot(111)
+        # Clear the figure and remove any existing colorbar
+        self._clear_figure()
         
         # Create a colormap - using viridis which goes from purple/blue to yellow/green
         cmap = cm.viridis
@@ -1371,28 +1385,27 @@ class PlotCanvas(FigureCanvas):
         # Calculate time values for colorbar ticks
         time_values = np.arange(n_files) * time_between_files
         
-        cbar = self.fig.colorbar(sm, ax=self.axes)
-        cbar.set_label('Time in Experiment (min)', fontsize=10)
+        self.cbar = self.fig.colorbar(sm, ax=self.axes)
+        self.cbar.set_label('Time in Experiment (min)', fontsize=10)
         
         # Set colorbar ticks to show time values
         # Tick positions should be in the data space (0 to n_files-1), not normalized
         n_ticks = min(6, n_files)  # Limit number of ticks
         tick_indices = np.linspace(0, n_files - 1, n_ticks, dtype=int)
         tick_labels = [f'{time_values[i]:.0f}' for i in tick_indices]
-        cbar.set_ticks(tick_indices)  # Use actual file indices as tick positions
-        cbar.set_ticklabels(tick_labels)
+        self.cbar.set_ticks(tick_indices)  # Use actual file indices as tick positions
+        self.cbar.set_ticklabels(tick_labels)
         
         # Axis labels
         self.axes.set_xlabel('Time (seconds)', fontsize=12)
         y_label = 'Concentration (nM)' if calibration_enabled else 'Current (nA)'
         self.axes.set_ylabel(y_label, fontsize=12)
         
-        # Title
+        # Title - use folder name
         trace_type = 'C-T' if calibration_enabled else 'I-T'
-        treatment = getattr(experiment, 'treatment', None)
-        title = f'{trace_type} Time Series - Experiment {experiment_index + 1}'
-        if treatment:
-            title += f' ({treatment})'
+        from ui.wizard_3_results.timepoint_dialog import get_experiment_display_name
+        exp_name = get_experiment_display_name(experiment, experiment_index)
+        title = f'{trace_type} Time Series - {exp_name}'
         self.axes.set_title(title, fontsize=14, fontweight='bold')
         
         self.axes.grid(True, alpha=0.3)
@@ -1413,15 +1426,391 @@ class PlotCanvas(FigureCanvas):
         self.draw()
         progress.close()
 
-    def plot_amplitudes_vs_timepoint_single_experiment(self, group_analysis, experiment_index=0):
+    # LEGACY: This function has been deprecated in favor of plot_compare_amplitudes_grouped()
+    # The UI button has been removed. Keeping for backward compatibility.
+    # def plot_amplitudes_vs_timepoint_single_experiment(self, group_analysis, experiment_index=0):
+    #     """
+    #     Plot peak amplitudes across timepoints/files for a single stimulation experiment.
+    #     
+    #     Shows one amplitude value per file (extracted from peak detection), plotted 
+    #     against file index or time. Each file collected at regular intervals 
+    #     (e.g., every 10 min) shows one peak amplitude.
+    #     
+    #     If calibration is enabled, plots concentration instead of current.
+    #     
+    #     Args:
+    #         group_analysis: GroupAnalysis object containing experiments
+    #         experiment_index (int): Index of the experiment to visualize
+    #     """
+    #     # Show loading dialog
+    #     progress = QProgressDialog("Processing amplitude data...", None, 0, 0, self)
+    #     progress.setWindowModality(Qt.ApplicationModal)
+    #     progress.setAutoClose(True)
+    #     progress.setAutoReset(True)
+    #     progress.setMinimumDuration(0)
+    #     progress.show()
+    #     QApplication.processEvents()
+    #     
+    #     experiments = group_analysis.get_experiments()
+    #     if not experiments or experiment_index >= len(experiments):
+    #         self.axes.clear()
+    #         self.axes.set_title("No experiment data available")
+    #         self.draw()
+    #         progress.close()
+    #         return
+    #     
+    #     experiment = experiments[experiment_index]
+    #     n_files = experiment.get_file_count()
+    #     
+    #     if n_files == 0:
+    #         self.axes.clear()
+    #         self.axes.set_title("No files in experiment")
+    #         self.draw()
+    #         progress.close()
+    #         return
+    #     
+    #     # Get settings
+    #     settings = QSettings("HashemiLab", "NeuroStemVolt")
+    #     calibration_enabled = settings.value("calibration_enabled", False, type=bool)
+    #     time_between_files = experiment.get_time_between_files()
+    #     files_before_treatment = experiment.get_number_of_files_before_treatment()
+    #     
+    #     # Collect amplitudes from each file
+    #     timepoints = []
+    #     amplitudes = []
+    #     file_indices = []
+    #     
+    #     for file_idx in range(n_files):
+    #         try:
+    #             sf = experiment.get_spheroid_file(file_idx)
+    #             metadata = sf.get_metadata()
+    #             
+    #             if metadata is None:
+    #                 continue
+    #             
+    #             peak_amplitude_values = metadata.get('peak_amplitude_values', None)
+    #             
+    #             if peak_amplitude_values is None:
+    #                 continue
+    #             
+    #             # Handle both single and multiple peak values
+    #             if isinstance(peak_amplitude_values, (list, np.ndarray)):
+    #                 if len(peak_amplitude_values) > 0:
+    #                     # For stimulation files, typically take the main peak (first or max)
+    #                     amp = float(np.max(np.abs(peak_amplitude_values)))
+    #                 else:
+    #                     continue
+    #             else:
+    #                 amp = float(peak_amplitude_values)
+    #             
+    #             # Calculate time point
+    #             time_min = file_idx * time_between_files
+    #             
+    #             timepoints.append(time_min)
+    #             amplitudes.append(amp)
+    #             file_indices.append(file_idx)
+    #             
+    #         except Exception as e:
+    #             print(f"Warning: Could not get amplitude for file {file_idx}: {e}")
+    #             continue
+    #     
+    #     if not amplitudes:
+    #         self.axes.clear()
+    #         self.axes.set_title("No amplitude data available")
+    #         self.draw()
+    #         progress.close()
+    #         return
+    #     
+    #     # Convert to arrays
+    #     timepoints = np.array(timepoints)
+    #     amplitudes = np.array(amplitudes)
+    #     
+    #     # Clear and plot
+    #     self._clear_figure()
+    #     
+    #     # Plot amplitudes as connected line with markers
+    #     self.axes.plot(timepoints, amplitudes, 'o-', color='#1f77b4', 
+    #                   markersize=8, linewidth=2, label='Peak Amplitude')
+    #     
+    #     # Add treatment start line if applicable
+    #     if files_before_treatment > 0:
+    #         treatment_time = files_before_treatment * time_between_files
+    #         self.axes.axvline(x=treatment_time, color='red', linestyle='--', 
+    #                         linewidth=2, label='Treatment Start')
+    #     
+    #     # Axis labels
+    #     self.axes.set_xlabel('Time (minutes)', fontsize=12)
+    #     y_label = 'Peak Concentration (nM)' if calibration_enabled else 'Peak Amplitude (nA)'
+    #     self.axes.set_ylabel(y_label, fontsize=12)
+    #     
+    #     # Title - use folder name
+    #     value_type = 'Concentration' if calibration_enabled else 'Amplitude'
+    #     from ui.wizard_3_results.timepoint_dialog import get_experiment_display_name
+    #     exp_name = get_experiment_display_name(experiment, experiment_index)
+    #     title = f'Peak {value_type} vs Timepoint - {exp_name}'
+    #     self.axes.set_title(title, fontsize=14, fontweight='bold')
+    #     
+    #     self.axes.legend(fontsize=10, frameon=True, fancybox=True)
+    #     self.axes.grid(True, alpha=0.3)
+    #     
+    #     # Set x-axis ticks at file collection intervals
+    #     max_time = timepoints[-1] if len(timepoints) > 0 else 0
+    #     tick_interval = time_between_files
+    #     # Adjust tick interval if there are too many ticks
+    #     if max_time / tick_interval > 15:
+    #         tick_interval = max_time / 10
+    #     ticks = np.arange(0, max_time + tick_interval, tick_interval)
+    #     self.axes.set_xticks(ticks)
+    #     
+    #     # Add annotation showing number of files
+    #     info_text = f'Files: {len(amplitudes)} | Interval: {time_between_files:.0f} min'
+    #     self.axes.text(0.02, 0.98, info_text, transform=self.axes.transAxes,
+    #                   fontsize=9, verticalalignment='top',
+    #                   bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+    #     
+    #     self.fig.tight_layout()
+    #     self.draw()
+    #     progress.close()
+
+    def plot_compare_its_at_timepoint(self, group_analysis, timepoint_idx, timepoint_label, selected_experiments):
         """
-        Plot peak amplitudes across timepoints/files for a single stimulation experiment.
+        Plot IT traces from multiple experiments at a specific timepoint with custom colors.
         
-        Shows one amplitude value per file (extracted from peak detection), plotted 
-        against file index or time. Each file collected at regular intervals 
-        (e.g., every 10 min) shows one peak amplitude.
+        Args:
+            group_analysis: GroupAnalysis object containing experiments
+            timepoint_idx (int): File index for the selected timepoint
+            timepoint_label (str): Label for the timepoint (e.g., "-30 min")
+            selected_experiments: List of (experiment_index, color_hex) tuples
+        """
+        # Show loading dialog
+        progress = QProgressDialog("Processing IT comparison...", None, 0, 0, self)
+        progress.setWindowModality(Qt.ApplicationModal)
+        progress.setAutoClose(True)
+        progress.setAutoReset(True)
+        progress.setMinimumDuration(0)
+        progress.show()
+        QApplication.processEvents()
         
-        If calibration is enabled, plots concentration instead of current.
+        experiments = group_analysis.get_experiments()
+        if not experiments:
+            self.axes.clear()
+            self.axes.set_title("No experiment data available")
+            self.draw()
+            progress.close()
+            return
+        
+        # Get settings
+        settings = QSettings("HashemiLab", "NeuroStemVolt")
+        freq = settings.value("acquisition_frequency", 10, type=int)
+        calibration_enabled = settings.value("calibration_enabled", False, type=bool)
+        
+        # Clear the figure and create new axes
+        self._clear_figure()
+        
+        # Import helper for experiment names
+        from ui.wizard_3_results.timepoint_dialog import get_experiment_display_name
+        
+        # Plot each selected experiment
+        max_time_sec = 0
+        for exp_idx, color in selected_experiments:
+            if exp_idx >= len(experiments):
+                continue
+            
+            experiment = experiments[exp_idx]
+            
+            # Check if the timepoint exists for this experiment
+            if timepoint_idx >= experiment.get_file_count():
+                continue
+            
+            try:
+                sf = experiment.get_spheroid_file(timepoint_idx)
+                it_trace = sf.get_processed_data_IT()
+                
+                if it_trace is None or len(it_trace) == 0:
+                    continue
+                
+                # Create time axis in seconds
+                time_sec = np.arange(len(it_trace)) / freq
+                max_time_sec = max(max_time_sec, time_sec[-1])
+                
+                # Get experiment name for legend
+                exp_name = get_experiment_display_name(experiment, exp_idx)
+                
+                # Plot the trace with custom color
+                self.axes.plot(time_sec, it_trace, color=color, linewidth=2.5, 
+                              alpha=0.9, label=exp_name)
+                
+            except Exception as e:
+                print(f"Warning: Could not plot IT for experiment {exp_idx}: {e}")
+                continue
+        
+        # Axis labels
+        self.axes.set_xlabel('Time (seconds)', fontsize=12)
+        y_label = 'Concentration (nM)' if calibration_enabled else 'Current (nA)'
+        self.axes.set_ylabel(y_label, fontsize=12)
+        
+        # Title
+        trace_type = 'C-T' if calibration_enabled else 'I-T'
+        self.axes.set_title(f'{trace_type} Comparison at {timepoint_label}', 
+                           fontsize=14, fontweight='bold')
+        
+        self.axes.legend(fontsize=9, frameon=True, fancybox=True, loc='best')
+        self.axes.grid(True, alpha=0.3)
+        
+        # Set x-axis ticks
+        if max_time_sec > 0:
+            tick_interval = 5  # seconds
+            ticks = np.arange(0, max_time_sec + tick_interval, tick_interval)
+            self.axes.set_xticks(ticks)
+        
+        self.fig.tight_layout()
+        self.draw()
+        progress.close()
+
+    def plot_compare_amplitudes_multi_exp(self, group_analysis, selected_experiments):
+        """
+        Plot amplitude timelines from multiple experiments with custom colors.
+        
+        Args:
+            group_analysis: GroupAnalysis object containing experiments
+            selected_experiments: List of (experiment_index, color_hex) tuples
+        """
+        # Show loading dialog
+        progress = QProgressDialog("Processing amplitude comparison...", None, 0, 0, self)
+        progress.setWindowModality(Qt.ApplicationModal)
+        progress.setAutoClose(True)
+        progress.setAutoReset(True)
+        progress.setMinimumDuration(0)
+        progress.show()
+        QApplication.processEvents()
+        
+        experiments = group_analysis.get_experiments()
+        if not experiments:
+            self.axes.clear()
+            self.axes.set_title("No experiment data available")
+            self.draw()
+            progress.close()
+            return
+        
+        # Get settings
+        settings = QSettings("HashemiLab", "NeuroStemVolt")
+        calibration_enabled = settings.value("calibration_enabled", False, type=bool)
+        
+        # Clear the figure and create new axes
+        self._clear_figure()
+        
+        # Import helper for experiment names
+        from ui.wizard_3_results.timepoint_dialog import get_experiment_display_name
+        
+        # Track for treatment line (use first experiment's settings)
+        first_exp = experiments[0]
+        time_between_files = first_exp.get_time_between_files()
+        files_before_treatment = first_exp.get_number_of_files_before_treatment()
+        max_time = 0
+        
+        # Plot each selected experiment
+        for exp_idx, color in selected_experiments:
+            if exp_idx >= len(experiments):
+                continue
+            
+            experiment = experiments[exp_idx]
+            n_files = experiment.get_file_count()
+            exp_time_between_files = experiment.get_time_between_files()
+            
+            # Collect amplitudes from each file
+            timepoints = []
+            amplitudes = []
+            
+            for file_idx in range(n_files):
+                try:
+                    sf = experiment.get_spheroid_file(file_idx)
+                    metadata = sf.get_metadata()
+                    
+                    if metadata is None:
+                        continue
+                    
+                    peak_amplitude_values = metadata.get('peak_amplitude_values', None)
+                    
+                    if peak_amplitude_values is None:
+                        continue
+                    
+                    # Handle both single and multiple peak values
+                    if isinstance(peak_amplitude_values, (list, np.ndarray)):
+                        if len(peak_amplitude_values) > 0:
+                            amp = float(np.max(np.abs(peak_amplitude_values)))
+                        else:
+                            continue
+                    else:
+                        amp = float(peak_amplitude_values)
+                    
+                    # Calculate time point
+                    time_min = file_idx * exp_time_between_files
+                    
+                    timepoints.append(time_min)
+                    amplitudes.append(amp)
+                    
+                except Exception as e:
+                    print(f"Warning: Could not get amplitude for file {file_idx} in exp {exp_idx}: {e}")
+                    continue
+            
+            if not amplitudes:
+                continue
+            
+            # Convert to arrays
+            timepoints = np.array(timepoints)
+            amplitudes_arr = np.array(amplitudes)
+            
+            # Get experiment name for legend
+            exp_name = get_experiment_display_name(experiment, exp_idx)
+            
+            # Plot amplitudes with custom color
+            self.axes.plot(timepoints, amplitudes_arr, 'o-', color=color, 
+                          markersize=6, linewidth=2, alpha=0.9, label=exp_name)
+            
+            max_time = max(max_time, timepoints[-1] if len(timepoints) > 0 else 0)
+        
+        # Add treatment start line if applicable
+        if files_before_treatment > 0:
+            treatment_time = files_before_treatment * time_between_files
+            self.axes.axvline(x=treatment_time, color='red', linestyle='--', 
+                            linewidth=2, label='Treatment Start')
+        
+        # Axis labels
+        self.axes.set_xlabel('Time (minutes)', fontsize=12)
+        y_label = 'Peak Concentration (nM)' if calibration_enabled else 'Peak Amplitude (nA)'
+        self.axes.set_ylabel(y_label, fontsize=12)
+        
+        # Title
+        value_type = 'Concentration' if calibration_enabled else 'Amplitude'
+        self.axes.set_title(f'Peak {value_type} Comparison', fontsize=14, fontweight='bold')
+        
+        self.axes.legend(fontsize=9, frameon=True, fancybox=True, loc='best')
+        self.axes.grid(True, alpha=0.3)
+        
+        # Set x-axis ticks
+        if max_time > 0:
+            tick_interval = time_between_files
+            if max_time / tick_interval > 15:
+                tick_interval = max_time / 10
+            ticks = np.arange(0, max_time + tick_interval, tick_interval)
+            self.axes.set_xticks(ticks)
+        
+        # Add annotation showing number of experiments
+        info_text = f'Experiments: {len(selected_experiments)}'
+        self.axes.text(0.02, 0.98, info_text, transform=self.axes.transAxes,
+                      fontsize=9, verticalalignment='top',
+                      bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+        
+        self.fig.tight_layout()
+        self.draw()
+        progress.close()
+
+    def plot_amplitudes_vs_timepoint_single_experiment_legacy(self, group_analysis, experiment_index=0):
+        """
+        LEGACY: Plot peak amplitudes across timepoints/files for a single stimulation experiment.
+        
+        This function is kept for backward compatibility but the UI button has been removed.
+        Use plot_compare_amplitudes_grouped() for the new grouped comparison functionality.
         
         Args:
             group_analysis: GroupAnalysis object containing experiments
@@ -1481,7 +1870,6 @@ class PlotCanvas(FigureCanvas):
                 # Handle both single and multiple peak values
                 if isinstance(peak_amplitude_values, (list, np.ndarray)):
                     if len(peak_amplitude_values) > 0:
-                        # For stimulation files, typically take the main peak (first or max)
                         amp = float(np.max(np.abs(peak_amplitude_values)))
                     else:
                         continue
@@ -1511,8 +1899,7 @@ class PlotCanvas(FigureCanvas):
         amplitudes = np.array(amplitudes)
         
         # Clear and plot
-        self.fig.clear()
-        self.axes = self.fig.add_subplot(111)
+        self._clear_figure()
         
         # Plot amplitudes as connected line with markers
         self.axes.plot(timepoints, amplitudes, 'o-', color='#1f77b4', 
@@ -1529,12 +1916,11 @@ class PlotCanvas(FigureCanvas):
         y_label = 'Peak Concentration (nM)' if calibration_enabled else 'Peak Amplitude (nA)'
         self.axes.set_ylabel(y_label, fontsize=12)
         
-        # Title
+        # Title - use folder name
         value_type = 'Concentration' if calibration_enabled else 'Amplitude'
-        treatment = getattr(experiment, 'treatment', None)
-        title = f'Peak {value_type} vs Timepoint - Experiment {experiment_index + 1}'
-        if treatment:
-            title += f' ({treatment})'
+        from ui.wizard_3_results.timepoint_dialog import get_experiment_display_name
+        exp_name = get_experiment_display_name(experiment, experiment_index)
+        title = f'[LEGACY] Peak {value_type} vs Timepoint - {exp_name}'
         self.axes.set_title(title, fontsize=14, fontweight='bold')
         
         self.axes.legend(fontsize=10, frameon=True, fancybox=True)
@@ -1543,7 +1929,6 @@ class PlotCanvas(FigureCanvas):
         # Set x-axis ticks at file collection intervals
         max_time = timepoints[-1] if len(timepoints) > 0 else 0
         tick_interval = time_between_files
-        # Adjust tick interval if there are too many ticks
         if max_time / tick_interval > 15:
             tick_interval = max_time / 10
         ticks = np.arange(0, max_time + tick_interval, tick_interval)
@@ -1554,6 +1939,518 @@ class PlotCanvas(FigureCanvas):
         self.axes.text(0.02, 0.98, info_text, transform=self.axes.transAxes,
                       fontsize=9, verticalalignment='top',
                       bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+        
+        self.fig.tight_layout()
+        self.draw()
+        progress.close()
+
+    def plot_compare_tau_grouped(self, group_analysis, timepoint_idx, timepoint_label, groups):
+        """
+        Compare tau values from grouped experiments at a specific timepoint.
+        
+        Shows a scatter plot with mean markers and error bars, where each group
+        is displayed on the x-axis. Experiments in the same group are averaged.
+        
+        Args:
+            group_analysis: GroupAnalysis object containing experiments
+            timepoint_idx (int): File index for the selected timepoint
+            timepoint_label (str): Label for the timepoint (e.g., "-30 min")
+            groups: List of dicts with 'name', 'color', 'experiments' keys
+        """
+        from scipy.optimize import curve_fit
+        
+        # Show loading dialog
+        progress = QProgressDialog("Processing tau comparison...", None, 0, 0, self)
+        progress.setWindowModality(Qt.ApplicationModal)
+        progress.setAutoClose(True)
+        progress.setAutoReset(True)
+        progress.setMinimumDuration(0)
+        progress.show()
+        QApplication.processEvents()
+        
+        experiments = group_analysis.get_experiments()
+        if not experiments:
+            self.axes.clear()
+            self.axes.set_title("No experiment data available")
+            self.draw()
+            progress.close()
+            return
+        
+        settings = QSettings("HashemiLab", "NeuroStemVolt")
+        freq = settings.value("acquisition_frequency", 10, type=int)
+        
+        # Exponential decay function
+        def exp_decay(t, A, k, C):
+            return (A - C) * np.exp(-k * t) + C
+        
+        # Clear the figure
+        self._clear_figure()
+        
+        # Collect tau values for each group
+        group_names = []
+        group_colors = []
+        all_taus = []  # List of lists - tau values for each group
+        group_means = []
+        group_stds = []
+        
+        for group in groups:
+            group_name = group['name']
+            group_color = group['color']
+            exp_indices = group['experiments']
+            
+            taus_in_group = []
+            
+            for exp_idx in exp_indices:
+                if exp_idx >= len(experiments):
+                    continue
+                
+                experiment = experiments[exp_idx]
+                
+                # Check if the timepoint exists
+                if timepoint_idx >= experiment.get_file_count():
+                    continue
+                
+                try:
+                    sf = experiment.get_spheroid_file(timepoint_idx)
+                    it_trace = sf.get_processed_data_IT()
+                    metadata = sf.get_metadata()
+                    
+                    if it_trace is None or len(it_trace) == 0:
+                        continue
+                    
+                    # Get peak position from metadata
+                    peak_pos = None
+                    if metadata and 'peak_amplitude_positions' in metadata:
+                        peak_indices = metadata['peak_amplitude_positions']
+                        if isinstance(peak_indices, (list, np.ndarray)) and len(peak_indices) > 0:
+                            peak_pos = int(peak_indices[0])
+                        elif isinstance(peak_indices, (int, np.integer)):
+                            peak_pos = int(peak_indices)
+                    
+                    if peak_pos is None:
+                        # Find peak as max value
+                        peak_pos = int(np.argmax(it_trace))
+                    
+                    # Extract post-peak decay
+                    decay_samples = min(400, len(it_trace) - peak_pos - 1)
+                    if decay_samples < 20:
+                        continue
+                    
+                    post_peak = it_trace[peak_pos:peak_pos + decay_samples]
+                    t_decay = np.arange(len(post_peak)) / freq
+                    
+                    # Fit exponential decay
+                    try:
+                        A0 = post_peak[0]
+                        C0 = post_peak[-1]
+                        k0 = 0.1
+                        
+                        popt, _ = curve_fit(exp_decay, t_decay, post_peak, 
+                                           p0=[A0, k0, C0],
+                                           bounds=([0, 0.001, -np.inf], [np.inf, 10, np.inf]),
+                                           maxfev=5000)
+                        
+                        A_fit, k_fit, C_fit = popt
+                        tau = 1.0 / k_fit if k_fit > 0 else np.nan
+                        
+                        if not np.isnan(tau) and tau > 0 and tau < 100:  # Sanity check
+                            taus_in_group.append(tau)
+                    except:
+                        continue
+                        
+                except Exception as e:
+                    print(f"Warning: Could not process experiment {exp_idx}: {e}")
+                    continue
+            
+            if taus_in_group:
+                group_names.append(group_name)
+                group_colors.append(group_color)
+                all_taus.append(taus_in_group)
+                group_means.append(np.mean(taus_in_group))
+                group_stds.append(np.std(taus_in_group))
+        
+        if not group_names:
+            self.axes.clear()
+            self.axes.set_title("No valid tau data found")
+            self.draw()
+            progress.close()
+            return
+        
+        # Calculate y-axis limits with padding
+        all_values = group_means
+        all_stds_vals = group_stds
+        y_min = min([v - 2*s for v, s in zip(all_values, all_stds_vals)])
+        y_max = max([v + 2*s for v, s in zip(all_values, all_stds_vals)])
+        y_max = y_max * 1.15  # Add padding for annotations
+        y_min = max(0, y_min * 0.9)  # Keep y_min >= 0 for tau
+        
+        self.axes.set_ylim(bottom=y_min, top=y_max)
+        
+        # Create scatter plot with horizontal lines and error bars
+        x_positions = np.arange(len(group_names))
+        
+        for i, (x, mean_val, std_val, color, taus) in enumerate(zip(
+            x_positions, group_means, group_stds, group_colors, all_taus)):
+            
+            # Scatter point for mean
+            self.axes.scatter([x], [mean_val], s=100, alpha=0.7, color=color, zorder=3)
+            
+            # Horizontal line at mean
+            self.axes.hlines(mean_val, xmin=x-0.2, xmax=x+0.2, colors=color, 
+                           linewidth=3, alpha=0.5)
+            
+            # Error bars
+            self.axes.errorbar(x, mean_val, yerr=std_val, fmt='none', 
+                             ecolor=color, capsize=5, capthick=2, linewidth=2, alpha=0.5)
+            
+            # Individual data points with jitter
+            jitter = (np.random.random(len(taus)) - 0.5) * 0.15
+            self.axes.scatter(x + jitter, taus, color=color, s=30, 
+                            alpha=0.4, edgecolor='none', zorder=2)
+        
+        # Axis labels and title
+        self.axes.set_xticks(x_positions)
+        self.axes.set_xticklabels(group_names, fontsize=12)
+        self.axes.set_ylabel('Tau (seconds)', fontsize=12)
+        self.axes.set_xlabel('Treatment', fontsize=14)
+        self.axes.set_title(f'Tau Comparison at {timepoint_label}', fontsize=14, fontweight='bold')
+        self.axes.grid(axis='y', alpha=0.3)
+        
+        # Add sample size annotation above each group
+        for i, (x, mean_val, std_val, taus) in enumerate(zip(x_positions, group_means, group_stds, all_taus)):
+            y_pos = mean_val + std_val + (y_max - y_min) * 0.05
+            self.axes.annotate(f'n={len(taus)}', (x, y_pos), ha='center', fontsize=9)
+        
+        self.fig.tight_layout()
+        self.draw()
+        progress.close()
+
+    def plot_compare_amplitudes_grouped(self, group_analysis, timepoint_idx, timepoint_label, groups):
+        """
+        Compare amplitudes from grouped experiments at a specific timepoint.
+        
+        Shows a scatter plot with mean markers and error bars, where each group
+        is displayed on the x-axis. Experiments in the same group are averaged.
+        
+        Args:
+            group_analysis: GroupAnalysis object containing experiments
+            timepoint_idx (int): File index for the selected timepoint
+            timepoint_label (str): Label for the timepoint (e.g., "-30 min")
+            groups: List of dicts with 'name', 'color', 'experiments' keys
+        """
+        # Show loading dialog
+        progress = QProgressDialog("Processing amplitude comparison...", None, 0, 0, self)
+        progress.setWindowModality(Qt.ApplicationModal)
+        progress.setAutoClose(True)
+        progress.setAutoReset(True)
+        progress.setMinimumDuration(0)
+        progress.show()
+        QApplication.processEvents()
+        
+        experiments = group_analysis.get_experiments()
+        if not experiments:
+            self.axes.clear()
+            self.axes.set_title("No experiment data available")
+            self.draw()
+            progress.close()
+            return
+        
+        settings = QSettings("HashemiLab", "NeuroStemVolt")
+        calibration_enabled = settings.value("calibration_enabled", False, type=bool)
+        
+        # Clear the figure
+        self._clear_figure()
+        
+        # Collect amplitude values for each group
+        group_names = []
+        group_colors = []
+        all_amps = []  # List of lists - amplitude values for each group
+        group_means = []
+        group_stds = []
+        
+        for group in groups:
+            group_name = group['name']
+            group_color = group['color']
+            exp_indices = group['experiments']
+            
+            amps_in_group = []
+            
+            for exp_idx in exp_indices:
+                if exp_idx >= len(experiments):
+                    continue
+                
+                experiment = experiments[exp_idx]
+                
+                if timepoint_idx >= experiment.get_file_count():
+                    continue
+                
+                try:
+                    sf = experiment.get_spheroid_file(timepoint_idx)
+                    metadata = sf.get_metadata()
+                    
+                    if metadata is None:
+                        continue
+                    
+                    peak_amplitude_values = metadata.get('peak_amplitude_values', None)
+                    
+                    if peak_amplitude_values is None:
+                        continue
+                    
+                    # Handle both single and multiple peak values
+                    if isinstance(peak_amplitude_values, (list, np.ndarray)):
+                        if len(peak_amplitude_values) > 0:
+                            amp = float(np.max(np.abs(peak_amplitude_values)))
+                        else:
+                            continue
+                    else:
+                        amp = float(peak_amplitude_values)
+                    
+                    amps_in_group.append(amp)
+                    
+                except Exception as e:
+                    print(f"Warning: Could not get amplitude for exp {exp_idx}: {e}")
+                    continue
+            
+            if amps_in_group:
+                group_names.append(group_name)
+                group_colors.append(group_color)
+                all_amps.append(amps_in_group)
+                group_means.append(np.mean(amps_in_group))
+                group_stds.append(np.std(amps_in_group))
+        
+        if not group_names:
+            self.axes.clear()
+            self.axes.set_title("No valid amplitude data found")
+            self.draw()
+            progress.close()
+            return
+        
+        # Calculate y-axis limits with padding
+        all_values = group_means
+        all_stds_vals = group_stds
+        y_min = min([v - 2*s for v, s in zip(all_values, all_stds_vals)])
+        y_max = max([v + 2*s for v, s in zip(all_values, all_stds_vals)])
+        y_max = y_max * 1.15  # Add padding for annotations
+        y_min = max(0, y_min * 0.9)  # Keep y_min >= 0 for amplitude
+        
+        self.axes.set_ylim(bottom=y_min, top=y_max)
+        
+        # Create scatter plot with horizontal lines and error bars
+        x_positions = np.arange(len(group_names))
+        
+        for i, (x, mean_val, std_val, color, amps) in enumerate(zip(
+            x_positions, group_means, group_stds, group_colors, all_amps)):
+            
+            # Scatter point for mean
+            self.axes.scatter([x], [mean_val], s=100, alpha=0.7, color=color, zorder=3)
+            
+            # Horizontal line at mean
+            self.axes.hlines(mean_val, xmin=x-0.2, xmax=x+0.2, colors=color, 
+                           linewidth=3, alpha=0.5)
+            
+            # Error bars
+            self.axes.errorbar(x, mean_val, yerr=std_val, fmt='none', 
+                             ecolor=color, capsize=5, capthick=2, linewidth=2, alpha=0.5)
+            
+            # Individual data points with jitter
+            jitter = (np.random.random(len(amps)) - 0.5) * 0.15
+            self.axes.scatter(x + jitter, amps, color=color, s=30, 
+                            alpha=0.4, edgecolor='none', zorder=2)
+        
+        # Axis labels and title
+        self.axes.set_xticks(x_positions)
+        self.axes.set_xticklabels(group_names, fontsize=12)
+        
+        y_label = 'Peak Concentration (nM)' if calibration_enabled else 'Peak Amplitude (nA)'
+        self.axes.set_ylabel(y_label, fontsize=12)
+        self.axes.set_xlabel('Treatment', fontsize=14)
+        
+        value_type = 'Concentration' if calibration_enabled else 'Amplitude'
+        self.axes.set_title(f'{value_type} Comparison at {timepoint_label}', fontsize=14, fontweight='bold')
+        self.axes.grid(axis='y', alpha=0.3)
+        
+        # Add sample size annotation above each group
+        for i, (x, mean_val, std_val, amps) in enumerate(zip(x_positions, group_means, group_stds, all_amps)):
+            y_pos = mean_val + std_val + (y_max - y_min) * 0.05
+            self.axes.annotate(f'n={len(amps)}', (x, y_pos), ha='center', fontsize=9)
+        
+        self.fig.tight_layout()
+        self.draw()
+        progress.close()
+
+    def plot_amplitude_violin(self, group_analysis, timepoints, groups, plot_title, ylabel):
+        """
+        Create a violin/swarm plot comparing amplitude distributions between groups.
+        
+        Uses seaborn for the violin and swarm plot visualization.
+        
+        Args:
+            group_analysis: GroupAnalysis object containing experiments
+            timepoints: List of [(idx1, label1), (idx2, label2)] - exactly two timepoints
+            groups: List of dicts with 'name', 'color', 'experiments' keys
+            plot_title (str): Custom title for the plot
+            ylabel (str): Custom y-axis label
+        """
+        try:
+            import seaborn as sns
+            import pandas as pd
+        except ImportError:
+            self.axes.clear()
+            self.axes.set_title("Seaborn library required for violin plots")
+            self.draw()
+            return
+        
+        # Show loading dialog
+        progress = QProgressDialog("Creating violin plot...", None, 0, 0, self)
+        progress.setWindowModality(Qt.ApplicationModal)
+        progress.setAutoClose(True)
+        progress.setAutoReset(True)
+        progress.setMinimumDuration(0)
+        progress.show()
+        QApplication.processEvents()
+        
+        experiments = group_analysis.get_experiments()
+        if not experiments:
+            self.axes.clear()
+            self.axes.set_title("No experiment data available")
+            self.draw()
+            progress.close()
+            return
+        
+        # Collect data into a DataFrame format
+        data_rows = []
+        palette = {}
+        
+        for group in groups:
+            group_name = group['name']
+            group_color = group['color']
+            exp_indices = group['experiments']
+            
+            palette[group_name] = group_color
+            
+            for exp_idx in exp_indices:
+                if exp_idx >= len(experiments):
+                    continue
+                
+                experiment = experiments[exp_idx]
+                
+                # Get amplitudes for the selected timepoints
+                for tp_idx, tp_label in timepoints:
+                    if tp_idx >= experiment.get_file_count():
+                        continue
+                    
+                    try:
+                        sf = experiment.get_spheroid_file(tp_idx)
+                        metadata = sf.get_metadata()
+                        
+                        if metadata is None:
+                            continue
+                        
+                        peak_amplitude_values = metadata.get('peak_amplitude_values', None)
+                        
+                        if peak_amplitude_values is None:
+                            continue
+                        
+                        # Handle both single and multiple peak values
+                        if isinstance(peak_amplitude_values, (list, np.ndarray)):
+                            if len(peak_amplitude_values) > 0:
+                                amp = float(np.max(np.abs(peak_amplitude_values)))
+                            else:
+                                continue
+                        else:
+                            amp = float(peak_amplitude_values)
+                        
+                        data_rows.append({
+                            'Group': group_name,
+                            'Amplitude': amp,
+                            'Timepoint': tp_label,
+                            'Experiment': exp_idx
+                        })
+                        
+                    except Exception as e:
+                        print(f"Warning: Could not get amplitude for exp {exp_idx}: {e}")
+                        continue
+        
+        if not data_rows:
+            self.axes.clear()
+            self.axes.set_title("No amplitude data available")
+            self.draw()
+            progress.close()
+            return
+        
+        # Create DataFrame
+        df = pd.DataFrame(data_rows)
+        
+        # Clear the figure
+        self._clear_figure()
+        
+        # Create violin plot with swarm overlay
+        try:
+            # Violin plot as base
+            sns.violinplot(
+                data=df,
+                y='Amplitude',
+                x='Group',
+                hue='Group',
+                palette=palette,
+                alpha=0.3,
+                inner=None,
+                linewidth=0,
+                legend=False,
+                ax=self.axes
+            )
+            
+            # Overlay swarm plot with colored points
+            sns.swarmplot(
+                data=df,
+                y='Amplitude',
+                x='Group',
+                hue='Group',
+                palette=palette,
+                alpha=0.6,
+                size=7,
+                legend=False,
+                ax=self.axes
+            )
+            
+        except Exception as e:
+            print(f"Warning: Swarm/violin plot failed, using simpler plot: {e}")
+            # Fallback to boxplot if seaborn fails
+            self.axes.clear()
+            group_names = list(palette.keys())
+            for i, gname in enumerate(group_names):
+                gdata = df[df['Group'] == gname]['Amplitude'].values
+                bp = self.axes.boxplot([gdata], positions=[i], widths=0.6, 
+                                       patch_artist=True)
+                bp['boxes'][0].set_facecolor(palette[gname])
+                bp['boxes'][0].set_alpha(0.5)
+            self.axes.set_xticks(range(len(group_names)))
+            self.axes.set_xticklabels(group_names)
+        
+        # Styling
+        self.axes.set_xlabel("Group", fontsize=12)
+        self.axes.set_ylabel(ylabel, fontsize=12)
+        self.axes.set_title(plot_title, fontsize=13, fontweight='bold')
+        
+        # Create custom legend
+        import matplotlib.pyplot as plt
+        legend_handles = [
+            plt.Line2D([0], [0], marker='o', color='w', 
+                      markerfacecolor=color, markersize=8, label=name)
+            for name, color in palette.items()
+        ]
+        self.axes.legend(handles=legend_handles, loc='best', fontsize=9)
+        
+        self.axes.grid(alpha=0.3)
+        
+        # Add sample size annotations
+        group_names = df['Group'].unique()
+        for i, gname in enumerate(group_names):
+            n = len(df[df['Group'] == gname])
+            y_max = df[df['Group'] == gname]['Amplitude'].max()
+            self.axes.annotate(f'n={n}', (i, y_max), 
+                             xytext=(0, 10), textcoords='offset points',
+                             ha='center', fontsize=9)
         
         self.fig.tight_layout()
         self.draw()
