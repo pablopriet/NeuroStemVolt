@@ -8,7 +8,12 @@ from core.processing import *
 
 from ui.utils.styles import apply_custom_styles
 from ui.widgets.plot_canvas import PlotCanvas
-from ui.wizard_3_results.timepoint_dialog import TimepointSelectionDialog, ExperimentSelectionDialog
+from ui.wizard_3_results.timepoint_dialog import (
+    TimepointSelectionDialog, ExperimentSelectionDialog, 
+    MultiExperimentTimepointDialog, MultiExperimentAmplitudeDialog,
+    GroupedExperimentDialog, GroupedAmplitudeDialog, ViolinPlotDialog,
+    get_experiment_display_name
+)
 import os
 
 ### Third Page
@@ -103,26 +108,50 @@ class ResultsPage(QWizardPage):
             btn_freq.clicked.connect(lambda: self._reveal_and_call(lambda: self.result_plot.show_frequency_over_time(self.wizard().group_analysis)))
             self.analysis_buttons = [btn_avg, btn_amp, btn_freq]
         else:
+            # Stimulation file type - organized by metric type
+            # Row 0: Amplitude metrics
             btn_avg = QPushButton("Mean Amplitude Over Experiments"); apply_custom_styles(btn_avg)
-            btn_fit = QPushButton("Decay Exponential Fitting"); apply_custom_styles(btn_fit)
+            btn_compare_amps = QPushButton("Compare Amplitudes (Multi-Exp)"); apply_custom_styles(btn_compare_amps)
+            
+            # Row 1: Tau/Decay metrics
             btn_param = QPushButton("Tau Over Time"); apply_custom_styles(btn_param)
-            btn_amp = QPushButton("Individual Amplitudes Over Time"); apply_custom_styles(btn_amp)
+            btn_fit = QPushButton("Decay Exponential Fitting"); apply_custom_styles(btn_fit)
+            
+            # Row 2: Single experiment visualization
             btn_it_series = QPushButton("IT Time Series (Single Exp)"); apply_custom_styles(btn_it_series)
-            btn_amp_timeline = QPushButton("Amplitudes vs Timepoint (Single Exp)"); apply_custom_styles(btn_amp_timeline)
+            btn_compare_its = QPushButton("Compare ITs at Timepoint"); apply_custom_styles(btn_compare_its)
+            
+            # Row 3: Group comparison plots (new)
+            btn_compare_tau_grouped = QPushButton("Compare Tau (Grouped)"); apply_custom_styles(btn_compare_tau_grouped)
+            btn_compare_amps_grouped = QPushButton("Compare Amplitudes (Grouped)"); apply_custom_styles(btn_compare_amps_grouped)
+            
+            # Row 4: Distribution plots (new)
+            btn_violin_plot = QPushButton("Amplitude Distribution (Violin)"); apply_custom_styles(btn_violin_plot)
+            
+            # Layout: organized by metric similarity
             self.analysis.addWidget(btn_avg, 0, 0)
-            self.analysis.addWidget(btn_amp, 0, 1)
+            self.analysis.addWidget(btn_compare_amps, 0, 1)
             self.analysis.addWidget(btn_param, 1, 0)
             self.analysis.addWidget(btn_fit, 1, 1)
             self.analysis.addWidget(btn_it_series, 2, 0)
-            self.analysis.addWidget(btn_amp_timeline, 2, 1)
+            self.analysis.addWidget(btn_compare_its, 2, 1)
+            self.analysis.addWidget(btn_compare_tau_grouped, 3, 0)
+            self.analysis.addWidget(btn_compare_amps_grouped, 3, 1)
+            self.analysis.addWidget(btn_violin_plot, 4, 0)
+            
             # connect
             btn_avg.clicked.connect(lambda _, f=lambda: self.result_plot.show_average_over_experiments(self.wizard().group_analysis): self._reveal_and_call(f))
             btn_fit.clicked.connect(lambda _, f=self.handle_decay_fit: self._reveal_and_call(f))
             btn_param.clicked.connect(lambda _, f=lambda: self.result_plot.show_tau_param_over_time(self.wizard().group_analysis): self._reveal_and_call(f))
-            btn_amp.clicked.connect(lambda _, f=lambda: self.result_plot.show_amplitudes_over_time(self.wizard().group_analysis): self._reveal_and_call(f))
             btn_it_series.clicked.connect(lambda: self._reveal_and_call(self.handle_it_time_series))
-            btn_amp_timeline.clicked.connect(lambda: self._reveal_and_call(self.handle_amplitudes_vs_timepoint))
-            self.analysis_buttons = [btn_avg, btn_fit, btn_param, btn_amp, btn_it_series, btn_amp_timeline]
+            btn_compare_its.clicked.connect(lambda: self._reveal_and_call(self.handle_compare_its_at_timepoint))
+            btn_compare_amps.clicked.connect(lambda: self._reveal_and_call(self.handle_compare_amplitudes_multi_exp))
+            btn_compare_tau_grouped.clicked.connect(lambda: self._reveal_and_call(self.handle_compare_tau_grouped))
+            btn_compare_amps_grouped.clicked.connect(lambda: self._reveal_and_call(self.handle_compare_amplitudes_grouped))
+            btn_violin_plot.clicked.connect(lambda: self._reveal_and_call(self.handle_violin_plot))
+            
+            self.analysis_buttons = [btn_avg, btn_compare_amps, btn_param, btn_fit, btn_it_series, 
+                                    btn_compare_its, btn_compare_tau_grouped, btn_compare_amps_grouped, btn_violin_plot]
 
     def _reveal_and_call(self, plot_fn):
         """
@@ -374,15 +403,8 @@ class ResultsPage(QWizardPage):
             QMessageBox.warning(self, "No Data", "No experiments loaded.")
             return
         
-        # Create experiment names for selection dialog
-        experiment_names = []
-        for i, exp in enumerate(experiments):
-            # Try to get treatment name or use index
-            treatment = getattr(exp, 'treatment', None)
-            if treatment:
-                experiment_names.append(f"Experiment {i+1}: {treatment}")
-            else:
-                experiment_names.append(f"Experiment {i+1}")
+        # Create experiment names for selection dialog using folder names
+        experiment_names = [get_experiment_display_name(exp, i) for i, exp in enumerate(experiments)]
         
         # Show selection dialog
         dlg = ExperimentSelectionDialog(experiment_names, self, title="Select Experiment for IT Time Series")
@@ -392,9 +414,12 @@ class ResultsPage(QWizardPage):
 
     def handle_amplitudes_vs_timepoint(self):
         """
-        Display peak amplitudes across timepoints/files for a single stimulation experiment.
+        LEGACY: Display peak amplitudes across timepoints/files for a single stimulation experiment.
         Shows one amplitude value per file, plotted against file index or time.
         Only works for stimulation files (not spontaneous).
+        
+        NOTE: This function has been deprecated in favor of the grouped comparison plots.
+        Kept for backward compatibility but UI button has been removed.
         """
         group_analysis = self.wizard().group_analysis
         experiments = group_analysis.get_experiments()
@@ -410,17 +435,206 @@ class ResultsPage(QWizardPage):
                               "This plot is only available for stimulation files, not spontaneous recordings.")
             return
         
-        # Create experiment names for selection dialog
-        experiment_names = []
-        for i, exp in enumerate(experiments):
-            treatment = getattr(exp, 'treatment', None)
-            if treatment:
-                experiment_names.append(f"Experiment {i+1}: {treatment}")
-            else:
-                experiment_names.append(f"Experiment {i+1}")
+        # Create experiment names for selection dialog using folder names
+        experiment_names = [get_experiment_display_name(exp, i) for i, exp in enumerate(experiments)]
         
         # Show selection dialog
         dlg = ExperimentSelectionDialog(experiment_names, self, title="Select Experiment for Amplitude Timeline")
         if dlg.exec_() == QDialog.Accepted:
             exp_idx = dlg.get_selected_index()
-            self.result_plot.plot_amplitudes_vs_timepoint_single_experiment(group_analysis, exp_idx)
+            self.result_plot.plot_amplitudes_vs_timepoint_single_experiment_legacy(group_analysis, exp_idx)
+
+    def handle_compare_its_at_timepoint(self):
+        """
+        Compare IT traces from multiple experiments at a specific timepoint.
+        User selects:
+        1. A specific timepoint (e.g., -30 min, 0 min, 10 min)
+        2. Multiple experiments to compare
+        3. Custom colors for each experiment
+        """
+        group_analysis = self.wizard().group_analysis
+        experiments = group_analysis.get_experiments()
+        if not experiments:
+            QMessageBox.warning(self, "No Data", "No experiments loaded.")
+            return
+        
+        # Get time parameters from first experiment
+        first_exp = experiments[0]
+        time_between_files = first_exp.get_time_between_files()
+        files_before_treatment = first_exp.get_number_of_files_before_treatment()
+        
+        # Show the multi-experiment timepoint selection dialog
+        dlg = MultiExperimentTimepointDialog(
+            experiments, time_between_files, files_before_treatment, self
+        )
+        
+        if dlg.exec_() == QDialog.Accepted:
+            timepoint_idx = dlg.get_selected_timepoint_index()
+            timepoint_label = dlg.get_selected_timepoint_label()
+            selected_experiments = dlg.get_selected_experiments()  # List of (exp_idx, color)
+            
+            if not selected_experiments:
+                QMessageBox.warning(self, "No Selection", "Please select at least one experiment.")
+                return
+            
+            self.result_plot.plot_compare_its_at_timepoint(
+                group_analysis, timepoint_idx, timepoint_label, selected_experiments
+            )
+
+    def handle_compare_amplitudes_multi_exp(self):
+        """
+        Compare amplitude timelines from multiple experiments.
+        User selects:
+        1. Multiple experiments to compare
+        2. Custom colors for each experiment
+        """
+        group_analysis = self.wizard().group_analysis
+        experiments = group_analysis.get_experiments()
+        if not experiments:
+            QMessageBox.warning(self, "No Data", "No experiments loaded.")
+            return
+        
+        # Check file type - only for stimulation files
+        settings = QSettings("HashemiLab", "NeuroStemVolt")
+        file_type = settings.value("file_type", "None", type=str)
+        if file_type == "Spontaneous":
+            QMessageBox.warning(self, "Invalid File Type", 
+                              "This plot is only available for stimulation files, not spontaneous recordings.")
+            return
+        
+        # Show the multi-experiment amplitude selection dialog
+        dlg = MultiExperimentAmplitudeDialog(experiments, self)
+        
+        if dlg.exec_() == QDialog.Accepted:
+            selected_experiments = dlg.get_selected_experiments()  # List of (exp_idx, color)
+            
+            if not selected_experiments:
+                QMessageBox.warning(self, "No Selection", "Please select at least one experiment.")
+                return
+            
+            self.result_plot.plot_compare_amplitudes_multi_exp(group_analysis, selected_experiments)
+
+    def handle_compare_tau_grouped(self):
+        """
+        Compare tau values from grouped experiments at a specific timepoint.
+        
+        User selects:
+        1. A specific timepoint
+        2. Multiple groups with experiments in each
+        3. Custom colors for each group
+        
+        Experiments in the same group are averaged together.
+        """
+        group_analysis = self.wizard().group_analysis
+        experiments = group_analysis.get_experiments()
+        if not experiments:
+            QMessageBox.warning(self, "No Data", "No experiments loaded.")
+            return
+        
+        # Get time parameters from first experiment
+        first_exp = experiments[0]
+        time_between_files = first_exp.get_time_between_files()
+        files_before_treatment = first_exp.get_number_of_files_before_treatment()
+        
+        # Show the grouped experiment dialog
+        dlg = GroupedExperimentDialog(
+            experiments, time_between_files, files_before_treatment, 
+            self, title="Compare Tau Across Groups", metric_name="Tau"
+        )
+        
+        if dlg.exec_() == QDialog.Accepted:
+            timepoint_idx = dlg.get_selected_timepoint_index()
+            timepoint_label = dlg.get_selected_timepoint_label()
+            groups = dlg.get_groups()
+            
+            if not groups:
+                QMessageBox.warning(self, "No Groups", "Please create at least one group with experiments.")
+                return
+            
+            self.result_plot.plot_compare_tau_grouped(
+                group_analysis, timepoint_idx, timepoint_label, groups
+            )
+
+    def handle_compare_amplitudes_grouped(self):
+        """
+        Compare amplitudes from grouped experiments at a specific timepoint.
+        
+        User selects:
+        1. A specific timepoint
+        2. Multiple groups with experiments in each
+        3. Custom colors for each group
+        
+        Experiments in the same group are averaged together.
+        """
+        group_analysis = self.wizard().group_analysis
+        experiments = group_analysis.get_experiments()
+        if not experiments:
+            QMessageBox.warning(self, "No Data", "No experiments loaded.")
+            return
+        
+        # Get time parameters from first experiment
+        first_exp = experiments[0]
+        time_between_files = first_exp.get_time_between_files()
+        files_before_treatment = first_exp.get_number_of_files_before_treatment()
+        
+        # Show the grouped amplitude dialog (single timepoint)
+        dlg = GroupedAmplitudeDialog(
+            experiments, time_between_files, files_before_treatment, 
+            self, title="Compare Amplitudes Across Groups"
+        )
+        
+        if dlg.exec_() == QDialog.Accepted:
+            timepoint_idx = dlg.get_selected_timepoint_index()
+            timepoint_label = dlg.get_selected_timepoint_label()
+            groups = dlg.get_groups()
+            
+            if not groups:
+                QMessageBox.warning(self, "No Groups", "Please create at least one group with experiments.")
+                return
+            
+            self.result_plot.plot_compare_amplitudes_grouped(
+                group_analysis, timepoint_idx, timepoint_label, groups
+            )
+
+    def handle_violin_plot(self):
+        """
+        Create a violin/swarm plot comparing amplitude distributions between groups.
+        
+        User selects:
+        1. Exactly two timepoints (for difference calculation or comparison)
+        2. Multiple groups with experiments in each
+        3. Custom colors for each group
+        4. Custom plot title and y-axis label
+        
+        Creates a violin plot with overlaid swarm points showing distribution.
+        """
+        group_analysis = self.wizard().group_analysis
+        experiments = group_analysis.get_experiments()
+        if not experiments:
+            QMessageBox.warning(self, "No Data", "No experiments loaded.")
+            return
+        
+        # Get time parameters from first experiment
+        first_exp = experiments[0]
+        time_between_files = first_exp.get_time_between_files()
+        files_before_treatment = first_exp.get_number_of_files_before_treatment()
+        
+        # Show the violin plot dialog
+        dlg = ViolinPlotDialog(
+            experiments, time_between_files, files_before_treatment, 
+            self, title="Amplitude Distribution Comparison"
+        )
+        
+        if dlg.exec_() == QDialog.Accepted:
+            timepoints = dlg.get_selected_timepoints()
+            groups = dlg.get_groups()
+            plot_title = dlg.get_plot_title()
+            ylabel = dlg.get_ylabel()
+            
+            if not groups:
+                QMessageBox.warning(self, "No Groups", "Please create at least one group with experiments.")
+                return
+            
+            self.result_plot.plot_amplitude_violin(
+                group_analysis, timepoints, groups, plot_title, ylabel
+            )
