@@ -1,9 +1,10 @@
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, 
                              QDialogButtonBox, QListWidget, QListWidgetItem, QPushButton,
                              QColorDialog, QWidget, QCheckBox, QScrollArea, QFrame, QLineEdit)
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QSettings
 from PyQt5.QtGui import QColor
 import os
+import json
 
 def get_experiment_display_name(experiment, index):
     """
@@ -192,6 +193,9 @@ class MultiExperimentTimepointDialog(QDialog):
         select_layout.addWidget(btn_deselect_all)
         layout.addLayout(select_layout)
         
+        # Load saved settings
+        self._load_settings()
+        
         # Dialog buttons
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
@@ -236,6 +240,57 @@ class MultiExperimentTimepointDialog(QDialog):
             if checkbox.isChecked():
                 selected.append((exp_idx, color_btn.get_color()))
         return selected
+
+    def _save_settings(self):
+        """Save current dialog settings to QSettings for persistence."""
+        settings = QSettings("NeuroStemVolt", "MultiExperimentTimepointDialog")
+        
+        # Save timepoint index
+        settings.setValue("timepoint_index", self.timepoint_combo.currentIndex())
+        
+        # Save experiment selections and colors
+        exp_data = []
+        for checkbox, color_btn, exp_idx in self.experiment_widgets:
+            exp_data.append({
+                'exp_idx': exp_idx,
+                'checked': checkbox.isChecked(),
+                'color': color_btn.get_color()
+            })
+        
+        settings.setValue("exp_data", json.dumps(exp_data))
+    
+    def _load_settings(self):
+        """Load saved settings from QSettings."""
+        settings = QSettings("NeuroStemVolt", "MultiExperimentTimepointDialog")
+        
+        # Load timepoint index
+        tp_index = settings.value("timepoint_index", None)
+        if tp_index is not None:
+            idx = int(tp_index)
+            if 0 <= idx < self.timepoint_combo.count():
+                self.timepoint_combo.setCurrentIndex(idx)
+        
+        # Load experiment data
+        exp_json = settings.value("exp_data", None)
+        if exp_json:
+            try:
+                exp_data = json.loads(exp_json)
+                
+                # Create a mapping from exp_idx to saved data
+                saved_map = {item['exp_idx']: item for item in exp_data}
+                
+                for checkbox, color_btn, exp_idx in self.experiment_widgets:
+                    if exp_idx in saved_map:
+                        checkbox.setChecked(saved_map[exp_idx].get('checked', True))
+                        color_btn.set_color(saved_map[exp_idx].get('color', self.DEFAULT_COLORS[exp_idx % len(self.DEFAULT_COLORS)]))
+                        
+            except Exception as e:
+                print(f"Warning: Could not load saved settings: {e}")
+    
+    def accept(self):
+        """Override accept to save settings before closing."""
+        self._save_settings()
+        super().accept()
 
 
 class MultiExperimentAmplitudeDialog(QDialog):
@@ -308,6 +363,9 @@ class MultiExperimentAmplitudeDialog(QDialog):
         select_layout.addWidget(btn_deselect_all)
         layout.addLayout(select_layout)
         
+        # Load saved settings
+        self._load_settings()
+        
         # Dialog buttons
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
@@ -329,6 +387,47 @@ class MultiExperimentAmplitudeDialog(QDialog):
             if checkbox.isChecked():
                 selected.append((exp_idx, color_btn.get_color()))
         return selected
+
+    def _save_settings(self):
+        """Save current dialog settings to QSettings for persistence."""
+        settings = QSettings("NeuroStemVolt", "MultiExperimentAmplitudeDialog")
+        
+        # Save experiment selections and colors
+        exp_data = []
+        for checkbox, color_btn, exp_idx in self.experiment_widgets:
+            exp_data.append({
+                'exp_idx': exp_idx,
+                'checked': checkbox.isChecked(),
+                'color': color_btn.get_color()
+            })
+        
+        settings.setValue("exp_data", json.dumps(exp_data))
+    
+    def _load_settings(self):
+        """Load saved settings from QSettings."""
+        settings = QSettings("NeuroStemVolt", "MultiExperimentAmplitudeDialog")
+        
+        # Load experiment data
+        exp_json = settings.value("exp_data", None)
+        if exp_json:
+            try:
+                exp_data = json.loads(exp_json)
+                
+                # Create a mapping from exp_idx to saved data
+                saved_map = {item['exp_idx']: item for item in exp_data}
+                
+                for checkbox, color_btn, exp_idx in self.experiment_widgets:
+                    if exp_idx in saved_map:
+                        checkbox.setChecked(saved_map[exp_idx].get('checked', True))
+                        color_btn.set_color(saved_map[exp_idx].get('color', self.DEFAULT_COLORS[exp_idx % len(self.DEFAULT_COLORS)]))
+                        
+            except Exception as e:
+                print(f"Warning: Could not load saved settings: {e}")
+    
+    def accept(self):
+        """Override accept to save settings before closing."""
+        self._save_settings()
+        super().accept()
 
 
 class GroupedExperimentDialog(QDialog):
@@ -393,9 +492,12 @@ class GroupedExperimentDialog(QDialog):
         group_btn_layout.addStretch()
         layout.addLayout(group_btn_layout)
         
-        # Add initial two groups
+        # Add initial two groups (or load from saved settings)
         self._add_group()
         self._add_group()
+        
+        # Load saved settings (overrides defaults)
+        self._load_settings()
         
         # Dialog buttons
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -500,6 +602,69 @@ class GroupedExperimentDialog(QDialog):
                 })
         return result
 
+    def _save_settings(self):
+        """Save current dialog settings to QSettings for persistence."""
+        settings = QSettings("NeuroStemVolt", "GroupedExperimentDialog")
+        
+        # Save timepoint index
+        settings.setValue("timepoint_index", self.timepoint_combo.currentIndex())
+        
+        # Save groups info as JSON
+        groups_data = []
+        for group in self.groups:
+            group_info = {
+                'name': group['name_edit'].text(),
+                'color': group['color_btn'].get_color(),
+                'checked_experiments': [exp_idx for checkbox, exp_idx in group['checkboxes'] if checkbox.isChecked()]
+            }
+            groups_data.append(group_info)
+        
+        settings.setValue("groups_data", json.dumps(groups_data))
+    
+    def _load_settings(self):
+        """Load saved settings from QSettings."""
+        settings = QSettings("NeuroStemVolt", "GroupedExperimentDialog")
+        
+        # Load timepoint index
+        tp_index = settings.value("timepoint_index", None)
+        if tp_index is not None:
+            idx = int(tp_index)
+            if 0 <= idx < self.timepoint_combo.count():
+                self.timepoint_combo.setCurrentIndex(idx)
+        
+        # Load groups data
+        groups_json = settings.value("groups_data", None)
+        if groups_json:
+            try:
+                groups_data = json.loads(groups_json)
+                
+                # Remove default groups and recreate from saved data
+                while self.groups:
+                    self._remove_group(self.groups[0]['frame'])
+                
+                for group_info in groups_data:
+                    self._add_group()
+                    group = self.groups[-1]
+                    
+                    # Restore name
+                    group['name_edit'].setText(group_info.get('name', f"Group {len(self.groups)}"))
+                    
+                    # Restore color
+                    group['color_btn'].set_color(group_info.get('color', self.DEFAULT_COLORS[len(self.groups) - 1]))
+                    
+                    # Restore checked experiments
+                    checked_exps = set(group_info.get('checked_experiments', []))
+                    for checkbox, exp_idx in group['checkboxes']:
+                        checkbox.setChecked(exp_idx in checked_exps)
+                        
+            except Exception as e:
+                print(f"Warning: Could not load saved settings: {e}")
+    
+    def accept(self):
+        """Override accept to save settings before closing."""
+        self._save_settings()
+        super().accept()
+
 
 class GroupedAmplitudeDialog(QDialog):
     """
@@ -562,9 +727,12 @@ class GroupedAmplitudeDialog(QDialog):
         group_btn_layout.addStretch()
         layout.addLayout(group_btn_layout)
         
-        # Add initial two groups
+        # Add initial two groups (or load from saved settings)
         self._add_group()
         self._add_group()
+        
+        # Load saved settings (overrides defaults)
+        self._load_settings()
         
         # Dialog buttons
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -665,6 +833,69 @@ class GroupedAmplitudeDialog(QDialog):
                     'experiments': selected_exps
                 })
         return result
+
+    def _save_settings(self):
+        """Save current dialog settings to QSettings for persistence."""
+        settings = QSettings("NeuroStemVolt", "GroupedAmplitudeDialog")
+        
+        # Save timepoint index
+        settings.setValue("timepoint_index", self.timepoint_combo.currentIndex())
+        
+        # Save groups info as JSON
+        groups_data = []
+        for group in self.groups:
+            group_info = {
+                'name': group['name_edit'].text(),
+                'color': group['color_btn'].get_color(),
+                'checked_experiments': [exp_idx for checkbox, exp_idx in group['checkboxes'] if checkbox.isChecked()]
+            }
+            groups_data.append(group_info)
+        
+        settings.setValue("groups_data", json.dumps(groups_data))
+    
+    def _load_settings(self):
+        """Load saved settings from QSettings."""
+        settings = QSettings("NeuroStemVolt", "GroupedAmplitudeDialog")
+        
+        # Load timepoint index
+        tp_index = settings.value("timepoint_index", None)
+        if tp_index is not None:
+            idx = int(tp_index)
+            if 0 <= idx < self.timepoint_combo.count():
+                self.timepoint_combo.setCurrentIndex(idx)
+        
+        # Load groups data
+        groups_json = settings.value("groups_data", None)
+        if groups_json:
+            try:
+                groups_data = json.loads(groups_json)
+                
+                # Remove default groups and recreate from saved data
+                while self.groups:
+                    self._remove_group(self.groups[0]['frame'])
+                
+                for group_info in groups_data:
+                    self._add_group()
+                    group = self.groups[-1]
+                    
+                    # Restore name
+                    group['name_edit'].setText(group_info.get('name', f"Group {len(self.groups)}"))
+                    
+                    # Restore color
+                    group['color_btn'].set_color(group_info.get('color', self.DEFAULT_COLORS[len(self.groups) - 1]))
+                    
+                    # Restore checked experiments
+                    checked_exps = set(group_info.get('checked_experiments', []))
+                    for checkbox, exp_idx in group['checkboxes']:
+                        checkbox.setChecked(exp_idx in checked_exps)
+                        
+            except Exception as e:
+                print(f"Warning: Could not load saved settings: {e}")
+    
+    def accept(self):
+        """Override accept to save settings before closing."""
+        self._save_settings()
+        super().accept()
 
 
 # Keep the old name as an alias for backward compatibility
