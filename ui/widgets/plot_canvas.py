@@ -1865,6 +1865,7 @@ class PlotCanvas(FigureCanvas):
         Create a violin/swarm plot comparing amplitude distributions between groups.
         
         Uses seaborn for the violin and swarm plot visualization.
+        Each group-timepoint combination gets its own position on the x-axis.
         
         Args:
             group_analysis: GroupAnalysis object containing experiments
@@ -1900,15 +1901,23 @@ class PlotCanvas(FigureCanvas):
             return
         
         # Collect data into a DataFrame format
+        # Create a combined x-axis label for each group-timepoint combination
         data_rows = []
         palette = {}
+        
+        # Build ordered list of x-axis categories: each timepoint repeated for each group
+        # Order: tp1-group1, tp1-group2, tp2-group1, tp2-group2, ...
+        x_order = []
+        for tp_idx, tp_label in timepoints:
+            for group in groups:
+                x_label = f"{group['name']}\n{tp_label}"
+                x_order.append(x_label)
+                palette[x_label] = group['color']
         
         for group in groups:
             group_name = group['name']
             group_color = group['color']
             exp_indices = group['experiments']
-            
-            palette[group_name] = group_color
             
             for exp_idx in exp_indices:
                 if exp_idx >= len(experiments):
@@ -1942,10 +1951,14 @@ class PlotCanvas(FigureCanvas):
                         else:
                             amp = float(peak_amplitude_values)
                         
+                        # Combined x-axis label: "GroupName\nTimepoint"
+                        x_label = f"{group_name}\n{tp_label}"
+                        
                         data_rows.append({
                             'Group': group_name,
                             'Amplitude': amp,
                             'Timepoint': tp_label,
+                            'X_Label': x_label,
                             'Experiment': exp_idx
                         })
                         
@@ -1966,19 +1979,21 @@ class PlotCanvas(FigureCanvas):
         # Clear the figure
         self._clear_figure()
         
-        # Create violin plot with swarm overlay
+        # Filter x_order to only include labels that have data
+        x_order = [x for x in x_order if x in df['X_Label'].unique()]
+        
         try:
-            # Violin plot as base
+            # Violin plot - each x position is a unique group-timepoint combination
             sns.violinplot(
                 data=df,
                 y='Amplitude',
-                x='Group',
-                hue='Group',
+                x='X_Label',
                 palette=palette,
                 alpha=0.3,
                 inner=None,
                 linewidth=0,
                 legend=False,
+                order=x_order,
                 ax=self.axes
             )
             
@@ -1986,12 +2001,12 @@ class PlotCanvas(FigureCanvas):
             sns.swarmplot(
                 data=df,
                 y='Amplitude',
-                x='Group',
-                hue='Group',
+                x='X_Label',
                 palette=palette,
                 alpha=0.6,
                 size=7,
                 legend=False,
+                order=x_order,
                 ax=self.axes
             )
             
@@ -1999,40 +2014,43 @@ class PlotCanvas(FigureCanvas):
             print(f"Warning: Swarm/violin plot failed, using simpler plot: {e}")
             # Fallback to boxplot if seaborn fails
             self.axes.clear()
-            group_names = list(palette.keys())
-            for i, gname in enumerate(group_names):
-                gdata = df[df['Group'] == gname]['Amplitude'].values
-                bp = self.axes.boxplot([gdata], positions=[i], widths=0.6, 
-                                       patch_artist=True)
-                bp['boxes'][0].set_facecolor(palette[gname])
-                bp['boxes'][0].set_alpha(0.5)
-            self.axes.set_xticks(range(len(group_names)))
-            self.axes.set_xticklabels(group_names)
+            for i, x_label in enumerate(x_order):
+                x_data = df[df['X_Label'] == x_label]['Amplitude'].values
+                if len(x_data) > 0:
+                    color = palette.get(x_label, '#1f77b4')
+                    bp = self.axes.boxplot([x_data], positions=[i], widths=0.6, 
+                                           patch_artist=True)
+                    bp['boxes'][0].set_facecolor(color)
+                    bp['boxes'][0].set_alpha(0.5)
+            self.axes.set_xticks(range(len(x_order)))
+            self.axes.set_xticklabels(x_order)
         
         # Styling
-        self.axes.set_xlabel("Group", fontsize=12)
+        self.axes.set_xlabel("", fontsize=12)  # Labels are self-explanatory
         self.axes.set_ylabel(ylabel, fontsize=12)
         self.axes.set_title(plot_title, fontsize=13, fontweight='bold')
         
-        # Create custom legend
+        # Create custom legend for groups (only if multiple groups)
         import matplotlib.pyplot as plt
-        legend_handles = [
-            plt.Line2D([0], [0], marker='o', color='w', 
-                      markerfacecolor=color, markersize=8, label=name)
-            for name, color in palette.items()
-        ]
-        self.axes.legend(handles=legend_handles, loc='best', fontsize=9)
+        if len(groups) > 1:
+            legend_handles = [
+                plt.Line2D([0], [0], marker='o', color='w', 
+                          markerfacecolor=group['color'], markersize=8, label=group['name'])
+                for group in groups
+            ]
+            self.axes.legend(handles=legend_handles, loc='best', fontsize=9)
         
         self.axes.grid(alpha=0.3)
         
-        # Add sample size annotations
-        group_names = df['Group'].unique()
-        for i, gname in enumerate(group_names):
-            n = len(df[df['Group'] == gname])
-            y_max = df[df['Group'] == gname]['Amplitude'].max()
-            self.axes.annotate(f'n={n}', (i, y_max), 
-                             xytext=(0, 10), textcoords='offset points',
-                             ha='center', fontsize=9)
+        # Add sample size annotations per x-position
+        for i, x_label in enumerate(x_order):
+            subset = df[df['X_Label'] == x_label]
+            n = len(subset)
+            if n > 0:
+                y_max = subset['Amplitude'].max()
+                self.axes.annotate(f'n={n}', (i, y_max), 
+                                 xytext=(0, 10), textcoords='offset points',
+                                 ha='center', fontsize=9)
         
         self.fig.tight_layout()
         self.draw()
