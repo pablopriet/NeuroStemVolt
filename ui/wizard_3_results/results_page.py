@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import (
-    QWizardPage, QLabel, QPushButton, QVBoxLayout, QFileDialog, QGridLayout, QDialog, QMessageBox, QProgressDialog, QApplication
+    QWizardPage, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QFileDialog, QGridLayout, QDialog, QMessageBox, QProgressDialog, QApplication
 )
 from PyQt5.QtCore import QSettings, Qt
 
@@ -51,13 +51,15 @@ class ResultsPage(QWizardPage):
         # placeholder for analysis controls (will be populated in initializePage)
         main_layout.addLayout(self.analysis)
 
-        # save/export
+        # save/export - horizontal row
+        save_export_layout = QHBoxLayout()
         btn_save     = QPushButton("Save Current Plot");          apply_custom_styles(btn_save)
         btn_save_all = QPushButton("Save All Plots");             apply_custom_styles(btn_save_all)
         btn_export   = QPushButton("Export metrics as csv");      apply_custom_styles(btn_export)
-        main_layout.addWidget(btn_save)
-        main_layout.addWidget(btn_save_all)
-        main_layout.addWidget(btn_export)
+        save_export_layout.addWidget(btn_save)
+        save_export_layout.addWidget(btn_save_all)
+        save_export_layout.addWidget(btn_export)
+        main_layout.addLayout(save_export_layout)
 
         # wire save/export buttons
         btn_save.clicked.connect(self.save_current_plot)
@@ -120,36 +122,32 @@ class ResultsPage(QWizardPage):
             btn_cvs.clicked.connect(lambda: self._reveal_and_call(self.handle_flow_cell_cvs))
             self.analysis_buttons = [btn_calib, btn_its, btn_cvs]
         else:
-            # Stimulation file type - organized by metric type
+            # Stimulation file type - organized in 3x3 grid
             # Row 0: Amplitude metrics
             btn_avg = QPushButton("Mean Amplitude Over Experiments"); apply_custom_styles(btn_avg)
             btn_compare_amps = QPushButton("Compare Amplitudes (Multi-Exp)"); apply_custom_styles(btn_compare_amps)
+            btn_compare_amps_grouped = QPushButton("Compare Amplitudes (Grouped)"); apply_custom_styles(btn_compare_amps_grouped)
             
             # Row 1: Tau/Decay metrics
             btn_param = QPushButton("Tau Over Time"); apply_custom_styles(btn_param)
             btn_fit = QPushButton("Decay Exponential Fitting"); apply_custom_styles(btn_fit)
+            btn_compare_tau_grouped = QPushButton("Compare Tau (Grouped)"); apply_custom_styles(btn_compare_tau_grouped)
             
-            # Row 2: Single experiment visualization
+            # Row 2: IT and distribution plots
             btn_it_series = QPushButton("IT Time Series (Single Exp)"); apply_custom_styles(btn_it_series)
             btn_compare_its = QPushButton("Compare ITs at Timepoint"); apply_custom_styles(btn_compare_its)
-            
-            # Row 3: Group comparison plots (new)
-            btn_compare_tau_grouped = QPushButton("Compare Tau (Grouped)"); apply_custom_styles(btn_compare_tau_grouped)
-            btn_compare_amps_grouped = QPushButton("Compare Amplitudes (Grouped)"); apply_custom_styles(btn_compare_amps_grouped)
-            
-            # Row 4: Distribution plots (new)
             btn_violin_plot = QPushButton("Amplitude Distribution (Violin)"); apply_custom_styles(btn_violin_plot)
             
-            # Layout: organized by metric similarity
+            # Layout: 3x3 grid
             self.analysis.addWidget(btn_avg, 0, 0)
             self.analysis.addWidget(btn_compare_amps, 0, 1)
+            self.analysis.addWidget(btn_compare_amps_grouped, 0, 2)
             self.analysis.addWidget(btn_param, 1, 0)
             self.analysis.addWidget(btn_fit, 1, 1)
+            self.analysis.addWidget(btn_compare_tau_grouped, 1, 2)
             self.analysis.addWidget(btn_it_series, 2, 0)
             self.analysis.addWidget(btn_compare_its, 2, 1)
-            self.analysis.addWidget(btn_compare_tau_grouped, 3, 0)
-            self.analysis.addWidget(btn_compare_amps_grouped, 3, 1)
-            self.analysis.addWidget(btn_violin_plot, 4, 0)
+            self.analysis.addWidget(btn_violin_plot, 2, 2)
             
             # connect
             btn_avg.clicked.connect(lambda _, f=lambda: self.result_plot.show_average_over_experiments(self.wizard().group_analysis): self._reveal_and_call(f))
