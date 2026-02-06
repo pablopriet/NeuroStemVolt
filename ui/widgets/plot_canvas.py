@@ -683,6 +683,8 @@ class PlotCanvas(FigureCanvas):
         try:
             if waveform_type == "5HT":
                 wf = Waveforms(0.2, [1.0, -0.1], 0.2, 1000, processed_data.shape[1])
+            elif waveform_type == "DA":
+                wf = Waveforms(-0.4, [1.3, -0.4], -0.4, 400, processed_data.shape[1])
             else:
                 wf = Waveforms(-0.5, [-0.7, 1.1], -0.5, 600, processed_data.shape[1])
             voltage = wf.voltage_waveform()
@@ -796,6 +798,8 @@ class PlotCanvas(FigureCanvas):
         try:
             if waveform_type == "5HT":
                 wf = Waveforms(0.2, [1.0, -0.1], 0.2, 1000, processed_data.shape[1])
+            elif waveform_type == "DA":
+                wf = Waveforms(-0.4, [1.3, -0.4], -0.4, 400, processed_data.shape[1])
             else:
                 wf = Waveforms(-0.5, [-0.7, 1.1], -0.5, 600, processed_data.shape[1])
             voltage = wf.voltage_waveform()

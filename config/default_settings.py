@@ -21,3 +21,4 @@ DEFAULT_INTERVAL_BETWEEN_FILES = 10
 # Waveforms
 WF_5HT = [0.2, [1.0, -0.1], 0.2]
 WF_HA = [-0.5, [-0.7, 1.1], -0.5]
+WF_DA = [-0.4, [1.3, -0.4], -0.4]
