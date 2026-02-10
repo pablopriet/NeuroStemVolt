@@ -32,25 +32,38 @@ class BackgroundSubtraction(Processor):
         end_idx = int(self.region[1] * acq_freq)
 
         n_voltage, n_time = data.shape
+        warning_msg = None
 
-        # Validate indices
-        if start_idx < 0 or end_idx > n_time or start_idx >= end_idx:
-            raise ValueError(
-                f"Invalid background region indices [{start_idx}:{end_idx}] "
-                f"for data with {n_time} time points. "
-                f"Region={self.region}s, acq_freq={acq_freq}Hz"
-            )
-
+        # Handle invalid regions gracefully
+        if start_idx >= end_idx:
+            warning_msg = (f"Invalid background region ({self.region[0]}s to {self.region[1]}s). "
+                          f"Using default first 10 seconds.")
+            print(f"WARNING: {warning_msg}")
+            start_idx = 0
+            end_idx = min(int(10 * acq_freq), n_time)
+        
+        if start_idx < 0:
+            start_idx = 0
+        if end_idx > n_time:
+            end_idx = n_time
+        
+        # Ensure we have at least 2 scans
         if end_idx - start_idx < 2:
-            raise ValueError(
-                f"Background region too narrow: only {end_idx - start_idx} scans. "
-                f"Increase the time window."
-            )
+            warning_msg = f"Background region too narrow. Using first {min(10, n_time)} time points."
+            print(f"WARNING: {warning_msg}")
+            start_idx = 0
+            end_idx = min(10, n_time)
+        
+        # Store warning in context for UI display
+        if warning_msg:
+            if 'processing_warnings' not in context:
+                context['processing_warnings'] = []
+            context['processing_warnings'].append(f"Background Subtraction: {warning_msg}")
 
         # Mean CV across the background time window
-        print(data.shape)
+        #print(data.shape)
         baseline = np.mean(data[start_idx:end_idx, :], axis=0, keepdims=True)
-        print("Baseline Shape",baseline.shape)
+        #print("Baseline Shape",baseline.shape)
         result = data - baseline
 
         # Store metadata
