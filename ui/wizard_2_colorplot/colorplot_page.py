@@ -2,6 +2,7 @@ from PyQt5.QtWidgets import (
     QApplication, QComboBox, QWizardPage, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
     QProgressDialog, QSlider, QToolTip, QCheckBox, QListWidget, QSpinBox, QDialogButtonBox,
     QMessageBox, QGroupBox, QListWidgetItem, QDialog
+    QApplication, QComboBox, QWizardPage, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QDialog, QProgressDialog, QSlider, QToolTip, QMessageBox
 )
 from PyQt5.QtCore import QSettings, Qt, QEvent
 
@@ -714,6 +715,9 @@ class ColorPlotPage(QWizardPage):
         for exp in group_analysis.get_experiments():
             exp.run()
 
+        # Check for processing warnings and display them
+        self._show_processing_warnings(group_analysis)
+
         self.update_file_display()
         self.completeChanged.emit()
         # self._set_peak_controls_enabled(self.isComplete())
@@ -757,11 +761,50 @@ class ColorPlotPage(QWizardPage):
         if dlg.exec_() == QDialog.Accepted:
             selected_names = dlg.get_selected_processors()
             peak_pos = QSettings("HashemiLab", "NeuroStemVolt").value("peak_position", type=int)
-            self.selected_processors = [
-                dlg.get_processor_instance(name, peak_pos)
-                for name in selected_names
-                if dlg.get_processor_instance(name, peak_pos) is not None
-            ]
+            
+            # Build processor list, inserting FindAmplitude before Normalize if needed
+            processors = []
+            normalize_enabled = "Normalize" in selected_names
+            
+            for name in selected_names:
+                # If Normalize is enabled, insert FindAmplitude right before it
+                if name == "Normalize" and normalize_enabled:
+                    # Add FindAmplitude first pass (for normalization factor)
+                    processors.append(dlg.get_processor_instance("Find Amplitude", peak_pos))
+                
+                proc = dlg.get_processor_instance(name, peak_pos)
+                if proc is not None:
+                    processors.append(proc)
+            
+            # Always add Find Amplitude at the end (on potentially normalized data)
+            # This is the "real" amplitude finding pass
+            find_amp = dlg.get_processor_instance("Find Amplitude", peak_pos)
+            if find_amp is not None:
+                processors.append(find_amp)
+            
+            self.selected_processors = processors
+
+    def _show_processing_warnings(self, group_analysis):
+        """Check for processing warnings and display them in a message box."""
+        all_warnings = []
+        for exp in group_analysis.get_experiments():
+            for sf in exp.files:
+                metadata = sf.get_metadata() or {}
+                warnings = metadata.get('processing_warnings', [])
+                all_warnings.extend(warnings)
+                # Clear warnings after collecting
+                if 'processing_warnings' in metadata:
+                    del metadata['processing_warnings']
+        
+        if all_warnings:
+            # Remove duplicates while preserving order
+            unique_warnings = list(dict.fromkeys(all_warnings))
+            warning_text = "\n\n".join(unique_warnings)
+            QMessageBox.warning(
+                self,
+                "Processing Warnings",
+                f"The following issues were encountered during processing:\n\n{warning_text}"
+            )
 
     def _missing_peaks(self):
         """Return a list of (rep_index, file_index) that do not have peak metadata."""
