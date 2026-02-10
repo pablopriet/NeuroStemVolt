@@ -34,9 +34,16 @@ class Normalize(Processor):
         # Check if we already have the normalization factor from a previous file
         if context is not None and "experiment_first_peak" in context:
             norm_factor = context["experiment_first_peak"]
+            print(f"Normalize: Using stored experiment_first_peak = {norm_factor:.6f}")
         elif context is not None and "peak_amplitude_values" in context:
             # First file: use the peak value found by FindAmplitude
             norm_factor = context["peak_amplitude_values"]
+            print(f"Normalize: First file peak_amplitude_values = {norm_factor}")
+            
+            # Handle array vs scalar
+            if isinstance(norm_factor, np.ndarray):
+                norm_factor = float(norm_factor.flat[0])
+                print(f"Normalize: Converted from array to scalar: {norm_factor:.6f}")
             
             # Validate the normalization factor
             if norm_factor == 0 or np.isnan(norm_factor) or np.abs(norm_factor) < 1e-10:
