@@ -472,9 +472,24 @@ class ColorPlotPage(QWizardPage):
 
         # Keep all user processors EXCEPT any existing amplitude finders
         user_processors = self.selected_processors or []
-        processors = [p for p in user_processors if not isinstance(p, (FindAmplitude))]
+        processors = [p for p in user_processors if not isinstance(p, (FindAmplitude, FindAmplitudeMultiple))]
 
-        # Add the mandatory amplitude finder
+        # Insert a FindAmplitude BEFORE Normalize so peak values are in context
+        has_normalize = any(isinstance(p, Normalize) for p in processors)
+        if has_normalize:
+            # Build new list with FindAmplitude inserted before Normalize
+            reordered = []
+            for p in processors:
+                if isinstance(p, Normalize):
+                    # Insert a pre-normalization amplitude finder
+                    if file_type == "Spontaneous":
+                        reordered.append(FindAmplitudeMultiple(peak_pos))
+                    else:
+                        reordered.append(FindAmplitude(peak_pos))
+                reordered.append(p)
+            processors = reordered
+
+        # Add the mandatory amplitude finder at the end (runs on normalized data)
         processors.append(mandatory)
         print(processors)
 
