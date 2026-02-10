@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import (
-    QApplication, QComboBox, QWizardPage, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QDialog, QProgressDialog, QSlider, QToolTip
+    QApplication, QComboBox, QWizardPage, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QDialog, QProgressDialog, QSlider, QToolTip, QMessageBox
 )
 from PyQt5.QtCore import QSettings, Qt, QEvent
 
@@ -482,6 +482,9 @@ class ColorPlotPage(QWizardPage):
         for exp in group_analysis.get_experiments():
             exp.run()
 
+        # Check for processing warnings and display them
+        self._show_processing_warnings(group_analysis)
+
         self.update_file_display()
         self.completeChanged.emit()
         self._set_peak_controls_enabled(self.isComplete())
@@ -531,6 +534,28 @@ class ColorPlotPage(QWizardPage):
                 processors.append(find_amp)
             
             self.selected_processors = processors
+
+    def _show_processing_warnings(self, group_analysis):
+        """Check for processing warnings and display them in a message box."""
+        all_warnings = []
+        for exp in group_analysis.get_experiments():
+            for sf in exp.files:
+                metadata = sf.get_metadata() or {}
+                warnings = metadata.get('processing_warnings', [])
+                all_warnings.extend(warnings)
+                # Clear warnings after collecting
+                if 'processing_warnings' in metadata:
+                    del metadata['processing_warnings']
+        
+        if all_warnings:
+            # Remove duplicates while preserving order
+            unique_warnings = list(dict.fromkeys(all_warnings))
+            warning_text = "\n\n".join(unique_warnings)
+            QMessageBox.warning(
+                self,
+                "Processing Warnings",
+                f"The following issues were encountered during processing:\n\n{warning_text}"
+            )
 
     def _missing_peaks(self):
         """Return a list of (rep_index, file_index) that do not have peak metadata."""
