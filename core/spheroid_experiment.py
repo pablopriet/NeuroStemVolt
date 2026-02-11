@@ -51,6 +51,7 @@ class SpheroidExperiment:
         time_between_files= 10.0,
         files_before_treatment = 3,
         file_type = None
+        
     ):
         if waveform is None:
             self.waveform = "5HT"
@@ -178,6 +179,10 @@ class SpheroidExperiment:
             None
         """
         self.processors = processors
+    
+    def apply_calibration(self, slope, intercept):
+        for spheroid_file in self.files:
+            spheroid_file.apply_calibration(slope, intercept)
 
     def get_processing_steps(self):
         """Return the list of configured processing steps."""

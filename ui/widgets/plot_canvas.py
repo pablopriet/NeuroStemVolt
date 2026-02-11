@@ -108,6 +108,9 @@ class PlotCanvas(FigureCanvas):
 
         settings = QSettings("HashemiLab", "NeuroStemVolt")
         freq = settings.value("acquisition_frequency", 10, type=int)
+        
+        # Check if calibration is enabled
+        calibration_enabled = settings.value("calibration_enabled", False, type=bool)
 
         self.axes = self.fig.add_subplot(111)
         profile = processed_data[:, peak_position]
@@ -115,7 +118,7 @@ class PlotCanvas(FigureCanvas):
         t = np.arange(n) / freq  # in seconds
 
         # Plot the main profile
-        self.axes.plot(t, profile, label="I-T Profile", color='#4178F2', linewidth=1.5)
+        self.axes.plot(t, profile, label="Profile", color='#4178F2', linewidth=1.5)
 
         # Plot peak markers if metadata is provided
         if metadata and 'peak_amplitude_positions' in metadata:
@@ -194,11 +197,15 @@ class PlotCanvas(FigureCanvas):
 
         # Axis labeling and formatting
         self.axes.set_xlabel("Time (seconds)")
-        self.axes.set_ylabel("Current (nA)")
-        title = f"I-T Profile{multiple_peaks_info}{validation_status}"
+        # Set y-axis label based on calibration
+        y_label = "Concentration (nM)" if calibration_enabled else "Current (nA)"
+        self.axes.set_ylabel(y_label)
+        
+        # Update title to reflect what's being shown
+        trace_type = "C-T" if calibration_enabled else "I-T"
+        title = f"{trace_type} Profile"
         if peak_position is not None:
             title += f" - Position {peak_position}"
-
         self.axes.set_title(title, fontweight="bold")
         self.axes.grid(True, alpha=0.3)
 
@@ -392,7 +399,9 @@ class PlotCanvas(FigureCanvas):
 
         # 7) labels & styling
         self.axes.set_xlabel('Time (seconds)', fontsize=12)
-        self.axes.set_ylabel('Current (nA)', fontsize=12)
+        calibration_enabled = settings.value("calibration_enabled", False, type=bool)
+        #self.axes.set_ylabel('Current (nA)', fontsize=12)
+        self.axes.set_ylabel("Peak Concentration (nM)" if calibration_enabled else "Peak Amplitude (nA)")
         self.axes.set_title('Post-peak IT decays & exponential fit', fontsize=14)
         self.axes.legend(frameon=False)
         self.axes.grid(False)
@@ -458,6 +467,9 @@ class PlotCanvas(FigureCanvas):
             None
         """
         import numpy as np
+        
+        settings = QSettings("HashemiLab", "NeuroStemVolt")
+        calibration_enabled = settings.value("calibration_enabled", False, type=bool)
 
         # Show loading dialog
         progress = QProgressDialog("Processing data, please wait...", None, 0, 0, self)
@@ -485,8 +497,11 @@ class PlotCanvas(FigureCanvas):
         if files_before_treatment > 0:
             self.axes.axvline(x=treatment_time, color='red', linestyle='--', label='Treatment Start')
         self.axes.set_xlabel('Time (min)')
-        self.axes.set_ylabel('Amplitude')
-        self.axes.set_title('Amplitudes Over Time (All Experiments)')
+        y_label = "Peak Concentration (nM)" if calibration_enabled else "Peak Amplitude (nA)"
+        self.axes.set_ylabel(y_label)
+        
+        title_prefix = "Concentrations" if calibration_enabled else "Amplitudes"
+        self.axes.set_title(f'{title_prefix} Over Time (All Experiments)')
         self.axes.legend()
         max_t = time_points[-1]
         tick_interval = 5

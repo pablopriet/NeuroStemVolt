@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 
 class ButterworthFilter(Processor):
-    def __init__(self, p=4, fs_x=10, fs_y=500000):
+    def __init__(self, p=4,cx=0.75,cy=37500.0):
         """
         Apply a 2D low-pass Butterworth filter to FSCV color plot data. The implementation is inspired by the paper Novel, User-Friendly Experimental and Analysis Strategies for Fast Voltammetry: 1. The Analysis Kid for FSCV by Mena et al. (2021) 
         https://doi.org/10.1021/acs.analchem.1c01258
@@ -19,7 +19,8 @@ class ButterworthFilter(Processor):
             visualize_cutoff(data): Shows cutoff region on FFT spectrum.
         """
         self.p = p
-
+        self.cx = cx
+        self.cy = cy
     def process(self, data):
         """
         Apply a 2D Butterworth filter to the input data.
@@ -58,12 +59,12 @@ class ButterworthFilter(Processor):
         WX, WY = np.meshgrid(wx, wy)
 
         # 3. 15% cutoff
-        cx = 0.15 * (fs_x / 2)
-        cy = 0.15 * (fs_y / 2)
+        #cx = 0.15 * (fs_x / 2)
+        #cy = 0.15 * (fs_y / 2)
 
         #print(f"Cutoff frequencies: cx={cx}, cy={cy}") -> cx=0.75, cy=37500.0
         # 4. Compute the custom 2D Butterworth transfer function
-        H = 1 / (1 + (WX / cx)**(2) + (WY / cy)**(2))**self.p
+        H = 1 / (1 + (WX / self.cx)**(2) + (WY / self.cy)**(2))**self.p
 
         # 5. Apply transfer function in frequency domain
         F_filtered = F_shifted * H

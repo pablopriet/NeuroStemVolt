@@ -154,7 +154,9 @@ class ResultsPage(QWizardPage):
             OutputManager.save_all_reuptake_curves(ga, output_folder)
             OutputManager.save_all_exponential_fitting_params(ga, output_folder)
             OutputManager.save_all_AUC(ga, output_folder)
-
+            OutputManager.save_mean_ITs(ga, output_folder)
+            #OutputManager.save_mean_processed_data_matrices(ga,output_folder)
+            
             # Export spontaneous peak metrics if applicable
             settings = QSettings("HashemiLab", "NeuroStemVolt")
             file_type = settings.value("file_type", "None", type=str)

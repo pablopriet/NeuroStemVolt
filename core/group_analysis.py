@@ -68,6 +68,10 @@ class GroupAnalysis:
         """Remove single experiment from group analysis"""
         del self.experiments[index]
 
+    def apply_calibration_to_all_experiments(self, slope, intercept):
+        for experiment in self.experiments:
+            experiment.apply_calibration(slope, intercept)
+
     def set_processing_options_exp(self, processors = None):
         """Set the data processing pipeline for all experiments.
 

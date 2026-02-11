@@ -6,7 +6,7 @@ import json
 
 from ui.utils.styles import apply_custom_styles
 from ui.utils.ui_helpers import make_labeled_field_with_help
-from core.processing import BackgroundSubtraction, SavitzkyGolayFilter, RollingMean, GaussianSmoothing2D, ButterworthFilter, BaselineCorrection, Normalize, FindAmplitude, ExponentialFitting
+from core.processing import InvertData, BackgroundSubtraction, SavitzkyGolayFilter, RollingMean, GaussianSmoothing2D, ButterworthFilter, BaselineCorrection, Normalize, FindAmplitude, ExponentialFitting
 
 from core.processing.spontaneous_peak_detector import FindAmplitudeMultiple
 
@@ -37,6 +37,7 @@ class ProcessingOptionsDialog(QDialog):
             ("Savitzky-Golay Filter", False),
             ("Baseline Correction", True),
             ("Normalize", True),
+            ("Invert Data", False),  # Now enabled, but unchecked by default
             ("Find Amplitude", True),
             #("Multiple Peak Detection", False),  # New option
         ]
@@ -54,10 +55,11 @@ class ProcessingOptionsDialog(QDialog):
         help_texts = {
             "Background Subtraction": "Subtracts baseline offset by averaging the signal between a specified 'start' and 'end' segment (given as data indices or time points at the beginning of the trace) and subtracting that mean from the entire recording.",
             "Rolling Mean": "Smooths the trace by computing a moving average over a sliding window of N points. The 'window size' parameter sets how many consecutive samples are included in each average. Larger windows yield smoother traces but can blur sharp features.",
-            "Butterworth Filter": "Applies a low-pass filter while preserving waveform.",
+            "Butterworth Filter": "Applies a low-pass filter while preserving waveform. The 'order' (p) controls the steepness of the filter roll-off, while 'cx' and 'cy' set the cutoff frequencies (Hz) in the time and voltage dimensions, respectively.",
             "Savitzky-Golay Filter": "Fits a local polynomial of a given 'order' over each segment of the data to smooth noise. The 'window size' sets how many points are used per fit, while 'order' (the 'p' polynomial order) controls how closely the fit can follow rapid changes.",
             "Baseline Correction": "Removes baseline drift from the signal.",
             "Normalize": "Normalizes each trace based on the peak amplitude of the first file within each replicate.",
+            "Invert Data": "Inverts the sign of all data points. Use if your data is 'upside down' and you need to flip it.",
             #"Multiple Peak Detection": "Detects multiple spontaneous peaks throughout the signal using adaptive validation windows. Useful for analyzing spontaneous activity patterns.",
         }
 
@@ -196,6 +198,37 @@ class ProcessingOptionsDialog(QDialog):
                     "decay_window_sec": decay_edit
                 }
 
+            # For "Invert Data", no parameters, just a checkbox
+            # (No need to disable, just leave unchecked by default)
+            elif name == "Butterworth Filter":
+                bw_layout = QHBoxLayout()
+                bw_label_p = QLabel("Order (p):")
+                bw_label_p.setStyleSheet("font-size: 11px; color: #555; margin-left: 16px;")
+                bw_p = QLineEdit("4")
+                bw_label_cx = QLabel("cx:")
+                bw_label_cx.setStyleSheet("font-size: 11px; color: #555;")
+                bw_cx = QLineEdit("2.5")
+                bw_label_cy = QLabel("cy:")
+                bw_label_cy.setStyleSheet("font-size: 11px; color: #555;")
+                bw_cy = QLineEdit("37500.0")
+                if "Butterworth Filter" in saved_params:
+                    p, cx, cy = saved_params["Butterworth Filter"]
+                    bw_p.setText(p)
+                    bw_cx.setText(cx)
+                    bw_cy.setText(cy)
+                bw_layout.addWidget(bw_label_p)
+                bw_layout.addWidget(bw_p)
+                bw_layout.addWidget(bw_label_cx)
+                bw_layout.addWidget(bw_cx)
+                bw_layout.addWidget(bw_label_cy)
+                bw_layout.addWidget(bw_cy)
+                bw_container = QWidget()
+                bw_container.setLayout(bw_layout)
+                bw_container.setContentsMargins(24, 0, 0, 0)  # Indent
+                bw_container.hide()
+                param_widget = bw_container
+                self.param_widgets[name] = (bw_p, bw_cx, bw_cy)
+
             # Add parameter widget to filter layout if it exists
             if param_widget:
                 filter_layout.addWidget(param_widget)
@@ -286,11 +319,20 @@ class ProcessingOptionsDialog(QDialog):
         elif name == "Gaussian Smoothing 2D":
             return GaussianSmoothing2D()
         elif name == "Butterworth Filter":
-            return ButterworthFilter()
+            bw_p, bw_cx, bw_cy = self.param_widgets[name]
+            try:
+                p = int(bw_p.text())
+                cx = float(bw_cx.text())
+                cy = float(bw_cy.text())
+            except ValueError:
+                p, cx, cy = 4, 0.75, 37500.0
+            return ButterworthFilter(p=p, cx=cx, cy=cy)
         elif name == "Baseline Correction":
             return BaselineCorrection()
         elif name == "Normalize":
             return Normalize(peak_position)
+        elif name == "Invert Data":
+            return InvertData()
         elif name == "Find Amplitude":
             # Check file type to determine which amplitude finder to use
             settings = QSettings("HashemiLab", "NeuroStemVolt")
