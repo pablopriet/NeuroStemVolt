@@ -3,6 +3,7 @@ from core.processing.exponentialdecay import exp_decay
 from core.processing.normalize import Normalize
 import os
 import numpy as np
+import warnings
 
 class GroupAnalysis:
     """
@@ -84,6 +85,27 @@ class GroupAnalysis:
         for exp in self.experiments:
             exp.set_processing_steps(processors)
 
+    def _pad_to_length(self, arr, target_len, fill_value=0.0):
+        """
+        Ensure 1D array `arr` has length `target_len` by padding at the end.
+        Use 'edge' padding (repeat last value). If array is empty, fill with fill_value.
+        Returns a numpy 1D array of length `target_len`.
+        """
+        a = np.asarray(arr, dtype=float).flatten()
+        if a.size == target_len:
+            return a
+        if a.size == 0:
+            return np.full(target_len, fill_value, dtype=float)
+        if a.size < target_len:
+            pad_width = target_len - a.size
+            try:
+                return np.pad(a, (0, pad_width), mode='edge')
+            except Exception:
+                # fallback to constant if edge padding fails for some reason
+                return np.pad(a, (0, pad_width), mode='constant', constant_values=fill_value)
+        # If longer, truncate (keeps behavior predictable)
+        return a[:target_len]
+
     def non_normalized_first_ITs(self):
         """Get unprocessed first I-T signals from each replicate.
 
@@ -106,7 +128,8 @@ class GroupAnalysis:
         for i, experiment in enumerate(self.experiments):
             first_file = experiment.get_spheroid_file(0)
             IT_individual = first_file.get_original_data_IT()
-            ITs[i, :] = IT_individual
+            IT_individual_padded = self._pad_to_length(IT_individual, n_timepoints, fill_value=0.0)
+            ITs[i, :] = IT_individual_padded
         
         return ITs
     
@@ -131,9 +154,12 @@ class GroupAnalysis:
             for j, spheroid_file in enumerate(experiment.files):
                 spheroid_file = experiment.get_spheroid_file(j)
                 IT_individual = spheroid_file.get_processed_data_IT()
+                # pad/truncate so broadcasting never fails
+                IT_individual_padded = self._pad_to_length(IT_individual, n_timepoints, fill_value=0.0)
                 metadata = spheroid_file.get_metadata()
-                peak_amplitude_positions.append((metadata["peak_amplitude_positions"]))
-                all_ITs[i*file_count+j, :] = IT_individual
+                peak_amplitude_positions.append((metadata.get("peak_amplitude_positions", 0)))
+                
+                all_ITs[i*file_count+j, :] = IT_individual_padded
 
         # Turning peak_amplitude_positions into a list of integers
         # Turning peak_amplitude_positions into a list of integers
@@ -175,9 +201,9 @@ class GroupAnalysis:
         # Then do the average over the replicates
         for i, experiment in enumerate(self.experiments):
             for j, spheroid_file in enumerate(experiment.files):
-                #print(spheroid_file.get_filepath())
                 IT_individual = spheroid_file.get_processed_data_IT()
-                all_ITs[j, :, i] = IT_individual
+                IT_individual_padded = self._pad_to_length(IT_individual, n_timepoints, fill_value=0.0)
+                all_ITs[j, :, i] = IT_individual_padded
         # Average over the third dimension (replicates)
         mean_ITs = np.nanmean(all_ITs, axis=2)
         print(np.shape(mean_ITs))
@@ -247,7 +273,7 @@ class GroupAnalysis:
         print(f"Time points: {time_points}")
         print(f"Amplitudes: {amplitudes}")
         return time_points, amplitudes, files_before_treatment
-    
+
     def amplitudes_over_time_all_experiments(self):
         """Compute mean amplitude over time across all experiments.
 
@@ -262,30 +288,247 @@ class GroupAnalysis:
 
         # Assume all experiments have the same number of files/timepoints
         n_timepoints = self.experiments[0].get_file_count()
-        files_before_treatment = self.experiments[0].get_number_of_files_before_treatment() # This will be zero if no files before treatment
+        files_before_treatment = self.experiments[0].get_number_of_files_before_treatment()  # 0 if none
         time_points = np.linspace(
             0,
             self.experiments[0].get_time_between_files() * (n_timepoints - 1),
             n_timepoints
         )
 
+        # Preallocate with NaN so missing values don't skew the mean
         all_amplitudes = np.full((n_experiments, n_timepoints), np.nan, dtype=float)
 
+        def _scalar_amplitude(x):
+            """Return a single float amplitude from x or np.nan if unavailable.
+            """
+            if x is None:
+                return 0.0
+            if isinstance(x, (list, tuple, np.ndarray)):
+                vals = np.array(x, dtype=float).ravel()
+                if vals.size == 0:
+                    return 0.0
+                return float(np.nanmean(np.abs(vals)))
+            try:
+                return float(x)
+            except Exception:
+                return 0.0
+
         for i, experiment in enumerate(self.experiments):
-            for j, spheroid_file in enumerate(experiment.files):
-                metadata = spheroid_file.get_metadata()
-                peak_amplitude_values = metadata['peak_amplitude_values']
-                # If peak_amplitude_values is None, empty, or zero, keep as zero
-                if peak_amplitude_values is None or (isinstance(peak_amplitude_values, np.ndarray) and peak_amplitude_values.size == 0):
+            time_count = min(n_timepoints, len(experiment.files))
+            for j in range(time_count):
+                spheroid_file = experiment.files[j]
+                metadata = spheroid_file.get_metadata() or {}
+                pav = metadata.get('peak_amplitude_values', None)
+
+                val = _scalar_amplitude(pav)
+
+                if np.isfinite(val) and val == 0.0:
                     all_amplitudes[i, j] = 0.0
-                elif isinstance(peak_amplitude_values, np.ndarray):
-                    val = float(peak_amplitude_values[0]) if peak_amplitude_values.size == 1 else float(peak_amplitude_values)
-                    all_amplitudes[i, j] = val if val != 0 else 0.0
                 else:
-                    val = float(peak_amplitude_values)
-                    all_amplitudes[i, j] = val if val != 0 else 0.0
+                    all_amplitudes[i, j] = val
+
+            # If an experiment has fewer timepoints, remaining cells stay NaN
+
         mean_amplitudes = np.nanmean(all_amplitudes, axis=0)
         return time_points, mean_amplitudes, all_amplitudes, files_before_treatment
+
+    def amplitude_series_for_file_all_experiments(self, file_index: int, bin_seconds: int = 1):
+        """
+        Return per-second (or per-`bin_seconds`) amplitude series for a single file index
+        across all experiments.
+
+        The amplitude within each bin is computed as the mean absolute processed IT value
+        in that bin (robust to sign). All experiments are truncated to the minimum
+        available number of full bins so arrays align.
+
+        Args:
+            file_index (int): Which file/timepoint to analyze (0-based).
+            bin_seconds (int): Bin width in seconds (default 1 second).
+
+        Returns:
+            tuple: (t_seconds, amplitudes_2d)
+                - t_seconds: 1D numpy array of bin times in seconds (length T)
+                - amplitudes_2d: 2D numpy array with shape (n_experiments_used, T)
+        """
+        import numpy as np
+
+        if not self.experiments:
+            return None, None
+
+        # Collect per-experiment series and track min number of full bins
+        per_exp_series = []
+        min_bins = None
+        min_dt = None
+
+        for exp in self.experiments:
+            # Skip experiments that don't have the requested file index
+            try:
+                if file_index < 0 or file_index >= exp.get_file_count():
+                    continue
+            except Exception:
+                continue
+
+            try:
+                acq_hz = float(exp.get_acquisition_frequency())
+            except Exception:
+                acq_hz = 10.0  # sensible default if not available
+
+            # Ensure valid bin size
+            samples_per_bin = max(1, int(round(acq_hz * float(bin_seconds))))
+
+            sf = exp.get_spheroid_file(file_index)
+            it = sf.get_processed_data_IT()
+            it = np.asarray(it, dtype=float).ravel()
+
+            n_full_bins = len(it) // samples_per_bin
+            if n_full_bins <= 0:
+                # No data for this experiment/file; skip it
+                continue
+
+            # Compute mean |current| per bin
+            reshaped = it[: n_full_bins * samples_per_bin].reshape(n_full_bins, samples_per_bin)
+            series = np.nanmean(np.abs(reshaped), axis=1)
+            per_exp_series.append(series)
+
+            min_bins = series.size if (min_bins is None or series.size < min_bins) else min_bins
+            # Track dt for time axis (bin_seconds in seconds)
+            min_dt = float(bin_seconds) if (min_dt is None) else min_dt
+
+        if not per_exp_series:
+            return None, None
+
+        # Truncate all to the common length
+        per_exp_series = [s[:min_bins] for s in per_exp_series]
+        amplitudes_2d = np.vstack(per_exp_series)
+
+        # Time vector in seconds from 0 with step = bin_seconds
+        t_seconds = np.arange(min_bins, dtype=float) * float(bin_seconds)
+
+        return t_seconds, amplitudes_2d
+
+    # Python
+    def frequency_over_time_all_experiments(self):
+        """
+        Compute peak frequency (peaks/min) over time across all experiments.
+
+        Returns:
+            tuple: (time_points_minutes, mean_frequency, all_frequencies, files_before_treatment)
+                - time_points_minutes: 1D array of time in minutes for each file index
+                - mean_frequency: 1D array of mean peaks/min across experiments per timepoint
+                - all_frequencies: 2D array [n_experiments, n_timepoints] of peaks/min
+                - files_before_treatment: int from the first experiment (0 if none)
+        """
+        import numpy as np
+
+        n_experiments = len(self.experiments)
+        if n_experiments == 0:
+            return None, None, None, None
+
+        # Assume uniform timepoints across experiments
+        n_timepoints = self.experiments[0].get_file_count()
+        files_before_treatment = self.experiments[0].get_number_of_files_before_treatment()
+        minutes_between = self.experiments[0].get_time_between_files()
+
+        # time axis in minutes
+        time_points = np.linspace(0, minutes_between * (n_timepoints - 1), n_timepoints)
+
+        # Derive file length in seconds from experiment settings:
+        # file_length_sec = seconds per file = (time between files is between starts, so use per-experiment stored setting if available)
+        # If you store file length on the experiment, use that. Otherwise assume minutes_between does not equal file length.
+        # Prefer pulling from settings metadata per file; fallback to 60 sec:
+        try:
+            file_length_sec = int(self.experiments[0].get_file_length())
+        except Exception:
+            file_length_sec = 60
+
+        if file_length_sec <= 0:
+            file_length_sec = 60
+
+        all_frequencies = np.full((n_experiments, n_timepoints), np.nan, dtype=float)
+
+        def to_index_list(x):
+            if x is None:
+                return []
+            if isinstance(x, (list, tuple, np.ndarray)):
+                arr = np.asarray(x).ravel()
+                return [int(i) for i in arr if np.isfinite(i)]
+            try:
+                return [int(x)]
+            except Exception:
+                return []
+
+        for i, exp in enumerate(self.experiments):
+            T = min(n_timepoints, len(exp.files))
+            for j in range(T):
+                md = exp.files[j].get_metadata() or {}
+                pos = md.get('peak_amplitude_positions', [])
+                indices = to_index_list(pos)
+                peaks_count = len(indices)
+                print("peak count", peaks_count)
+                print("peak indices", indices)
+                freq_pm = peaks_count / (file_length_sec / 60.0) if file_length_sec > 0 else 0.0
+                print(freq_pm)
+                all_frequencies[i, j] = float(freq_pm)
+
+        mean_frequency = np.nanmean(all_frequencies, axis=0)
+
+        return time_points, mean_frequency, all_frequencies, files_before_treatment
+
+    # Python
+    def plot_frequency_over_time(self, save_path=None):
+        """
+        Plot peak frequency (peaks/min) over time across all experiments, with mean ± SD
+        and a vertical line at treatment start (if applicable).
+
+        Args:
+            save_path (str, optional): Path to save the figure. If None, shows the plot.
+
+        Returns:
+            None
+        """
+        import numpy as np
+        import matplotlib.pyplot as plt
+
+        # Compute frequencies
+        time_points, mean_freq, all_freq, files_before_treatment = self.frequency_over_time_all_experiments()
+        if time_points is None:
+            print("No experiments available to plot frequency.")
+            return
+
+        all_freq = np.array(all_freq, dtype=float)
+        std_freq = np.nanstd(all_freq, axis=0)
+
+        # Treatment start x-position (minutes)
+        treatment_time = files_before_treatment * (time_points[1] - time_points[0]) if files_before_treatment else 0
+
+        # Plot
+        plt.figure(figsize=(10, 6))
+        # Mean ± SD band
+        plt.plot(time_points, mean_freq, 'o-', color='#2E8B57', linewidth=2, markersize=6,
+                 label='Mean Frequency (peaks/min)')
+        plt.fill_between(time_points, mean_freq - std_freq, mean_freq + std_freq,
+                         color='#2E8B57', alpha=0.2, label='SD')
+
+        # Individual experiments (optional; comment out if too busy)
+        for i, freq in enumerate(all_freq):
+            plt.plot(time_points, freq, '--', alpha=0.5, color='gray',
+                     linewidth=1, label=f'Exp {i + 1}' if i < 3 else '_nolegend_')
+
+        if files_before_treatment and files_before_treatment > 0:
+            plt.axvline(x=treatment_time, color='red', linestyle='--', linewidth=2, label='Treatment Start')
+
+        plt.xlabel('Time (minutes)', fontsize=12)
+        plt.ylabel('Peak Frequency (peaks/min)', fontsize=12)
+        plt.title('Spontaneous Peak Frequency Over Time', fontweight='bold')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            plt.close()
+        else:
+            plt.show()
 
     def get_all_AUC(self, show_plot: bool = False):
         """
@@ -487,14 +730,13 @@ class GroupAnalysis:
         for i, experiment in enumerate(self.experiments):
             file = experiment.get_spheroid_file(actual_index)
             IT_individual = file.get_processed_data_IT()
-            if IT_individual.shape[0] != n_timepoints:
-                raise ValueError(
-                    f"Replicate {i+1} has {IT_individual.shape[0]} time points, expected {n_timepoints}.\n"
-                    "All replicates must have the same number of time points."
-                )
+            # pad/truncate instead of raising on mismatch
+            IT_individual_padded = self._pad_to_length(IT_individual, n_timepoints, fill_value=0.0)
+            if IT_individual_padded.shape[0] != n_timepoints:
+                warnings.warn(f"Replicate {i+1} IT length adjusted to {n_timepoints}")
             metadata = file.get_metadata()
-            peak_amplitude_positions.append((metadata["peak_amplitude_positions"]))
-            all_ITs[i, :] = IT_individual
+            peak_amplitude_positions.append((metadata.get("peak_amplitude_positions", 0)))
+            all_ITs[i, :] = IT_individual_padded
 
         # Turning peak_amplitude_positions into a list of integers
         try:
@@ -700,10 +942,6 @@ class GroupAnalysis:
 
         A = np.arange(global_peak_amplitude_position, n_timepoints)
         time_all = np.tile(A, n_experiments)  # Repeat time point
-
-        #print("Len ITs Flattened:", len(ITs_flattened))
-        #print("ITs_Flattened", np.shape(ITs_flattened))
-        #print("Time All", np.shape(time_all))
 
         # Improved initial guess for parameters
         # A: amplitude (difference between max and min of cropped ITs)
