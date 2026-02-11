@@ -29,7 +29,8 @@ class SpheroidFile:
         self.filepath = filepath
         self.raw_data = self.load_data()
         self.acq_freq = acq_freq
-        self.processed_data = self.raw_data
+        self.calibrated_data = self.raw_data  # Initially same as raw
+        self.processed_data = self.calibrated_data
         # Default peak position for serotonin (5HT) in FSCV plots
         self.peak_position = 257
         self.window_size = None  # Default window size for rolling mean or smoothing
@@ -70,7 +71,7 @@ class SpheroidFile:
         Returns:
             np.ndarray: Unprocessed current-time data.
         """
-        return self.raw_data[:, self.peak_position] 
+        return self.calibrated_data[:, self.peak_position] 
     
     def get_processed_data(self):
         """
@@ -81,6 +82,14 @@ class SpheroidFile:
         """
         return self.processed_data
     
+    def apply_calibration(self, slope, intercept):
+        #print("Applying slope and intercept")
+        #print(slope, intercept)
+        print("slope:", repr(slope), "intercept:", repr(intercept),
+      "types:", type(slope), type(intercept))
+        self.calibrated_data = (self.raw_data - intercept)/ slope
+        self.processed_data = self.calibrated_data  # Reset processed to calibrated
+
     def set_processed_data_as_original(self):
         """
         Reset the processed data to the original raw input.
@@ -88,7 +97,7 @@ class SpheroidFile:
         Returns:
             None
         """
-        self.processed_data = self.raw_data
+        self.processed_data = self.calibrated_data
         self.metadata['peak_amplitude_positions'] = None
         self.metadata['peak_amplitude_values'] = None
         self.metadata['decay_validation_params'] = None

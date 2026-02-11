@@ -2,7 +2,7 @@
 from PyQt5.QtWidgets import (
     QWizardPage, QLabel, QPushButton, QVBoxLayout, QListWidget, QMessageBox, QFileDialog, QShortcut, QDialog
 )
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QSettings
 from core.group_analysis import GroupAnalysis
 from core.spheroid_experiment import SpheroidExperiment
 from ui.utils.styles import apply_custom_styles
@@ -177,7 +177,13 @@ class IntroPage(QWizardPage):
         if self.number_of_files == 0:
             self.number_of_files = len(paths)
 
-        filtered = {k: v for k, v in settings.items() if k != "output_folder"}
+        # We do not pass calibration to initializing the SpheroidExperiments
+        expected_keys = [
+        'file_length', 'acquisition_frequency', 'peak_position', 'treatment',
+        'waveform', 'stim_params', 'time_between_files', 'files_before_treatment', 'file_type'
+        ]
+
+        filtered = {k: v for k, v in settings.items() if k in expected_keys}
         exp = SpheroidExperiment(paths,**filtered)
         
         self.group_analysis.add_experiment(exp)
@@ -206,7 +212,13 @@ class IntroPage(QWizardPage):
         if len(self.display_names_list) == 0:
             QMessageBox.warning(self, "No Replicates Loaded", "Please load at least one replicate before continuing.")
             return False
-
+        
+        # Run conversion from current to concentration
+        #if self.QSettings():
+        # Running 
+        slope = QSettings("HashemiLab", "NeuroStemVolt").value("calibration_slope", type=float)
+        intercept = QSettings("HashemiLab", "NeuroStemVolt").value("calibration_intercept", type=float)
+        self.group_analysis.apply_calibration_to_all_experiments(slope,intercept)
         self.wizard().group_analysis = self.group_analysis
         self.wizard().display_names_list = self.display_names_list
         return True

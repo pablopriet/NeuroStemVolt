@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QFormLayout, QComboBox, QLineEdit, QHBoxLayout,
-    QPushButton, QDialogButtonBox, QFileDialog
+    QPushButton, QDialogButtonBox, QFileDialog, QCheckBox, QLabel, QWidget, QMessageBox
 )
 from PyQt5.QtCore import QSettings
 import json
@@ -36,6 +36,9 @@ class ExperimentSettingsDialog(QDialog):
             # stim_params might be stored as JSON
             "stim_params":           json.loads(self.qsettings.value("stim_params", "{}")),
             "output_folder": self.qsettings.value("output_folder", "", type=str),
+            "calibration_enabled": self.qsettings.value("calibration_enabled", False, type=bool),
+            "calibration_slope": self.qsettings.value("calibration_slope", 1.0, type=float),
+            "calibration_intercept": self.qsettings.value("calibration_intercept", 0.0, type=float),
         }
 
         vbox = QVBoxLayout()
@@ -87,6 +90,33 @@ class ExperimentSettingsDialog(QDialog):
             "Number of recording files acquired before applying the treatment "
             "(e.g., 3 untreated files, followed by treated ones)."
         ))
+
+        # Calibration Curve Checkbox and fields
+        self.cb_calibration = QCheckBox("Calibration Curve (Current → Concentration)")
+        self.cb_calibration.setChecked(defaults["calibration_enabled"])
+        form.addRow(self.cb_calibration)
+
+        self.le_slope = QLineEdit(str(defaults["calibration_slope"]))
+        self.le_intercept = QLineEdit(str(defaults["calibration_intercept"]))
+
+        self.le_slope.setPlaceholderText("Slope")
+        self.le_intercept.setPlaceholderText("Y-intercept")
+
+        # Container for calibration fields
+        h_calib = QHBoxLayout()
+        h_calib.addWidget(QLabel("Slope:"))
+        h_calib.addWidget(self.le_slope)
+        h_calib.addWidget(QLabel("Y-intercept:"))
+        h_calib.addWidget(self.le_intercept)
+        self.calib_widget = QWidget()
+        self.calib_widget.setLayout(h_calib)
+        form.addRow(self.calib_widget)
+
+        # Show/hide calibration fields based on checkbox
+        self.calib_widget.setVisible(self.cb_calibration.isChecked())
+        self.cb_calibration.stateChanged.connect(
+            lambda checked: self.calib_widget.setVisible(bool(checked))
+        )
 
         # store loaded stim_params so get_settings() can return it if user doesn’t change it
         self.stim_params = defaults["stim_params"]
@@ -149,6 +179,28 @@ class ExperimentSettingsDialog(QDialog):
         self.qsettings.setValue("stim_params", json.dumps(self.stim_params))
         print("After setValue, reload raw:", self.qsettings.value("stim_params"))
 
+        self.qsettings.setValue("calibration_enabled", self.cb_calibration.isChecked())
+        if self.cb_calibration.isChecked():
+            try:
+                slope = float(self.le_slope.text())
+            except ValueError:
+                QMessageBox.warning(self, "Invalid Input", "Slope must be a number. Defaulting to 1.0.")
+                slope = 1.0
+            try:
+                intercept = float(self.le_intercept.text())
+            except ValueError:
+                QMessageBox.warning(self, "Invalid Input", "Y-intercept must be a number. Defaulting to 0.0.")
+                intercept = 0.0
+            self.qsettings.setValue("calibration_slope", slope)
+            self.qsettings.setValue("calibration_intercept", intercept)
+        else:
+            self.qsettings.setValue("calibration_slope", 1.0)
+            self.qsettings.setValue("calibration_intercept", 0.0)
+
+        slope = QSettings("HashemiLab", "NeuroStemVolt").value("calibration_slope", type=float)
+        intercept = QSettings("HashemiLab", "NeuroStemVolt").value("calibration_intercept", type=float)
+        print(slope,intercept)
+
         # close dialog
         self.accept()
 
@@ -179,6 +231,9 @@ class ExperimentSettingsDialog(QDialog):
             "file_type":              self.cb_file_type.currentText(),
             "stim_params":            self.stim_params,    # initialized in __init__
             "output_folder": self.le_output_folder.text(),
+            "calibration_enabled": self.cb_calibration.isChecked(),
+            "calibration_slope": float(self.le_slope.text()) if self.cb_calibration.isChecked() else 1.0,
+            "calibration_intercept": float(self.le_intercept.text()) if self.cb_calibration.isChecked() else 0.0,
         }
 
 class StimParamsDialog(QDialog):

@@ -447,6 +447,7 @@ class ColorPlotPage(QWizardPage):
         Displays a progress dialog while processing.
         Updates visualizations after processing is complete.
         """
+        self.revert_processing() #<- Default revert to raw data before processing to avoid cumulative effects
         group_analysis = self.wizard().group_analysis
         peak_pos = QSettings("HashemiLab", "NeuroStemVolt").value("peak_position", type=int)
 
