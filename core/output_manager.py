@@ -1099,14 +1099,17 @@ class OutputManager:
             log_file.write("-" * 80 + "\n")
             calibration_enabled = qsettings.value("calibration_enabled", False, type=bool)
             log_file.write(f"Calibration Enabled: {calibration_enabled}\n")
+            # Set unit label based on calibration
+            unit = "nM" if calibration_enabled else "nA"
             if calibration_enabled:
                 slope = qsettings.value("calibration_slope", 1.0, type=float)
                 intercept = qsettings.value("calibration_intercept", 0.0, type=float)
                 log_file.write(f"Slope: {slope}\n")
                 log_file.write(f"Y-intercept: {intercept}\n")
                 log_file.write(f"Conversion Formula: Concentration = (Current - {intercept}) / {slope}\n")
+                log_file.write(f"Data is in concentration units ({unit}).\n")
             else:
-                log_file.write("Data is in raw current units (nA).\n")
+                log_file.write(f"Data is in raw current units ({unit}).\n")
             log_file.write("\n")
 
             # ===== PROCESSING PIPELINE =====
@@ -1231,11 +1234,11 @@ class OutputManager:
                                         if len(amp_val) > 0:
                                             if file_type == "Spontaneous":
                                                 log_file.write(f"     Peaks Detected: {len(amp_val)}\n")
-                                                log_file.write(f"     Mean Amplitude: {np.mean(amp_val):.4f} nA\n")
+                                                log_file.write(f"     Mean Amplitude: {np.mean(amp_val):.4f} {unit}\n")
                                             else:
-                                                log_file.write(f"     Peak Amplitude: {amp_val[0]:.4f} nA\n")
+                                                log_file.write(f"     Peak Amplitude: {amp_val[0]:.4f} {unit}\n")
                                     else:
-                                        log_file.write(f"     Peak Amplitude: {amp_val:.4f} nA\n")
+                                        log_file.write(f"     Peak Amplitude: {amp_val:.4f} {unit}\n")
                                 
                                 # Peak position
                                 if 'peak_amplitude_positions' in meta and meta['peak_amplitude_positions'] is not None:
@@ -1262,9 +1265,9 @@ class OutputManager:
                                 if 'baseline' in meta and meta['baseline'] is not None:
                                     baseline = meta['baseline']
                                     if isinstance(baseline, (list, np.ndarray)) and len(baseline) > 0:
-                                        log_file.write(f"     Baseline: {baseline[0]:.4f} nA\n")
+                                        log_file.write(f"     Baseline: {baseline[0]:.4f} {unit}\n")
                                     elif not isinstance(baseline, (list, np.ndarray)):
-                                        log_file.write(f"     Baseline: {baseline:.4f} nA\n")
+                                        log_file.write(f"     Baseline: {baseline:.4f} {unit}\n")
                         except Exception as e:
                             log_file.write(f"     Error reading metadata: {e}\n")
                         
