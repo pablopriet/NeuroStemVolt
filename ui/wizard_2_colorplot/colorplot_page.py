@@ -735,10 +735,6 @@ class ColorPlotPage(QWizardPage):
                 reordered.append(p)
             processors = reordered
 
-        # Add the mandatory amplitude finder at the end (runs on normalized data)
-        processors.append(mandatory)
-        print(processors)
-
         group_analysis.set_processing_options_exp(user_processors)
         for exp in group_analysis.get_experiments():
             exp.run()
