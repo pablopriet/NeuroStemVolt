@@ -76,12 +76,17 @@ class SpheroidExperiment:
             else:
                 amplitude_processor = FindAmplitude(self.peak_position)
             
+            # Build the default pipeline
+            # Note: When Normalize is enabled, FindAmplitude runs twice:
+            #   1. Before Normalize to get the normalization factor
+            #   2. After Normalize to find peaks on normalized data
             self.processors = [
                 BackgroundSubtraction(region=(0, 10)),
                 ButterworthFilter(),
                 BaselineCorrection(),
-                Normalize(self.peak_position),
-                amplitude_processor,  # Use the appropriate processor
+                FindAmplitude(self.peak_position),  # First pass: find peak for normalization
+                Normalize(self.peak_position),       # Normalize using peak from first pass
+                amplitude_processor,                 # Second pass: find peak on normalized data
                 ExponentialFitting(),
             ]
         else:
