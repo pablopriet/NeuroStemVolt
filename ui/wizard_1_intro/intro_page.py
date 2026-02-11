@@ -2,7 +2,7 @@
 from PyQt5.QtWidgets import (
     QWizardPage, QLabel, QPushButton, QVBoxLayout, QListWidget, QMessageBox, QFileDialog, QShortcut, QDialog
 )
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QSettings
 from core.group_analysis import GroupAnalysis
 from core.spheroid_experiment import SpheroidExperiment
 from ui.utils.styles import apply_custom_styles
@@ -152,9 +152,14 @@ class IntroPage(QWizardPage):
 
         settings = self.experiment_settings
 
-        folder = QFileDialog.getExistingDirectory(self, "Select replicate folder")
+        # Use separate history for replicate folder
+        qsettings = QSettings("HashemiLab", "NeuroStemVolt")
+        last_replicate_dir = qsettings.value("last_replicate_folder", "", type=str)
+        folder = QFileDialog.getExistingDirectory(self, "Select replicate folder", last_replicate_dir)
         if not folder:
             return
+        # Save this folder as the last used replicate folder
+        qsettings.setValue("last_replicate_folder", folder)
         
         # collect all .txt files in that folder
         paths = [os.path.join(folder, f)

@@ -114,9 +114,13 @@ class ExperimentSettingsDialog(QDialog):
         Returns:
             None
         """
-        folder = QFileDialog.getExistingDirectory(self, "Select Output Folder")
+        # Use separate history for output folder
+        last_output_dir = self.qsettings.value("last_output_folder", "", type=str)
+        folder = QFileDialog.getExistingDirectory(self, "Select Output Folder", last_output_dir)
         if folder:
             self.le_output_folder.setText(folder)
+            # Save this folder as the last used output folder
+            self.qsettings.setValue("last_output_folder", folder)
 
     def handle_accept(self):
         """
