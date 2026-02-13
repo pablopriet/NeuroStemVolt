@@ -735,7 +735,13 @@ class ColorPlotPage(QWizardPage):
                 reordered.append(p)
             processors = reordered
 
-        group_analysis.set_processing_options_exp(user_processors)
+        # Always add a final amplitude finder after all processing (including Normalize)
+        if file_type == "Spontaneous":
+            processors.append(FindAmplitudeMultiple(peak_pos))
+        else:
+            processors.append(FindAmplitude(peak_pos))
+
+        group_analysis.set_processing_options_exp(processors)
         for exp in group_analysis.get_experiments():
             exp.run()
 
@@ -778,7 +784,9 @@ class ColorPlotPage(QWizardPage):
                 # If Normalize is enabled, insert FindAmplitude right before it
                 if name == "Normalize" and normalize_enabled:
                     # Add FindAmplitude first pass (for normalization factor)
-                    processors.append(dlg.get_processor_instance("Find Amplitude", peak_pos))
+                    pre_amp = dlg.get_processor_instance("Single Peak Detection", peak_pos)
+                    if pre_amp is not None:
+                        processors.append(pre_amp)
                 
                 proc = dlg.get_processor_instance(name, peak_pos)
                 if proc is not None:
@@ -786,7 +794,7 @@ class ColorPlotPage(QWizardPage):
             
             # Always add Find Amplitude at the end (on potentially normalized data)
             # This is the "real" amplitude finding pass
-            find_amp = dlg.get_processor_instance("Find Amplitude", peak_pos)
+            find_amp = dlg.get_processor_instance("Single Peak Detection", peak_pos)
             if find_amp is not None:
                 processors.append(find_amp)
             
