@@ -281,15 +281,15 @@ class ResultsPage(QWizardPage):
             OutputManager.save_plot_all_amplitudes_over_time(group_analysis, output_folder)
             OutputManager.save_plot_mean_amplitudes_over_time(group_analysis, output_folder)
 
-                if not file_type == "Spontaneous":
-                    OutputManager.save_plot_tau_over_time(group_analysis, output_folder)
-                    OutputManager.save_plot_exponential_fit_aligned(group_analysis, output_folder)
-                    
-                    # Diagnostic plots to showcase processing features
-                    OutputManager.save_diagnostic_AUC_plot(group_analysis, output_folder)
-                    OutputManager.save_diagnostic_reuptake_fits_plot(group_analysis, output_folder)
-                else:
-                    OutputManager.save_plot_frequency_over_time(group_analysis, output_folder)
+            if not file_type == "Spontaneous":
+                OutputManager.save_plot_tau_over_time(group_analysis, output_folder)
+                OutputManager.save_plot_exponential_fit_aligned(group_analysis, output_folder)
+                
+                # Diagnostic plots to showcase processing features
+                OutputManager.save_diagnostic_AUC_plot(group_analysis, output_folder)
+                OutputManager.save_diagnostic_reuptake_fits_plot(group_analysis, output_folder)
+            else:
+                OutputManager.save_plot_frequency_over_time(group_analysis, output_folder)
                 
                 # Processing diagnostic plots (applicable to all file types)
                 OutputManager.save_diagnostic_butterworth_filter_plot(group_analysis, output_folder)
