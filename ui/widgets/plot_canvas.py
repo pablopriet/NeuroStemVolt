@@ -246,6 +246,7 @@ class PlotCanvas(FigureCanvas):
                 validation_status = " (Valid)" if is_valid else " (Invalid)"
         
         # Visualize peak detection algorithm if requested
+        is_buffer_file = bool(metadata.get('is_buffer_file', False)) if metadata else False
         if show_peak_detection and metadata and 'peak_amplitude_positions' in metadata and not is_buffer_file:
             peak_indices = metadata['peak_amplitude_positions']
             
@@ -1296,76 +1297,78 @@ class PlotCanvas(FigureCanvas):
         # Get settings
         settings = QSettings("HashemiLab", "NeuroStemVolt")
         calibration_enabled = settings.value("calibration_enabled", False, type=bool)
-        
-        
+
         # Clear the figure and create new axes
-        self.fig.clear()
-        self.axes = self.fig.add_subplot(111)
+        self._clear_figure()
         
-        # Create a colormap - using viridis which goes from purple/blue to yellow/green
-        cmap = cm.viridis
-        norm = MplNormalize(vmin=0, vmax=n_files - 1)
+        max_time = 0
         
-        # Plot each file's IT trace
-        for file_idx in range(n_files):
-            try:
-                sf = experiment.get_spheroid_file(file_idx)
-                it_trace = sf.get_processed_data_IT()
-                
-                if it_trace is None or len(it_trace) == 0:
-                    continue
-                
-                # Create time axis in seconds
-                time_sec = np.arange(len(it_trace)) / freq
-                
-                # Get color from colormap based on file index
-                color = cmap(norm(file_idx))
-                
-                # Plot the trace
-                self.axes.plot(time_sec, it_trace, color=color, linewidth=1.0, alpha=0.8)
-                
-            except Exception as e:
-                print(f"Warning: Could not plot IT for file {file_idx}: {e}")
+        for exp_idx, color_hex in selected_experiments:
+            if exp_idx >= len(experiments):
                 continue
-        
-        # Add colorbar
-        sm = cm.ScalarMappable(cmap=cmap, norm=norm)
-        sm.set_array([])
-        
-        # Calculate time values for colorbar ticks
-        time_values = np.arange(n_files) * time_between_files
-        
-        self.cbar = self.fig.colorbar(sm, ax=self.axes)
-        self.cbar.set_label('Time in Experiment (min)', fontsize=10)
-        
-        # Set colorbar ticks to show time values
-        # Tick positions should be in the data space (0 to n_files-1), not normalized
-        n_ticks = min(6, n_files)  # Limit number of ticks
-        tick_indices = np.linspace(0, n_files - 1, n_ticks, dtype=int)
-        tick_labels = [f'{time_values[i]:.0f}' for i in tick_indices]
-        self.cbar.set_ticks(tick_indices)  # Use actual file indices as tick positions
-        self.cbar.set_ticklabels(tick_labels)
+            
+            experiment = experiments[exp_idx]
+            n_files = experiment.get_file_count()
+            time_between_files = experiment.get_time_between_files()
+            
+            # Collect amplitudes from each file in this experiment
+            timepoints = []
+            amplitudes = []
+            
+            for file_idx in range(n_files):
+                try:
+                    sf = experiment.get_spheroid_file(file_idx)
+                    metadata = sf.get_metadata()
+                    
+                    if metadata is None:
+                        continue
+                    
+                    peak_amplitude_values = metadata.get('peak_amplitude_values', None)
+                    if peak_amplitude_values is None:
+                        continue
+                    
+                    # Handle both single and multiple peak values
+                    if isinstance(peak_amplitude_values, (list, np.ndarray)):
+                        if len(peak_amplitude_values) > 0:
+                            amp = float(np.max(np.abs(peak_amplitude_values)))
+                        else:
+                            continue
+                    else:
+                        amp = float(peak_amplitude_values)
+                    
+                    time_min = file_idx * time_between_files
+                    timepoints.append(time_min)
+                    amplitudes.append(amp)
+                    
+                except Exception as e:
+                    print(f"Warning: Could not get amplitude for exp {exp_idx}, file {file_idx}: {e}")
+                    continue
+            
+            if timepoints:
+                from ui.wizard_3_results.timepoint_dialog import get_experiment_display_name
+                exp_name = get_experiment_display_name(experiment, exp_idx)
+                self.axes.plot(timepoints, amplitudes, 'o-', color=color_hex,
+                              markersize=6, linewidth=2, alpha=0.8, label=exp_name)
+                max_time = max(max_time, max(timepoints))
         
         # Axis labels
         self.axes.set_xlabel('Time (minutes)', fontsize=12)
         y_label = 'Peak Concentration (nM)' if calibration_enabled else 'Peak Amplitude (nA)'
         self.axes.set_ylabel(y_label, fontsize=12)
         
-        
         # Title
-        trace_type = 'C-T' if calibration_enabled else 'I-T'
-        from ui.wizard_3_results.timepoint_dialog import get_experiment_display_name
-        exp_name = get_experiment_display_name(experiment, experiment_index)
-        title = f'{trace_type} Time Series - {exp_name}'
+        value_type = 'Concentration' if calibration_enabled else 'Amplitude'
+        title = f'Peak {value_type} Comparison ({len(selected_experiments)} experiments)'
         self.axes.set_title(title, fontsize=14, fontweight='bold')
         
+        self.axes.legend(fontsize=9, frameon=True, fancybox=True)
         self.axes.grid(True, alpha=0.3)
         
         # Set x-axis ticks
         if max_time > 0:
-            tick_interval = time_between_files
-            if max_time / tick_interval > 15:
-                tick_interval = max_time / 10
+            # Use a reasonable tick interval
+            n_ticks_target = 10
+            tick_interval = max(1, max_time / n_ticks_target)
             ticks = np.arange(0, max_time + tick_interval, tick_interval)
             self.axes.set_xticks(ticks)
         
@@ -1523,8 +1526,12 @@ class PlotCanvas(FigureCanvas):
         """
         Compare tau values from grouped experiments at a specific timepoint.
         
-        Shows a scatter plot with mean markers and error bars, where each group
-        is displayed on the x-axis. Experiments in the same group are averaged.
+        For each group, collects the reuptake curves (post-peak IT traces) from
+        all experiments at the selected timepoint, aligns them by peak position,
+        pools them together, and fits a single exponential decay per group.
+        This mirrors the approach used in GroupAnalysis.exponential_fitting_replicated().
+        
+        Shows a bar chart with one tau value per group (with fit uncertainty).
         
         Args:
             group_analysis: GroupAnalysis object containing experiments
@@ -1554,34 +1561,29 @@ class PlotCanvas(FigureCanvas):
         settings = QSettings("HashemiLab", "NeuroStemVolt")
         freq = settings.value("acquisition_frequency", 10, type=int)
         
-        # Exponential decay function
-        def exp_decay(t, A, k, C):
-            return (A - C) * np.exp(-k * t) + C
-        
         # Clear the figure
         self._clear_figure()
         
-        # Collect tau values for each group
+        # Results per group
         group_names = []
         group_colors = []
-        all_taus = []  # List of lists - tau values for each group
-        group_means = []
-        group_stds = []
+        group_taus = []       # tau in seconds
+        group_tau_errs = []   # fit uncertainty in seconds
+        group_n_traces = []   # number of reuptake curves pooled
         
         for group in groups:
             group_name = group['name']
             group_color = group['color']
             exp_indices = group['experiments']
             
-            taus_in_group = []
+            # --- Step 1: collect IT traces and peak positions for this group ---
+            reuptake_traces = []  # list of 1-D arrays (post-peak)
             
             for exp_idx in exp_indices:
                 if exp_idx >= len(experiments):
                     continue
                 
                 experiment = experiments[exp_idx]
-                
-                # Check if the timepoint exists
                 if timepoint_idx >= experiment.get_file_count():
                     continue
                 
@@ -1593,56 +1595,87 @@ class PlotCanvas(FigureCanvas):
                     if it_trace is None or len(it_trace) == 0:
                         continue
                     
-                    # Get peak position from metadata
+                    # Get peak position
                     peak_pos = None
                     if metadata and 'peak_amplitude_positions' in metadata:
-                        peak_indices = metadata['peak_amplitude_positions']
-                        if isinstance(peak_indices, (list, np.ndarray)) and len(peak_indices) > 0:
-                            peak_pos = int(peak_indices[0])
-                        elif isinstance(peak_indices, (int, np.integer)):
-                            peak_pos = int(peak_indices)
-                    
+                        p = metadata['peak_amplitude_positions']
+                        if isinstance(p, (list, np.ndarray)) and len(p) > 0:
+                            peak_pos = int(p[0])
+                        elif isinstance(p, (int, np.integer)):
+                            peak_pos = int(p)
                     if peak_pos is None:
-                        # Find peak as max value
                         peak_pos = int(np.argmax(it_trace))
                     
-                    # Extract post-peak decay
-                    decay_samples = min(400, len(it_trace) - peak_pos - 1)
-                    if decay_samples < 20:
+                    # Crop from peak onward (the reuptake)
+                    reuptake = it_trace[peak_pos:]
+                    if len(reuptake) < 20:
                         continue
+                    reuptake_traces.append(reuptake)
                     
-                    post_peak = it_trace[peak_pos:peak_pos + decay_samples]
-                    t_decay = np.arange(len(post_peak)) / freq
-                    
-                    # Fit exponential decay
-                    try:
-                        A0 = post_peak[0]
-                        C0 = post_peak[-1]
-                        k0 = 0.1
-                        
-                        popt, _ = curve_fit(exp_decay, t_decay, post_peak, 
-                                           p0=[A0, k0, C0],
-                                           bounds=([0, 0.001, -np.inf], [np.inf, 10, np.inf]),
-                                           maxfev=5000)
-                        
-                        A_fit, k_fit, C_fit = popt
-                        tau = 1.0 / k_fit if k_fit > 0 else np.nan
-                        
-                        if not np.isnan(tau) and tau > 0 and tau < 100:  # Sanity check
-                            taus_in_group.append(tau)
-                    except:
-                        continue
-                        
                 except Exception as e:
-                    print(f"Warning: Could not process experiment {exp_idx}: {e}")
+                    print(f"Warning: Could not get reuptake for exp {exp_idx}: {e}")
                     continue
             
-            if taus_in_group:
-                group_names.append(group_name)
-                group_colors.append(group_color)
-                all_taus.append(taus_in_group)
-                group_means.append(np.mean(taus_in_group))
-                group_stds.append(np.std(taus_in_group))
+            if not reuptake_traces:
+                continue
+            
+            # --- Step 2: align reuptakes and pool (same logic as exponential_fitting_replicated) ---
+            # All traces already start at their peak, so they are aligned.
+            # Crop to common length so they can be stacked.
+            min_len = min(len(r) for r in reuptake_traces)
+            cropped = np.array([r[:min_len] for r in reuptake_traces])  # (n_traces, min_len)
+            
+            n_traces = cropped.shape[0]
+            n_post = cropped.shape[1]
+            
+            # Flatten for pooled fitting (same pattern as group_analysis)
+            ITs_flattened = cropped.flatten()
+            t_samples = np.arange(n_post)
+            time_all = np.tile(t_samples, n_traces)
+            
+            # --- Step 3: sequential fitting (k → A → C) like exponential_fitting_replicated ---
+            mean_trace = np.mean(cropped, axis=0)
+            C0 = np.median(mean_trace[-10:])
+            A0 = np.mean(mean_trace[:10])
+            k0 = 0.01
+            
+            try:
+                # Fit k only, fix A0 and C0
+                def exp_decay_k_only(t, k):
+                    return (A0 - C0) * np.exp(-k * t) + C0
+                
+                popt_k, pcov_k = curve_fit(exp_decay_k_only, time_all, ITs_flattened, p0=[k0])
+                k_fit = popt_k[0]
+                k_err = np.sqrt(np.diag(pcov_k))[0]
+                
+                # Fit A, fix k and C0
+                def exp_decay_fixed_kC(t, A):
+                    return (A - C0) * np.exp(-k_fit * t) + C0
+                
+                popt_a, pcov_a = curve_fit(exp_decay_fixed_kC, time_all, ITs_flattened, p0=[A0])
+                A_fit = popt_a[0]
+                
+                # Fit C, fix k and A
+                def exp_decay_fixed_kA(t, C):
+                    return (A_fit - C) * np.exp(-k_fit * t) + C
+                
+                popt_c, pcov_c = curve_fit(exp_decay_fixed_kA, time_all, ITs_flattened, p0=[C0])
+                
+                tau_samples = 1.0 / k_fit if k_fit > 0 else np.nan
+                tau_seconds = tau_samples / freq
+                # Propagate k uncertainty to tau: tau = 1/k → δτ = δk / k²
+                tau_err_seconds = (k_err / (k_fit ** 2)) / freq if k_fit > 0 else np.nan
+                
+                if np.isfinite(tau_seconds) and tau_seconds > 0:
+                    group_names.append(group_name)
+                    group_colors.append(group_color)
+                    group_taus.append(tau_seconds)
+                    group_tau_errs.append(tau_err_seconds)
+                    group_n_traces.append(n_traces)
+                    
+            except Exception as e:
+                print(f"Warning: Fitting failed for group '{group_name}': {e}")
+                continue
         
         if not group_names:
             self.axes.clear()
@@ -1651,37 +1684,21 @@ class PlotCanvas(FigureCanvas):
             progress.close()
             return
         
-        # Calculate y-axis limits with padding
-        all_values = group_means
-        all_stds_vals = group_stds
-        y_min = min([v - 2*s for v, s in zip(all_values, all_stds_vals)])
-        y_max = max([v + 2*s for v, s in zip(all_values, all_stds_vals)])
-        y_max = y_max * 1.15  # Add padding for annotations
-        y_min = max(0, y_min * 0.9)  # Keep y_min >= 0 for tau
-        
-        self.axes.set_ylim(bottom=y_min, top=y_max)
-        
-        # Create scatter plot with horizontal lines and error bars
+        # --- Plot: bar chart with error bars ---
         x_positions = np.arange(len(group_names))
+        bar_width = 0.5
         
-        for i, (x, mean_val, std_val, color, taus) in enumerate(zip(
-            x_positions, group_means, group_stds, group_colors, all_taus)):
-            
-            # Scatter point for mean
-            self.axes.scatter([x], [mean_val], s=100, alpha=0.7, color=color, zorder=3)
-            
-            # Horizontal line at mean
-            self.axes.hlines(mean_val, xmin=x-0.2, xmax=x+0.2, colors=color, 
-                           linewidth=3, alpha=0.5)
-            
-            # Error bars
-            self.axes.errorbar(x, mean_val, yerr=std_val, fmt='none', 
-                             ecolor=color, capsize=5, capthick=2, linewidth=2, alpha=0.5)
-            
-            # Individual data points with jitter
-            jitter = (np.random.random(len(taus)) - 0.5) * 0.15
-            self.axes.scatter(x + jitter, taus, color=color, s=30, 
-                            alpha=0.4, edgecolor='none', zorder=2)
+        bars = self.axes.bar(x_positions, group_taus, width=bar_width,
+                            color=group_colors, alpha=0.7, edgecolor='black', linewidth=0.8)
+        
+        self.axes.errorbar(x_positions, group_taus, yerr=group_tau_errs, fmt='none',
+                          ecolor='black', capsize=6, capthick=2, linewidth=2)
+        
+        # Add value labels on bars
+        for i, (x, tau, err, n) in enumerate(zip(x_positions, group_taus, group_tau_errs, group_n_traces)):
+            self.axes.text(x, tau + err + max(group_taus) * 0.02,
+                          f'τ = {tau:.2f}s\nn = {n}',
+                          ha='center', va='bottom', fontsize=9, fontweight='bold')
         
         # Axis labels and title
         self.axes.set_xticks(x_positions)
@@ -1691,10 +1708,9 @@ class PlotCanvas(FigureCanvas):
         self.axes.set_title(f'Tau Comparison at {timepoint_label}', fontsize=14, fontweight='bold')
         self.axes.grid(axis='y', alpha=0.3)
         
-        # Add sample size annotation above each group
-        for i, (x, mean_val, std_val, taus) in enumerate(zip(x_positions, group_means, group_stds, all_taus)):
-            y_pos = mean_val + std_val + (y_max - y_min) * 0.05
-            self.axes.annotate(f'n={len(taus)}', (x, y_pos), ha='center', fontsize=9)
+        # Y-axis from 0 with padding
+        y_max = max([t + e for t, e in zip(group_taus, group_tau_errs)]) * 1.3
+        self.axes.set_ylim(bottom=0, top=y_max)
         
         self.fig.tight_layout()
         self.draw()
