@@ -4,7 +4,9 @@ from PyQt5.QtWidgets import QProgressDialog, QApplication
 from PyQt5.QtCore import QSettings
 import numpy as np
 from scipy.optimize import curve_fit
-
+import matplotlib
+import matplotlib.cm as cm
+from matplotlib.colors import Normalize as MplNormalize
 from PyQt5.QtCore import Qt
 
 class PlotCanvas(FigureCanvas):
@@ -27,7 +29,6 @@ class PlotCanvas(FigureCanvas):
             height (float): Height of the figure in inches.
             dpi (int): Dots per inch for the figure.
         """
-        import matplotlib
 
         matplotlib.rcParams.update({
             "font.family": ["Arial"],
@@ -58,7 +59,7 @@ class PlotCanvas(FigureCanvas):
         # Recreate the axes
         self.axes = self.fig.add_subplot(111)
 
-    def plot_color(self, processed_data, peak_pos = None, title_suffix=None):
+    def plot_color(self, processed_data, peak_pos = None, title_suffix=None, metadata=None):
         """
         Display a 2D color plot of the FSCV data matrix.
 
@@ -326,7 +327,6 @@ class PlotCanvas(FigureCanvas):
         Returns:
             None
         """
-        import numpy as np
 
         # Show loading dialog
         progress = QProgressDialog("Processing data, please wait...", None, 0, 0, self)
@@ -412,7 +412,6 @@ class PlotCanvas(FigureCanvas):
             return
 
         from scipy.stats import t
-        import numpy as np
 
         # Get fit and aligned ITs from group_analysis
         # result = group_analysis.exponential_fitting_replicated(replicate_time_point)
@@ -495,7 +494,6 @@ class PlotCanvas(FigureCanvas):
         Returns:
             None
         """
-        import numpy as np
 
         # Show loading dialog
         progress = QProgressDialog("Processing data, please wait...", None, 0, 0, self)
@@ -535,7 +533,6 @@ class PlotCanvas(FigureCanvas):
         Returns:
             None
         """
-        import numpy as np
         
         settings = QSettings("HashemiLab", "NeuroStemVolt")
         calibration_enabled = settings.value("calibration_enabled", False, type=bool)
@@ -589,7 +586,6 @@ class PlotCanvas(FigureCanvas):
         Returns:
             None
         """
-        import numpy as np
 
         # Show loading dialog
         progress = QProgressDialog("Processing data, please wait...", None, 0, 0, self)
@@ -637,7 +633,6 @@ class PlotCanvas(FigureCanvas):
         `group_analysis.amplitude_series_for_file_all_experiments(idx, bin_seconds=1)`.
         Falls back with a warning if unavailable.
         """
-        import numpy as np
         from PyQt5.QtWidgets import QMessageBox
 
         # Loading dialog
@@ -921,8 +916,6 @@ class PlotCanvas(FigureCanvas):
             group_analysis: GroupAnalysis object containing experiments
             experiment_index (int): Index of the experiment to visualize
         """
-        import matplotlib.cm as cm
-        from matplotlib.colors import Normalize as MplNormalize
         
         # Show loading dialog
         progress = QProgressDialog("Processing IT time series...", None, 0, 0, self)
