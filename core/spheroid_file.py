@@ -459,10 +459,16 @@ class SpheroidFile:
                 "Peak amplitude positions are missing from metadata.")
 
         peak_positions = self.metadata["peak_amplitude_positions"]
-        if len(peak_positions) == 0:
-            raise ValueError("No peak positions found in metadata.")
-
-        peak_position = int(peak_positions[0])  # Use the first peak position
+        # Handle both scalar (Stimulation) and list (Spontaneous) formats
+        if isinstance(peak_positions, (list, tuple)):
+            if len(peak_positions) == 0:
+                raise ValueError("No peak positions found in metadata.")
+            peak_position = int(peak_positions[0])
+        else:
+            try:
+                peak_position = int(peak_positions)
+            except (TypeError, ValueError):
+                raise ValueError("Invalid peak position in metadata.")
 
         # Slice the profile starting from the peak position
         y = profile[peak_position:]
