@@ -52,8 +52,14 @@ def meta_set_peaks_and_active(file_obj, peaks, active_idx):
     values = _compute_peak_values(file_obj, peaks)
 
     # write back
-    md["peak_amplitude_positions"] = peaks
-    md["peak_amplitude_values"] = values
+    # Single-peak → scalar for backward compat (Stimulation / downstream consumers)
+    # Multi-peak or empty → list (Spontaneous mode)
+    if len(peaks) == 1:
+        md["peak_amplitude_positions"] = peaks[0]
+        md["peak_amplitude_values"] = values[0] if values else 0.0
+    else:
+        md["peak_amplitude_positions"] = peaks
+        md["peak_amplitude_values"] = values
     md["active_peak_index"] = active_idx
 
     # keep convenience fields aligned to active peak
