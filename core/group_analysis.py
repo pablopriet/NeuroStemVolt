@@ -157,11 +157,10 @@ class GroupAnalysis:
                 # pad/truncate so broadcasting never fails
                 IT_individual_padded = self._pad_to_length(IT_individual, n_timepoints, fill_value=0.0)
                 metadata = spheroid_file.get_metadata()
-                peak_amplitude_positions.append((metadata.get("peak_amplitude_positions", 0)))
+                peak_amplitude_positions.append(metadata.get("peak_amplitude_positions", 0))
                 
                 all_ITs[i*file_count+j, :] = IT_individual_padded
 
-        # Turning peak_amplitude_positions into a list of integers
         # Turning peak_amplitude_positions into a list of integers
         try:
             peaks = [p.item() for p in peak_amplitude_positions]
@@ -580,7 +579,7 @@ class GroupAnalysis:
             for j, spheroid_file in enumerate(experiment.files):
                 # Metadata and raw signal
                 metadata = spheroid_file.get_metadata()
-                peak_idx = metadata['peak_amplitude_positions']
+                peak_idx = int(metadata['peak_amplitude_positions'])
                 raw = spheroid_file.get_processed_data_IT()
                 sig = raw.copy()
 
@@ -677,7 +676,7 @@ class GroupAnalysis:
             for j, spheroid_file in enumerate(experiment.files):
                 # Gathering position of peak
                 metadata = spheroid_file.get_metadata()
-                peak_amplitude_pos = metadata['peak_amplitude_positions']
+                peak_amplitude_pos = int(metadata['peak_amplitude_positions'])
                 # Gathering processed data
                 processed_IT = spheroid_file.get_processed_data_IT()
 
@@ -735,7 +734,7 @@ class GroupAnalysis:
             if IT_individual_padded.shape[0] != n_timepoints:
                 warnings.warn(f"Replicate {i+1} IT length adjusted to {n_timepoints}")
             metadata = file.get_metadata()
-            peak_amplitude_positions.append((metadata.get("peak_amplitude_positions", 0)))
+            peak_amplitude_positions.append(metadata.get("peak_amplitude_positions", 0))
             all_ITs[i, :] = IT_individual_padded
 
         # Turning peak_amplitude_positions into a list of integers
