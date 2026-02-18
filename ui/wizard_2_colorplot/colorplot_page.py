@@ -94,24 +94,50 @@ class ColorPlotPage(QWizardPage):
         self.btn_export_all = QPushButton("Export All ITs")
         apply_custom_styles(self.btn_export_all)
         self.btn_export_all.clicked.connect(self.save_all_ITs)
-        # self.btn_adj_peak = QPushButton("Apply Peak Adjustment")
-        # apply_custom_styles(self.btn_adj_peak)
-        # self.btn_adj_peak.clicked.connect(self.adjust_peak_position)
         for b in (self.btn_prev, self.btn_next, self.btn_eval, self.btn_filter,
           self.btn_save, self.btn_export, self.btn_export_all):
             b.setAutoDefault(False)
             b.setDefault(False)
         file_type = QSettings("HashemiLab", "NeuroStemVolt").value("file_type", "None", type=str)
 
+        # Stimulation mode: slider + apply button for single-peak adjustment
+        self.peak_label = None
+        self.peak_slider = None
+        self.btn_adj_peak = None
+        if file_type == "Stimulation":
+            self.peak_label = QLabel("Peak Adjustment")
+            self.peak_label.setStyleSheet("font-size: 10pt; font-weight: bold;")
+            self.peak_slider = QSlider(Qt.Orientation.Horizontal)
+            self.peak_slider.setMinimum(0)
+            if QSettings is None:
+                self.peak_slider.setMaximum(600)  # default max if settings not available
+            else:
+                self.peak_slider.setMaximum(QSettings("HashemiLab", "NeuroStemVolt").value("file length", 60, type = int)*QSettings("HashemiLab","NeuroStemVolt").value("acquisition_frequency", 10, type=int))
+            self.peak_slider.setValue(50)
+            self.peak_slider.setTickInterval(1)
+            self.peak_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+            self.peak_slider.valueChanged.connect(self.on_peak_det_slider_value_changed)
+            self.peak_slider.setMaximumWidth(400)
+            self.peak_slider.setFixedHeight(30)
+            self.btn_adj_peak = QPushButton("Apply Peak Adjustment")
+            apply_custom_styles(self.btn_adj_peak)
+            self.btn_adj_peak.clicked.connect(self.adjust_peak_position)
+            self.btn_adj_peak.setAutoDefault(False)
+            self.btn_adj_peak.setDefault(False)
+
+        # Spontaneous mode: click-to-edit checkbox
         self.chk_peak_click = None
         if file_type == "Spontaneous":
             self.chk_peak_click = QCheckBox("Click to edit peaks")
             self.chk_peak_click.setToolTip("Left-click: add/make active; Right-click: remove nearest")
             self.chk_peak_click.toggled.connect(self._enable_peak_click_mode)
 
+        # Edit Peaks dialog - available for both modes
         self.btn_edit_peaks = QPushButton("Edit Peaks…")
         apply_custom_styles(self.btn_edit_peaks)
         self.btn_edit_peaks.clicked.connect(self.on_edit_peaks_clicked)
+
+        self._set_peak_controls_enabled(False)
 
         left = QVBoxLayout()
         left.addWidget(self.btn_revert)
@@ -128,7 +154,14 @@ class ColorPlotPage(QWizardPage):
         left.addWidget(self.btn_export)
         left.addWidget(self.btn_export_all)
 
-        left.addWidget(self.chk_peak_click)
+        if self.peak_label:
+            left.addWidget(self.peak_label)
+        if self.peak_slider:
+            left.addWidget(self.peak_slider)
+        if self.btn_adj_peak:
+            left.addWidget(self.btn_adj_peak)
+        if self.chk_peak_click:
+            left.addWidget(self.chk_peak_click)
         left.addWidget(self.btn_edit_peaks)
 
         self.left_layout = left
@@ -289,7 +322,7 @@ class ColorPlotPage(QWizardPage):
         self.current_file_index = 0
         self._update_file_list_for_replicate(index)
         self.update_file_display()
-        # self._set_peak_controls_enabled(self.isComplete())
+        self._set_peak_controls_enabled(self.isComplete())
 
     def on_file_changed(self, index):
         """
@@ -300,7 +333,7 @@ class ColorPlotPage(QWizardPage):
         """
         self.current_file_index = index
         self.update_file_display()
-        # self._set_peak_controls_enabled(self.isComplete())
+        self._set_peak_controls_enabled(self.isComplete())
 
     def _enable_peak_click_mode(self, enabled: bool):
         """Attach/detach click-to-edit on BOTH colour and IT plots."""
@@ -679,7 +712,7 @@ class ColorPlotPage(QWizardPage):
             self.cbo_file.setCurrentIndex(self.current_file_index)
 
     def on_peak_det_slider_value_changed(self, changed_value):
-        if not self.peak_slider.isEnabled() or not self.isComplete():
+        if self.peak_slider is None or not self.peak_slider.isEnabled() or not self.isComplete():
             return
         self.temp_peak = changed_value
         self.update_file_display()
@@ -750,7 +783,7 @@ class ColorPlotPage(QWizardPage):
 
         self.update_file_display()
         self.completeChanged.emit()
-        # self._set_peak_controls_enabled(self.isComplete())
+        self._set_peak_controls_enabled(self.isComplete())
         progress.close()
 
 
@@ -759,7 +792,7 @@ class ColorPlotPage(QWizardPage):
         for exp in group_analysis.get_experiments():
             exp.revert_processing()
         # disarm the slider & clear temp point
-        # self._set_peak_controls_enabled(False)
+        self._set_peak_controls_enabled(False)
         self.update_file_display()
         self.completeChanged.emit()
 
@@ -917,12 +950,52 @@ class ColorPlotPage(QWizardPage):
         output_folder_path = QSettings("HashemiLab", "NeuroStemVolt").value("output_folder")
         OutputManager.save_IT_profile(sph_file,output_folder_path)
 
-    # def _set_peak_controls_enabled(self, enabled: bool):
-    #     """
-    #
-    #     """
-    #     self.peak_slider.setEnabled(enabled)
-    #     self.btn_adj_peak.setEnabled(enabled)
-    #     if not enabled:
-    #         # also clear any temporary selection so nothing is drawn
-    #         self.temp_peak = None
+    def _set_peak_controls_enabled(self, enabled: bool):
+        """Enable/disable peak slider and apply button (Stimulation mode only)."""
+        if self.peak_slider is not None:
+            self.peak_slider.setEnabled(enabled)
+        if self.btn_adj_peak is not None:
+            self.btn_adj_peak.setEnabled(enabled)
+        if not enabled:
+            self.temp_peak = None
+
+    def adjust_peak_position(self):
+        """Apply the slider's current value as the new peak time-index (Stimulation mode)."""
+        if self.temp_peak is not None:
+            try:
+                group_analysis = self.wizard().group_analysis
+                if group_analysis and group_analysis.get_experiments():
+                    current_exp = group_analysis.get_single_experiments(self.current_rep_index)
+                    if current_exp:
+                        if (self.file_index_mapping and
+                                self.current_file_index < len(self.file_index_mapping)):
+                            actual_file_index = self.file_index_mapping[self.current_file_index]
+                        else:
+                            actual_file_index = self.current_file_index
+
+                        current_file = current_exp.get_spheroid_file(actual_file_index)
+                        processed_data = current_file.get_processed_data()
+                        if processed_data is not None and self.temp_peak < processed_data.shape[0]:
+                            metadata = current_file.get_metadata()
+                            new_peak_time_index = self.temp_peak
+                            new_peak_value = processed_data[
+                                new_peak_time_index, metadata["peak_position"]
+                            ]
+                        else:
+                            new_peak_value = 0.0
+                            new_peak_time_index = 0
+
+                        # Store as scalar for Stimulation backward compatibility
+                        update_dict = {
+                            'peak_amplitude_positions': int(new_peak_time_index),
+                            'peak_amplitude_values': float(new_peak_value),
+                        }
+                        current_file.update_metadata(update_dict)
+
+                        self._refresh_plots_for_file(current_file)
+                        self.temp_peak = None
+            except Exception as e:
+                print(f"Error applying peak adjustment: {e}")
+                import traceback
+                traceback.print_exc()
+        self.completeChanged.emit()
