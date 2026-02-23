@@ -610,29 +610,6 @@ class Waveforms:
             voltage.extend(list(np.linspace(start, end, npts, endpoint=False)))
         return np.array(voltage)
 
-class FSCVNorm(mcolors.Normalize):
-    """Maps vcenter to a fixed colormap position (not 0.5)."""
-    def __init__(self, vmin, vmax, vcenter=0, center_cmap_pos=0.6555):
-        self.vcenter = vcenter
-        self.center_pos = center_cmap_pos
-        super().__init__(vmin, vmax)
-
-    def __call__(self, value, clip=None):
-        result = np.ma.array(np.interp(
-            value,
-            [self.vmin, self.vcenter, self.vmax],
-            [0, self.center_pos, 1]
-        ))
-        return result
-
-    def inverse(self, value):
-        return np.interp(
-            value,
-            [0, self.center_pos, 1],
-            [self.vmin, self.vcenter, self.vmax]
-        )
-
-
 class PLOT_SETTINGS:
     def __init__(self):
         # Original color anchors — untouched
@@ -642,14 +619,20 @@ class PLOT_SETTINGS:
 
         self.custom = self.get_continuous_cmap(hex_list, original_positions)
 
-    def get_norm(self, data):
-        """Returns an FSCVNorm that maps 0 to #a84900 (position 0.6555)."""
-        return FSCVNorm(
-            vmin=np.nanmin(data),
-            vmax=np.nanmax(data),
-            vcenter=0,
-            center_cmap_pos=0.6555
-        )
+    def get_norm(self, data, clim=None):
+        """
+        Fixed 3:2 ratio norm.
+        Zero always maps to ~0.6 on the colormap (between yellow and orange).
+
+        Args:
+            data: the FSCV data array
+            clim: optional positive limit (e.g., 1.5).
+                  Negative limit is auto-set to -clim.
+                  Positive limit becomes (2/3) × clim.
+        """
+        if clim is None:
+            clim = np.nanmax(np.abs(data))
+        return mcolors.Normalize(vmin=-clim, vmax=(2 / 3) * clim)
 
     def get_continuous_cmap(self, hex_list, float_list=None):
         rgb_list = [self.rgb_to_dec(self.hex_to_rgb(i)) for i in hex_list]
