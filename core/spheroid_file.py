@@ -610,21 +610,51 @@ class Waveforms:
             voltage.extend(list(np.linspace(start, end, npts, endpoint=False)))
         return np.array(voltage)
 
+class FSCVNorm(mcolors.Normalize):
+    """Maps vcenter to a fixed colormap position (not 0.5)."""
+    def __init__(self, vmin, vmax, vcenter=0, center_cmap_pos=0.6555):
+        self.vcenter = vcenter
+        self.center_pos = center_cmap_pos
+        super().__init__(vmin, vmax)
+
+    def __call__(self, value, clip=None):
+        result = np.ma.array(np.interp(
+            value,
+            [self.vmin, self.vcenter, self.vmax],
+            [0, self.center_pos, 1]
+        ))
+        return result
+
+    def inverse(self, value):
+        return np.interp(
+            value,
+            [0, self.center_pos, 1],
+            [self.vmin, self.vcenter, self.vmax]
+        )
+
 
 class PLOT_SETTINGS:
     def __init__(self):
-        # Custom colormap only
-        self.custom = self.get_continuous_cmap(
-            ['#001524', '#002f5e', '#f4c300', '#a84900',
-                '#64005f', '#21AE62', '#00751c', '#00ff00'],
-            [0, 0.2478, 0.3805, 0.6555, 0.701, 0.7603, 0.7779, 1]
+        # Original color anchors — untouched
+        hex_list = ['#001524', '#002f5e', '#f4c300', '#a84900',
+                    '#64005f', '#21AE62', '#00751c', '#00ff00']
+        original_positions = [0, 0.2478, 0.3805, 0.6555, 0.701, 0.7603, 0.7779, 1]
+
+        self.custom = self.get_continuous_cmap(hex_list, original_positions)
+
+    def get_norm(self, data):
+        """Returns an FSCVNorm that maps 0 to #a84900 (position 0.6555)."""
+        return FSCVNorm(
+            vmin=np.nanmin(data),
+            vmax=np.nanmax(data),
+            vcenter=0,
+            center_cmap_pos=0.6555
         )
 
     def get_continuous_cmap(self, hex_list, float_list=None):
         rgb_list = [self.rgb_to_dec(self.hex_to_rgb(i)) for i in hex_list]
         if float_list is None:
             float_list = list(np.linspace(0, 1, len(rgb_list)))
-
         cdict = dict()
         for num, col in enumerate(['red', 'green', 'blue']):
             col_list = [[float_list[i], rgb_list[i][num], rgb_list[i][num]]
@@ -640,7 +670,7 @@ class PLOT_SETTINGS:
         return tuple(int(value[i:i + lv // 3], 16) for i in range(0, lv, lv // 3))
 
     def rgb_to_dec(self, value):
-        return [v/256 for v in value]
+        return [v / 256 for v in value]
 
 
 if __name__ == "__main__":
