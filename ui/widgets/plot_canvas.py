@@ -75,9 +75,7 @@ class PlotCanvas(FigureCanvas):
         from core.spheroid_file import PLOT_SETTINGS
         plot_settings = PLOT_SETTINGS()
         custom_cmap = plot_settings.custom
-
-        vmin = np.percentile(processed_data, 1)
-        vmax = np.percentile(processed_data, 99)
+        norm = plot_settings.get_norm(processed_data)
 
         self.fig.clear()
         self.axes = self.fig.add_subplot(111)
@@ -101,8 +99,7 @@ class PlotCanvas(FigureCanvas):
             cmap=custom_cmap,
             origin='lower',
             extent=[0, time_extent_seconds, 0, processed_data.shape[1]],
-            vmin=vmin,
-            vmax=vmax
+            norm=norm
         )
         if peak_pos != None:
             self.axes.axhline(
