@@ -409,37 +409,43 @@ class PlotCanvas(FigureCanvas):
             progress.close()
             return
 
-        from scipy.stats import t
-
         # Get fit and aligned ITs from group_analysis
-        # result = group_analysis.exponential_fitting_replicated(replicate_time_point)
-        time_all, cropped_ITs, _, t_half, fit_vals, fit_errs, min_peak = result
+        time_pts = np.asarray(result.get("time_axis", []), dtype=float)
+        cropped_ITs = np.asarray(result.get("cropped_aligned_traces", []), dtype=float)
+        t_half = result.get("t_half", np.nan)
+        fit_params = result.get("fit_params", [])
 
-        A_fit, k_fit, C_fit = fit_vals
-        A_err, k_err, C_err = fit_errs
-        tau_fit = 1 / k_fit if k_fit != 0 else np.nan
+        if cropped_ITs.size == 0 or time_pts.size == 0:
+            self.axes.clear()
+            self.axes.set_title("No data to fit")
+            self.draw()
+            progress.close()
+            return
 
-        n_exps, n_post = cropped_ITs.shape
-        t_rel = np.arange(n_post) / freq        # seconds
+        if cropped_ITs.ndim == 1:
+            cropped_ITs = cropped_ITs[None, :]
+
+        t_rel = time_pts / freq
 
         mean_IT = np.nanmean(cropped_ITs, axis=0)
-        std_IT  = np.nanstd (cropped_ITs, axis=0)
-        # do the fit in sample‐point space, then map to seconds:
-        t_fit_pts = np.linspace(0, n_post-1, 500)          # in points
-        y_fit     = (A_fit - C_fit) * np.exp(-k_fit * t_fit_pts) + C_fit
-        t_fit_rel = t_fit_pts / freq                       # now in seconds
+        std_IT = np.nanstd(cropped_ITs, axis=0)
 
-        # 95% CI of the fit via Jacobian
-        dof  = max(0, len(time_all) - 3)
-        tval = t.ppf(0.975, dof)
-        J        = np.empty((len(t_fit_rel), 3))
-        J[:, 0] = np.exp(-t_fit_rel * k_fit)
-        J[:, 1] = -(A_fit - C_fit) * t_fit_rel * np.exp(-t_fit_rel * k_fit)
-        J[:, 2] = 1 - np.exp(-t_fit_rel * k_fit)
-        pcov = np.diag([A_err**2, k_err**2, C_err**2])
-        ci = np.sqrt(np.sum((J @ pcov) * J, axis=1)) * tval
-        lower_ci = y_fit - ci
-        upper_ci = y_fit + ci
+        if len(fit_params) > 0:
+            fit_curves = np.asarray([
+                (A - C) * np.exp(-k * time_pts) + C
+                for (A, k, C) in fit_params
+            ], dtype=float)
+            fit_mean = np.nanmean(fit_curves, axis=0)
+            if fit_curves.shape[0] > 1:
+                fit_sem = np.nanstd(fit_curves, axis=0, ddof=1) / np.sqrt(fit_curves.shape[0])
+            else:
+                fit_sem = np.zeros_like(fit_mean)
+            lower_ci = fit_mean - fit_sem
+            upper_ci = fit_mean + fit_sem
+        else:
+            fit_mean = None
+            lower_ci = None
+            upper_ci = None
 
         # Plot on the embedded axes
         self.axes.clear()
@@ -448,27 +454,22 @@ class PlotCanvas(FigureCanvas):
         for row in cropped_ITs:
             self.axes.plot(t_rel, row, color='gray', alpha=0.3, lw=1, label='_nolegend_')
 
-        # b) individual data points used for fitting
-        ITs_flattened = cropped_ITs.flatten()
-        t_data = (np.array(time_all)) / freq
-        self.axes.scatter(t_data, ITs_flattened, color='black', s=16, alpha=0.7, label='Data points')
-
-        # d) fitted exponential curve
-        self.axes.plot(t_fit_rel, y_fit, color='C1', lw=2, label='Exp fit')
-
-        # e) 95% CI around the fit
-        self.axes.fill_between(t_fit_rel, lower_ci, upper_ci, color='C1', alpha=0.3, label='95% CI')
+        # b) ensemble fit mean with shaded uncertainty
+        if fit_mean is not None:
+            self.axes.plot(t_rel, fit_mean, color='C1', lw=2, label='Replicate fit mean')
+            self.axes.fill_between(t_rel, lower_ci, upper_ci, color='C1', alpha=0.3, label='Fit mean ± SEM')
 
         # f) half-life marker
-        t_half_s = t_half / freq
-        self.axes.axvline(t_half_s, color='magenta', ls='--',label=f't½ ≈ {t_half_s:.2f} s')
+        if np.isfinite(t_half):
+            t_half_s = t_half / freq
+            self.axes.axvline(t_half_s, color='magenta', ls='--',label=f't1/2 ≈ {t_half_s:.2f} s')
 
         # 7) labels & styling
         self.axes.set_xlabel('Time (seconds)', fontsize=12)
         calibration_enabled = settings.value("calibration_enabled", False, type=bool)
         #self.axes.set_ylabel('Current (nA)', fontsize=12)
         self.axes.set_ylabel("Peak Concentration (nM)" if calibration_enabled else "Peak Amplitude (nA)")
-        self.axes.set_title('Post-peak IT decays & exponential fit', fontsize=14)
+        self.axes.set_title('Post-peak IT decays with replicate exponential fits', fontsize=14)
         self.axes.legend(frameon=False)
         self.axes.grid(False)
         self.fig.tight_layout()
