@@ -708,108 +708,184 @@ class GroupAnalysis:
         return all_AUC
 
     def exponential_fitting_replicated(self, replicate_time_point=0, global_peak_amplitude_position=None):
-        """Perform exponential fitting of post-peak decay curves aligned by peak.
+        """Fit post-peak exponential decays for each replicate independently.
+
+        The model for each replicate is:
+            f(t) = (A - C) * exp(-k * t) + C
 
         Args:
-            replicate_time_point (int): Timepoint (file index) to use from each experiment.
-            global_peak_amplitude_position (int, optional): Optional override for alignment.
+            replicate_time_point (int): File index to use from each experiment.
+            global_peak_amplitude_position (int, optional): Optional peak index override.
 
         Returns:
-            tuple: (time_all, cropped_ITs, aligned_ITs, t_half, (A, k, C), (A_err, k_err, C_err), min_peak)
+            dict or None: A dictionary containing aligned traces, pooled k metrics,
+            per-replicate fit parameters/errors, failed replicate indices, and min_peak.
         """
         from scipy.optimize import curve_fit
+
+        def _peak_to_index(peak_value, trace_len):
+            if isinstance(peak_value, (list, tuple, np.ndarray)):
+                if len(peak_value) == 0:
+                    return 0
+                peak_value = peak_value[0]
+            try:
+                peak_idx = int(np.asarray(peak_value).item())
+            except Exception:
+                peak_idx = 0
+            if trace_len <= 0:
+                return 0
+            return int(np.clip(peak_idx, 0, trace_len - 1))
+
+        def _exp_decay(t, A, k, C):
+            return (A - C) * np.exp(-k * t) + C
+
         n_experiments = len(self.experiments)
         if n_experiments == 0:
             return None
-        n_timepoints = self.experiments[0].get_file_time_points()
-        all_ITs = np.empty((n_experiments, n_timepoints))
-        peak_amplitude_positions = []
 
-        actual_index = replicate_time_point
-        for i, experiment in enumerate(self.experiments):
-            file = experiment.get_spheroid_file(actual_index)
-            IT_individual = file.get_processed_data_IT()
-            # pad/truncate instead of raising on mismatch
-            IT_individual_padded = self._pad_to_length(IT_individual, n_timepoints, fill_value=0.0)
-            if IT_individual_padded.shape[0] != n_timepoints:
-                warnings.warn(f"Replicate {i+1} IT length adjusted to {n_timepoints}")
-            metadata = file.get_metadata()
-            peak_amplitude_positions.append(metadata.get("peak_amplitude_positions", 0))
-            all_ITs[i, :] = IT_individual_padded
+        raw_traces = []
+        peaks = []
+        max_len = 0
 
-        # Turning peak_amplitude_positions into a list of integers
-        try:
-            peaks = [p.item() for p in peak_amplitude_positions]
-        except AttributeError:
-            peaks = [int(p) for p in peak_amplitude_positions]
-        min_peak = np.min(peaks)
-        max_peak = np.max(peaks)
-        pre_allocated_ITs_array = np.full((n_experiments, n_timepoints - min_peak), np.nan)       
-        # Fill the pre-allocated array with the cropped ITs, starting from the peak position
-        for i, (row, peak) in enumerate(zip(all_ITs, peaks)):
-            # Now the array will have from the min peak position to the end of the time points
-            # Now this has aligned the peaks, so the first time point is the peak position for all ITs
-            cropped = row[peak:]
-            length = cropped.shape[0]
-            pre_allocated_ITs_array[i, :length] = cropped
+        for rep_idx, experiment in enumerate(self.experiments):
+            file = experiment.get_spheroid_file(replicate_time_point)
+            trace = np.asarray(file.get_processed_data_IT(), dtype=float).flatten()
+            metadata = file.get_metadata() or {}
+            if trace.size == 0:
+                warnings.warn(
+                    f"Replicate {rep_idx + 1}: empty IT trace at timepoint {replicate_time_point}; using zeros."
+                )
+                trace = np.zeros(1, dtype=float)
 
-        # Crop the ITs from the end to match data sizes
-        cropped_ITs = pre_allocated_ITs_array[:, :n_timepoints-max_peak-min_peak]
-        print("Cropped ITs:",np.shape(cropped_ITs))
-        ITs_flattened = cropped_ITs.flatten()
-        print(np.shape(ITs_flattened))
-        n_cropped_timepoints = np.shape(cropped_ITs)
+            peak_meta = metadata.get("peak_amplitude_positions", 0)
+            peak_idx = _peak_to_index(peak_meta, trace.size)
+            raw_traces.append(trace)
+            peaks.append(peak_idx)
+            if trace.size > max_len:
+                max_len = trace.size
 
-        A = np.arange(min_peak, n_timepoints-max_peak)
-        print(np.shape(A))
-        n_post = n_timepoints - max_peak - min_peak
-        A = np.arange(n_post)               # 0,1,2,... in samples
-        time_all = np.tile(A, n_experiments)  # Repeat time point
-        print(np.shape(time_all))
+        if max_len <= 1:
+            warnings.warn("Replicate traces are too short for exponential fitting.")
+            return None
 
-        mean_trace = np.mean(cropped_ITs, axis=0)
-        C0 = np.median(mean_trace[-10:])
-        A0 = np.mean(mean_trace[0:10])
-        k0 = 0.01
-        p0 = [k0]
+        if global_peak_amplitude_position is not None:
+            try:
+                forced_peak = int(global_peak_amplitude_position)
+            except Exception:
+                forced_peak = 0
+            peaks = [int(np.clip(forced_peak, 0, max_len - 1)) for _ in peaks]
 
-        #Fit k only, fix A0 and C0
-        def exp_decay_k_only(t, k):
-            return (A0 - C0) * np.exp(-k * t) + C0
+        common_traces = np.vstack([
+            self._pad_to_length(trace, max_len, fill_value=float(trace[-1]))
+            for trace in raw_traces
+        ])
 
-        popt_k, pcov_k = curve_fit(exp_decay_k_only, time_all, ITs_flattened, p0=[k0])
-        k_fit = popt_k[0]
-        k_err = np.sqrt(np.diag(pcov_k))[0]
+        aligned = []
+        for row, peak_idx in zip(common_traces, peaks):
+            cropped = row[int(peak_idx):]
+            if cropped.size < 3:
+                cropped = self._pad_to_length(cropped, 3, fill_value=float(cropped[-1] if cropped.size else 0.0))
+            aligned.append(cropped)
 
-        tau_fit = 1 / k_fit
-        t_half = np.log(2) * tau_fit
+        common_post_len = min(len(trace) for trace in aligned)
+        if common_post_len < 3:
+            warnings.warn("Aligned post-peak traces are too short for reliable fitting.")
+            return None
 
-        # Fit A only, fix k and C0
-        def exp_decay_fixed_kC(t, A):
-            return (A - C0) * np.exp(-k_fit * t) + C0
+        cropped_traces = np.asarray([trace[:common_post_len] for trace in aligned], dtype=float)
+        time_axis = np.arange(common_post_len, dtype=float)
 
-        popt_a, pcov_a = curve_fit(exp_decay_fixed_kC, time_all, ITs_flattened, p0=[A0])
-        A_fit = popt_a[0]
-        A_err = np.sqrt(np.diag(pcov_a))[0]
+        fit_params = []
+        fit_errors = []
+        failed_replicates = []
 
-        # Fit C only, fix k and A
-        def exp_decay_fixed_kA(t, C):
-            return (A_fit - C) * np.exp(-k_fit * t) + C
+        for rep_idx, y in enumerate(cropped_traces):
+            y = np.asarray(y, dtype=float)
+            n_points = y.size
 
-        popt_c, pcov_c = curve_fit(exp_decay_fixed_kA, time_all, ITs_flattened, p0=[C0])
-        C_fit = popt_c[0]
-        C_err = np.sqrt(np.diag(pcov_c))[0]
+            A0 = float(y[0])
+            tail_n = max(3, int(np.ceil(0.1 * n_points)))
+            C0 = float(np.median(y[-tail_n:]))
 
-        # Final report
-        #print("Fit results (sequential):")
-        #print(f"k = {k_fit:.4f} ± {k_err:.4f}")
-        #print(f"A = {A_fit:.4f} ± {A_err:.4f}")
-        #print(f"C = {C_fit:.4f} ± {C_err:.4f}")
-        #print(f"Tau = {tau_fit:.4f}")
-        #print(f"t_half = {t_half:.4f}")
+            half_target = C0 + 0.5 * (A0 - C0)
+            if A0 >= C0:
+                half_candidates = np.where(y <= half_target)[0]
+            else:
+                half_candidates = np.where(y >= half_target)[0]
 
-        # Pre-allocated_ITs_array is the matrix with all data properly aligned on their peaks
-        return time_all, cropped_ITs, pre_allocated_ITs_array, t_half, (A_fit, k_fit, C_fit), (A_err, k_err, C_err), min_peak
+            if half_candidates.size > 0 and half_candidates[0] > 0:
+                half_idx = int(half_candidates[0])
+            else:
+                half_idx = max(1, n_points // 3)
+
+            k0 = max(np.log(2) / half_idx, 1e-6)
+
+            try:
+                popt, pcov = curve_fit(
+                    _exp_decay,
+                    time_axis,
+                    y,
+                    p0=[A0, k0, C0],
+                    bounds=([-np.inf, 1e-12, -np.inf], [np.inf, np.inf, np.inf]),
+                    maxfev=20000,
+                )
+                errs = np.sqrt(np.diag(pcov))
+                fit_params.append((float(popt[0]), float(popt[1]), float(popt[2])))
+                fit_errors.append((float(errs[0]), float(errs[1]), float(errs[2])))
+            except RuntimeError:
+                failed_replicates.append(rep_idx)
+                warnings.warn(
+                    f"Exponential fit failed for replicate {rep_idx + 1} at timepoint {replicate_time_point}."
+                )
+            except Exception as exc:
+                failed_replicates.append(rep_idx)
+                warnings.warn(
+                    f"Exponential fit error for replicate {rep_idx + 1} at timepoint {replicate_time_point}: {exc}"
+                )
+
+        if len(fit_params) == 0:
+            warnings.warn(
+                f"All replicate fits failed at timepoint {replicate_time_point}; pooled metrics unavailable."
+            )
+            return {
+                "time_axis": time_axis,
+                "cropped_aligned_traces": cropped_traces,
+                "t_half": np.nan,
+                "k_mean": np.nan,
+                "k_sem": np.nan,
+                "fit_params": [],
+                "fit_errors": [],
+                "failed_replicates": failed_replicates,
+                "min_peak": int(np.min(peaks)),
+            }
+
+        k_values = np.asarray([params[1] for params in fit_params], dtype=float)
+        k_mean = float(np.mean(k_values))
+        if k_values.size > 1:
+            k_sem = float(np.std(k_values, ddof=1) / np.sqrt(k_values.size))
+        else:
+            k_sem = np.nan
+            warnings.warn("Only one successful replicate fit; k_sem is undefined.")
+
+        t_half = float(np.log(2) / k_mean) if k_mean > 0 else np.nan
+
+        trace_duration = float(common_post_len - 1)
+        if np.isfinite(t_half) and t_half > trace_duration:
+            warnings.warn(
+                "Estimated t_half exceeds aligned trace duration; interpret kinetics cautiously."
+            )
+
+        return {
+            "time_axis": time_axis,
+            "cropped_aligned_traces": cropped_traces,
+            "t_half": t_half,
+            "k_mean": k_mean,
+            "k_sem": k_sem,
+            "fit_params": fit_params,
+            "fit_errors": fit_errors,
+            "failed_replicates": failed_replicates,
+            "min_peak": int(np.min(peaks)),
+        }
     
     def get_tau_over_time(self):
         """Extract tau (decay time constant) at each replicate time point.
@@ -822,15 +898,19 @@ class GroupAnalysis:
         tau_err_list = []
         for t in range(n_files):
             try:
-                _, _, _, t_half, fit_vals, fit_errs, _ = self.exponential_fitting_replicated(replicate_time_point=t)
-                # fit_vals = (A_fit, k_fit, C_fit), fit_errs = (A_err, k_err, C_err)
-                k_fit = fit_vals[1]
-                k_err = fit_errs[1]
-                tau_fit = 1 / k_fit if k_fit != 0 else np.nan
-                tau_err = abs(k_err / (k_fit ** 2)) if k_fit != 0 else np.nan
+                result = self.exponential_fitting_replicated(replicate_time_point=t)
+                if result is None:
+                    tau_list.append(np.nan)
+                    tau_err_list.append(np.nan)
+                    continue
+
+                k_fit = result.get("k_mean", np.nan)
+                k_err = result.get("k_sem", np.nan)
+                tau_fit = 1 / k_fit if np.isfinite(k_fit) and k_fit != 0 else np.nan
+                tau_err = abs(k_err / (k_fit ** 2)) if np.isfinite(k_fit) and k_fit != 0 and np.isfinite(k_err) else np.nan
                 tau_list.append(tau_fit)
                 tau_err_list.append(tau_err)
-            except Exception as e:
+            except Exception:
                 tau_list.append(np.nan)
                 tau_err_list.append(np.nan)
         return tau_list, tau_err_list
@@ -848,42 +928,65 @@ class GroupAnalysis:
             np.ndarray: A matrix of shape (n_timepoints, 16) with values and uncertainties.
         """
         n_files = self.experiments[0].get_file_count()
-        n_reps = len(self.experiments)
         z95 = 1.96
 
         results = []
         for t in range(n_files):
             try:
-                _, _, _, t_half, fit_vals, fit_errs, _ = self.exponential_fitting_replicated(replicate_time_point=t)
-                A_fit, k_fit, C_fit = fit_vals
-                A_SE,  k_SE,   C_SE = fit_errs
+                fit_result = self.exponential_fitting_replicated(replicate_time_point=t)
+                if not fit_result or len(fit_result.get("fit_params", [])) == 0:
+                    results.append([np.nan] * 16)
+                    continue
 
-                tau_fit   = 1.0 / k_fit
-                tau_SE    = abs(k_SE   / k_fit**2)
-                t_half    = np.log(2) * tau_fit
-                t_half_SE = np.log(2) * tau_SE
+                params = np.asarray(fit_result["fit_params"], dtype=float)
+                A_vals = params[:, 0]
+                k_vals = params[:, 1]
+                C_vals = params[:, 2]
 
-                # convert SE to sample SD
-                A_SD      = A_SE      * np.sqrt(n_reps)
-                tau_SD    = tau_SE    * np.sqrt(n_reps)
-                C_SD      = C_SE      * np.sqrt(n_reps)
-                t_half_SD = t_half_SE * np.sqrt(n_reps)
+                n_success = len(A_vals)
 
-                # 95% CI half‐widths
-                A_CI95      = z95 * A_SE
-                tau_CI95    = z95 * tau_SE
-                C_CI95      = z95 * C_SE
-                t_half_CI95 = z95 * t_half_SE
+                def _mean_sem(arr):
+                    arr = np.asarray(arr, dtype=float)
+                    mean_val = float(np.mean(arr))
+                    if arr.size > 1:
+                        sem_val = float(np.std(arr, ddof=1) / np.sqrt(arr.size))
+                    else:
+                        sem_val = np.nan
+                    return mean_val, sem_val
+
+                A_fit, A_SE = _mean_sem(A_vals)
+                k_fit, k_SE = _mean_sem(k_vals)
+                C_fit, C_SE = _mean_sem(C_vals)
+
+                tau_fit = 1.0 / k_fit if np.isfinite(k_fit) and k_fit != 0 else np.nan
+                tau_SE = abs(k_SE / (k_fit ** 2)) if np.isfinite(k_fit) and k_fit != 0 and np.isfinite(k_SE) else np.nan
+                t_half = np.log(2) * tau_fit if np.isfinite(tau_fit) else np.nan
+                t_half_SE = np.log(2) * tau_SE if np.isfinite(tau_SE) else np.nan
+
+                if n_success > 1:
+                    A_SD = A_SE * np.sqrt(n_success)
+                    tau_SD = tau_SE * np.sqrt(n_success) if np.isfinite(tau_SE) else np.nan
+                    C_SD = C_SE * np.sqrt(n_success)
+                    t_half_SD = t_half_SE * np.sqrt(n_success) if np.isfinite(t_half_SE) else np.nan
+                else:
+                    A_SD = np.nan
+                    tau_SD = np.nan
+                    C_SD = np.nan
+                    t_half_SD = np.nan
+
+                A_CI95 = z95 * A_SE if np.isfinite(A_SE) else np.nan
+                tau_CI95 = z95 * tau_SE if np.isfinite(tau_SE) else np.nan
+                C_CI95 = z95 * C_SE if np.isfinite(C_SE) else np.nan
+                t_half_CI95 = z95 * t_half_SE if np.isfinite(t_half_SE) else np.nan
 
                 results.append([
-                    A_fit,   A_SE,   A_SD,   A_CI95,
+                    A_fit, A_SE, A_SD, A_CI95,
                     tau_fit, tau_SE, tau_SD, tau_CI95,
-                    C_fit,   C_SE,   C_SD,   C_CI95,
-                    t_half,  t_half_SE, t_half_SD, t_half_CI95
+                    C_fit, C_SE, C_SD, C_CI95,
+                    t_half, t_half_SE, t_half_SD, t_half_CI95,
                 ])
-
-            except Exception as e:
-                results.append([np.nan]*16)
+            except Exception:
+                results.append([np.nan] * 16)
         return np.array(results)
     
     def exponential_fitting_replicated_legacy(self, replicate_time_point = 0, global_peak_amplitude_position=None):
@@ -982,53 +1085,47 @@ class GroupAnalysis:
             tuple: A tuple containing the matplotlib figure and axis objects.
         """
         import matplotlib.pyplot as plt
-        from scipy.stats import t
-        import numpy as np
 
-        # 1) run your fit and get the aligned, cropped IT matrix
-        time_all, cropped_ITs, _, t_half, fit_vals, fit_errs, _ = \
-            self.exponential_fitting_replicated(replicate_time_point)
-        A_fit, k_fit, C_fit = fit_vals
-        A_err, k_err, C_err = fit_errs
-        tau_fit = 1 / k_fit if k_fit != 0 else np.nan
+        fit_result = self.exponential_fitting_replicated(replicate_time_point)
+        if fit_result is None:
+            warnings.warn("No data available for exponential fit plotting.")
+            return None, None
 
-        # 2) build a “time since peak” axis
-        n_exps, n_post = cropped_ITs.shape
-        t_rel = np.arange(n_post)
+        t_rel = np.asarray(fit_result["time_axis"], dtype=float)
+        cropped_ITs = np.asarray(fit_result["cropped_aligned_traces"], dtype=float)
+        fit_params = fit_result.get("fit_params", [])
+        t_half = fit_result.get("t_half", np.nan)
 
-        # 3) compute mean ± SD across replicates
-        mean_IT = np.nanmean(cropped_ITs, axis=0)
-        std_IT  = np.nanstd (cropped_ITs, axis=0)
-
-        # 4) smooth fit curve on that same relative axis
-        t_fit_rel = np.linspace(0, n_post-1, 500)
-        y_fit     = A_fit * np.exp(-t_fit_rel * k_fit) + C_fit
-
-        # 5) 95% CI of the fit via Jacobian
-        dof  = max(0, len(time_all) - 3)
-        tval = t.ppf(0.975, dof)
-        J        = np.empty((len(t_fit_rel), 3))
-        J[:, 0]  = np.exp(-t_fit_rel * k_fit)
-        J[:, 1]  = -A_fit * t_fit_rel * np.exp(-t_fit_rel * k_fit)
-        J[:, 2]  = 1
-        pcov = np.diag([A_err**2, k_err**2, C_err**2])
-        ci       = np.sqrt(np.sum((J @ pcov) * J, axis=1)) * tval
-        lower_ci = y_fit - ci
-        upper_ci = y_fit + ci
-
-        # 6) start plotting
-        fig, ax = plt.subplots(figsize=(10,6))
+        fig, ax = plt.subplots(figsize=(10, 6))
 
         for row in cropped_ITs:
-            ax.plot(t_rel, row, color='gray', alpha=0.3, lw=1, label='_nolegend_')
-        ax.fill_between(t_rel, mean_IT - std_IT, mean_IT + std_IT, color='C0', alpha=0.2, label='Mean ± 1 SD')
-        ax.plot(t_rel, mean_IT, color='C0', lw=2, label='Mean trace')
-        ax.plot(t_fit_rel, y_fit, color='C1', lw=2, label='Exp fit')
-        ax.fill_between(t_fit_rel, lower_ci, upper_ci, color='C1', alpha=0.3, label='95% CI')
-        ax.axvline(t_half, color='magenta', ls='--', label=f't½ ≈ {t_half:.1f} pts')
-        ax.set_xlabel('Time since peak (points)', fontsize=12)
-        ax.set_ylabel('Current (nA)', fontsize=12)
-        ax.set_title('Post-peak IT decays & exponential fit', fontsize=14)
+            ax.plot(t_rel, row, color="gray", alpha=0.35, lw=1, label="_nolegend_")
+
+        mean_trace = np.nanmean(cropped_ITs, axis=0)
+        std_trace = np.nanstd(cropped_ITs, axis=0)
+        ax.fill_between(t_rel, mean_trace - std_trace, mean_trace + std_trace, color="C0", alpha=0.2, label="Trace mean ± SD")
+        ax.plot(t_rel, mean_trace, color="C0", lw=2, label="Trace mean")
+
+        if len(fit_params) > 0:
+            fit_curves = np.asarray([
+                (A - C) * np.exp(-k * t_rel) + C
+                for (A, k, C) in fit_params
+            ], dtype=float)
+            fit_mean = np.nanmean(fit_curves, axis=0)
+            if fit_curves.shape[0] > 1:
+                fit_err = np.nanstd(fit_curves, axis=0, ddof=1) / np.sqrt(fit_curves.shape[0])
+            else:
+                fit_err = np.zeros_like(fit_mean)
+
+            ax.plot(t_rel, fit_mean, color="C1", lw=2, label="Replicate fit mean")
+            ax.fill_between(t_rel, fit_mean - fit_err, fit_mean + fit_err, color="C1", alpha=0.3, label="Fit mean ± SEM")
+
+        if np.isfinite(t_half):
+            ax.axvline(t_half, color="magenta", ls="--", label=f"t_half ≈ {t_half:.2f} pts")
+
+        ax.set_xlabel("Time since peak (points)", fontsize=12)
+        ax.set_ylabel("Current (nA)", fontsize=12)
+        ax.set_title("Post-peak IT decays with replicate exponential fits", fontsize=14)
         ax.legend(frameon=False)
         ax.grid(False)
         fig.tight_layout()
