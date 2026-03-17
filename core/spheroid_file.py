@@ -41,9 +41,15 @@ class SpheroidFile:
             f"Loaded SpheroidFile from {self.filepath} with shape {self.raw_data.shape} and waveform {self.waveform}")
 
     def load_data(self):
-        # Transpose to match (voltage steps, time points)
-        initial_data = np.loadtxt(self.filepath).T
-        data = -initial_data  # Invert the data since FSCV txt color plots will be inverted
+        # Transpose to match (time points, voltage steps)
+        initial_data = np.loadtxt(self.filepath)
+        if initial_data.ndim != 2:
+            raise ValueError(
+                f"Expected a 2D data file (voltage_steps × time_points), but '{self.filepath}' "
+                f"loaded as shape {initial_data.shape}. "
+                f"The file may be empty, have only one row, or be corrupted. Check that you arent trying to load ITs!"
+            )
+        data = -initial_data.T  # Invert the data since FSCV txt color plots will be inverted
         return data
 
     def set_peak_position(self, peak_position):
