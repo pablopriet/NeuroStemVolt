@@ -33,23 +33,24 @@ class Normalize(Processor):
         """
         # Check if we already have the normalization factor from a previous file
         if context is not None and "experiment_first_peak" in context:
-            norm_factor = context["experiment_first_peak"]
+            norm_factor = float(context["experiment_first_peak"])
             print(f"Normalize: Using stored experiment_first_peak = {norm_factor:.6f}")
         elif context is not None and "peak_amplitude_values" in context:
-            # First file: use the peak value found by FindAmplitude
-            norm_factor = context["peak_amplitude_values"]
-            print(f"Normalize: First file peak_amplitude_values = {norm_factor}")
-            
-            # Handle array vs scalar
-            if isinstance(norm_factor, np.ndarray):
-                norm_factor = float(norm_factor.flat[0])
-                print(f"Normalize: Converted from array to scalar: {norm_factor:.6f}")
-            
-            # Validate the normalization factor
+            # First file: use the peak value found by FindAmplitude / FindAmplitudeMultiple
+            raw = context["peak_amplitude_values"]
+
+            # Collapse list, array, or scalar to a single float
+            if isinstance(raw, (list, np.ndarray)):
+                values = np.asarray(raw, dtype=float).flatten()
+                norm_factor = float(np.mean(values)) if len(values) > 0 else 1.0
+            else:
+                norm_factor = float(raw)
+
+            # Validate
             if norm_factor == 0 or np.isnan(norm_factor) or np.abs(norm_factor) < 1e-10:
-                print("Warning: Invalid normalization factor from FindAmplitude, defaulting to 1.0")
+                print("Warning: Invalid normalization factor, defaulting to 1.0")
                 norm_factor = 1.0
-            
+
             # Store for subsequent files
             context["experiment_first_peak"] = norm_factor
             print(f"Normalization baseline set from first file: {norm_factor:.6f}")

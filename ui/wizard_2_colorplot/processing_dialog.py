@@ -1,16 +1,18 @@
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QCheckBox, QLabel, QLineEdit, QDialogButtonBox, QWidget, QPushButton
 )
-from PyQt5.QtCore import QSettings
+from PyQt5.QtCore import QSettings, pyqtSignal
 import json
 
 from ui.utils.styles import apply_custom_styles
 from ui.utils.ui_helpers import make_labeled_field_with_help
-from core.processing import BackgroundSubtraction, SavitzkyGolayFilter, RollingMean, GaussianSmoothing2D, ButterworthFilter, BaselineCorrection, Normalize, FindAmplitude, ExponentialFitting
+from core.processing import BackgroundSubtraction, SavitzkyGolayFilter, RollingMean, GaussianSmoothing2D, \
+    ButterworthFilter, BaselineCorrection, Normalize, FindAmplitude, ExponentialFitting, StimArtifactRemoval, InvertData
 
 from core.processing.spontaneous_peak_detector import FindAmplitudeMultiple
 
 class ProcessingOptionsDialog(QDialog):
+    apply_requested = pyqtSignal()   # emitted when Apply is clicked (dialog stays open)
     """
     Dialog for configuring and selecting signal processing options.
 
@@ -36,9 +38,10 @@ class ProcessingOptionsDialog(QDialog):
             ("Butterworth Filter", True),
             ("Savitzky-Golay Filter", False),
             ("Baseline Correction", True),
-            ("Normalize", True),
+            ("Artifact Removal", True),
+            ("Invert Data", False),
             ("Find Amplitude", True),
-            ("Multiple Peak Detection", False),  # New option
+            #("Multiple Peak Detection", False),  # New option
         ]
 
         self.checkboxes = {}
@@ -57,8 +60,9 @@ class ProcessingOptionsDialog(QDialog):
             "Butterworth Filter": "Applies a low-pass filter while preserving waveform.",
             "Savitzky-Golay Filter": "Fits a local polynomial of a given 'order' over each segment of the data to smooth noise. The 'window size' sets how many points are used per fit, while 'order' (the 'p' polynomial order) controls how closely the fit can follow rapid changes.",
             "Baseline Correction": "Removes baseline drift from the signal.",
-            "Normalize": "Normalizes each trace based on the peak amplitude of the first file within each replicate.",
-            "Multiple Peak Detection": "Detects multiple spontaneous peaks throughout the signal using adaptive validation windows. Useful for analyzing spontaneous activity patterns.",
+            "Artifact Removal": "Automatically detects and removes stimulation artifacts using scan-to-scan jump detection. Safe to apply to all file types — if no artifact is found the data is returned unchanged.",
+            "Invert Data": "Inverts the sign of the signal. Use this if your data is recorded with reversed polarity.",
+            #"Multiple Peak Detection": "Detects multiple spontaneous peaks throughout the signal using adaptive validation windows. Useful for analyzing spontaneous activity patterns.",
         }
 
         for name, default_checked in self.processor_options:
@@ -241,13 +245,39 @@ class ProcessingOptionsDialog(QDialog):
             sync_single_peak_detection(mpd_cb.isChecked())  # Initial state
             mpd_cb.toggled.connect(sync_single_peak_detection)
         
-        # Dialog buttons
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        # Dialog buttons — OK / Apply / Cancel
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Apply | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
+        buttons.button(QDialogButtonBox.Apply).clicked.connect(self._on_apply)
         layout.addWidget(buttons)
 
         self.setLayout(layout)
+
+    def _on_apply(self):
+        """Save current settings and emit apply_requested (dialog stays open)."""
+        self._save_settings()
+        self.apply_requested.emit()
+
+    def _save_settings(self):
+        """Persist the current processor selection and parameters to QSettings."""
+        selected = self.get_selected_processors()
+        self.qsettings.setValue("processing_pipeline", json.dumps(selected))
+        out = {}
+        for name, widget in self.param_widgets.items():
+            if name == "Multiple Peak Detection":
+                out[name] = {
+                    "max_peaks": widget["max_peaks"].text(),
+                    "min_prominence": widget["min_prominence"].text(),
+                    "rise_window_sec": widget["rise_window_sec"].text(),
+                    "decay_window_sec": widget["decay_window_sec"].text()
+                }
+            elif isinstance(widget, tuple):
+                out[name] = [w.text() for w in widget]
+            else:
+                out[name] = widget.text()
+        self.qsettings.setValue("processing_params", json.dumps(out))
 
     def get_processor_instance(self, name, peak_position=None):
         """
@@ -291,6 +321,10 @@ class ProcessingOptionsDialog(QDialog):
             return BaselineCorrection()
         elif name == "Normalize":
             return Normalize(peak_position)
+        elif name == "Artifact Removal":
+            return StimArtifactRemoval()
+        elif name == "Invert Data":
+            return InvertData()
         elif name == "Find Amplitude":
             # Check file type to determine which amplitude finder to use
             settings = QSettings("HashemiLab", "NeuroStemVolt")
@@ -334,30 +368,6 @@ class ProcessingOptionsDialog(QDialog):
         return [name for name, cb in self.checkboxes.items() if cb.isChecked()]
 
     def accept(self):
-        """
-        Saves the selected processor configuration and parameters to QSettings,
-        then closes the dialog.
-        """
-        selected = self.get_selected_processors()
-        self.qsettings.setValue("processing_pipeline", json.dumps(selected))
-
-        # now save params
-        out = {}
-        for name, widget in self.param_widgets.items():
-            if name == "Multiple Peak Detection":
-                # Special handling for multiple peak detection parameters
-                out[name] = {
-                    "max_peaks": widget["max_peaks"].text(),
-                    "min_prominence": widget["min_prominence"].text(),
-                    "rise_window_sec": widget["rise_window_sec"].text(),
-                    "decay_window_sec": widget["decay_window_sec"].text()
-                }
-            elif isinstance(widget, tuple):
-                # multiple-lineEdits
-                out[name] = [w.text() for w in widget]
-            else:
-                out[name] = widget.text()
-
-        self.qsettings.setValue("processing_params", json.dumps(out))
-
+        """Save settings and close the dialog."""
+        self._save_settings()
         super().accept()

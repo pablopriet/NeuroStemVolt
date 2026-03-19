@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import (
-    QWizardPage, QLabel, QPushButton, QVBoxLayout, QFileDialog, QGridLayout, QDialog, QMessageBox, QProgressDialog, QApplication
+    QWizardPage, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QFileDialog, QDialog, QMessageBox, QProgressDialog, QApplication
 )
 from PyQt5.QtCore import QSettings, Qt
 
@@ -30,51 +30,48 @@ class ResultsPage(QWizardPage):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        # analysis buttons
-        btn_avg    = QPushButton("Mean Amplitude Over Experiments");      apply_custom_styles(btn_avg)
-        btn_fit    = QPushButton("Decay Exponential Fitting");     apply_custom_styles(btn_fit)
-        btn_param  = QPushButton("Tau Over Time");                 apply_custom_styles(btn_param)
-        btn_amp    = QPushButton("Individual Amplitudes Over Time");          apply_custom_styles(btn_amp)
+        def _sec(text):
+            lbl = QLabel(text)
+            lbl.setStyleSheet(
+                "font-weight: bold; color: #cccccc; font-size: 9pt;"
+                " padding-top: 6px; border-top: 1px solid #555555;")
+            return lbl
 
-        # Spontaneous analysis buttons
-        self.btn_spont_freq = QPushButton("Multi-Peak Peak Frequency");     apply_custom_styles(self.btn_spont_freq)
-        self.btn_spont_amp = QPushButton("Multi-Peak Peak Amplitudes");     apply_custom_styles(self.btn_spont_amp)
-        self.spontaneous_buttons = [self.btn_spont_freq, self.btn_spont_amp]
+        # ── Analysis buttons ─────────────────────────────────────────
 
-        # Initially hide spontaneous buttons
+        # Available for both
+        btn_avg = QPushButton("Mean Amplitude Over Experiments"); apply_custom_styles(btn_avg)
+        btn_amp = QPushButton("Individual Amplitudes Over Time"); apply_custom_styles(btn_amp)
+
+        # Recommended for Single Peak
+        btn_fit   = QPushButton("Decay Exponential Fitting"); apply_custom_styles(btn_fit)
+        btn_param = QPushButton("Tau Over Time");             apply_custom_styles(btn_param)
+
+        # Recommended for Multi-Peak
+        self.btn_spont_freq     = QPushButton("Peak Frequency");             apply_custom_styles(self.btn_spont_freq)
+        self.btn_spont_amp      = QPushButton("Peak Amplitudes");            apply_custom_styles(self.btn_spont_amp)
+        self.btn_spont_combined = QPushButton("Mean Amplitude & Frequency"); apply_custom_styles(self.btn_spont_combined)
+        self.spontaneous_buttons = [self.btn_spont_freq, self.btn_spont_amp, self.btn_spont_combined]
+
         for btn in self.spontaneous_buttons:
             btn.hide()
 
-        # grid of analysis buttons
-        analysis = QGridLayout()
-        analysis.addWidget(btn_avg,    0, 0)
-        analysis.addWidget(btn_fit,    1, 1)
-        analysis.addWidget(btn_param,  1, 0)
-        analysis.addWidget(btn_amp,    0, 1)
-        analysis.addWidget(self.btn_spont_freq, 2, 0)
-        analysis.addWidget(self.btn_spont_amp, 2, 1)
-
-        # save/export buttons
-        btn_save     = QPushButton("Save Current Plot");          apply_custom_styles(btn_save)
-        btn_save_all = QPushButton("Save All Plots");             apply_custom_styles(btn_save_all)
-        btn_export   = QPushButton("Export metrics as csv");      apply_custom_styles(btn_export)
+        # Export buttons
+        btn_save     = QPushButton("Save Current Plot");     apply_custom_styles(btn_save)
+        btn_save_all = QPushButton("Save All Plots");        apply_custom_styles(btn_save_all)
+        btn_export   = QPushButton("Export Metrics as CSV"); apply_custom_styles(btn_export)
 
         self.analysis_buttons = [btn_avg, btn_fit, btn_param, btn_amp, btn_save, btn_save_all, btn_export]
 
-        # placeholder & plotCanvas
-        self.placeholder = QLabel("Select an analysis option to show plot")
-        self.placeholder.setAlignment(Qt.AlignCenter)
-        self.result_plot = PlotCanvas(self, width=5, height=4)
-        self.result_plot.hide()  # start hidden
-
-        # connect buttons to show‐and‐plot
+        # ── Connect buttons ──────────────────────────────────────────
         for btn, fn in (
             (btn_avg,   lambda: self.result_plot.show_average_over_experiments(self.wizard().group_analysis)),
             (btn_fit,   self.handle_decay_fit),
             (btn_param, lambda: self.result_plot.show_tau_param_over_time(self.wizard().group_analysis)),
             (btn_amp,   lambda: self.result_plot.show_amplitudes_over_time(self.wizard().group_analysis)),
-            (self.btn_spont_freq, lambda: self.result_plot.show_spontaneous_peak_frequency(self.wizard().group_analysis)),
-            (self.btn_spont_amp, lambda: self.result_plot.show_spontaneous_peak_amplitudes(self.wizard().group_analysis)),
+            (self.btn_spont_freq,     lambda: self.result_plot.show_spontaneous_peak_frequency(self.wizard().group_analysis)),
+            (self.btn_spont_amp,      lambda: self.result_plot.show_spontaneous_peak_amplitudes(self.wizard().group_analysis)),
+            (self.btn_spont_combined, lambda: self.result_plot.show_mean_amplitude_and_frequency(self.wizard().group_analysis)),
         ):
             btn.clicked.connect(lambda _, f=fn: self._reveal_and_call(f))
 
@@ -82,22 +79,51 @@ class ResultsPage(QWizardPage):
         btn_save_all.clicked.connect(self.save_all_plots)
         btn_export.clicked.connect(self.export_all_as_csv)
 
-        # layout assembly
+        # ── Left panel ───────────────────────────────────────────────
+        left = QVBoxLayout()
+        left.setSpacing(4)
+
+        left.addWidget(_sec("Available for All"))
+        left.addWidget(btn_avg)
+        left.addWidget(btn_amp)
+
+        left.addWidget(_sec("Single Peak"))
+        left.addWidget(btn_param)
+        left.addWidget(btn_fit)
+
+        self.lbl_multi_peak = _sec("Multi-Peak")
+        self.lbl_multi_peak.hide()
+        left.addWidget(self.lbl_multi_peak)
+        left.addWidget(self.btn_spont_freq)
+        left.addWidget(self.btn_spont_amp)
+        left.addWidget(self.btn_spont_combined)
+
+        left.addStretch()
+
+        left.addWidget(_sec("Export"))
+        left.addWidget(btn_save)
+        left.addWidget(btn_save_all)
+        left.addWidget(btn_export)
+
+        # ── Right panel (plot) ───────────────────────────────────────
+        self.placeholder = QLabel("Select an analysis option to show plot")
+        self.placeholder.setAlignment(Qt.AlignCenter)
+        self.placeholder.setStyleSheet("color: #888888; font-size: 11pt;")
+        self.result_plot = PlotCanvas(self, width=6, height=5)
+        self.result_plot.hide()
+
+        right = QVBoxLayout()
+        right.addWidget(self.placeholder, stretch=1)
+        right.addWidget(self.result_plot, stretch=1)
+
+        # ── Main layout ──────────────────────────────────────────────
+        content = QHBoxLayout()
+        content.addLayout(left, 1)
+        content.addLayout(right, 3)
+
         main_layout = QVBoxLayout(self)
+        main_layout.addLayout(content, stretch=1)
 
-        # analysis buttons at top
-        main_layout.addLayout(analysis)
-
-        # save/export
-        main_layout.addWidget(btn_save)
-        main_layout.addWidget(btn_save_all)
-        main_layout.addWidget(btn_export)
-
-        # placeholder + future plot
-        main_layout.addWidget(self.placeholder, stretch=1)
-        main_layout.addWidget(self.result_plot, stretch=3)
-
-        # footer
         footer = QLabel("© 2025 Hashemi Lab · NeuroStemVolt · v1.0.0")
         footer.setAlignment(Qt.AlignCenter)
         footer.setStyleSheet("color: gray; font-size: 10pt;")
@@ -265,10 +291,12 @@ class ResultsPage(QWizardPage):
             settings = QSettings("HashemiLab", "NeuroStemVolt")
             file_type = settings.value("file_type", "None", type=str)
             if file_type == "Multi-Peak":
+                self.lbl_multi_peak.show()
                 for btn in self.spontaneous_buttons:
                     btn.show()
                     btn.setEnabled(True)
             else:
+                self.lbl_multi_peak.hide()
                 for btn in self.spontaneous_buttons:
                     btn.hide()
         else:
@@ -284,7 +312,9 @@ class ResultsPage(QWizardPage):
         # Optionally disable analysis/export buttons
         for btn in getattr(self, 'analysis_buttons', []):
             btn.setEnabled(False)
-        # Hide and disable spontaneous buttons
+        # Hide and disable multi-peak buttons and label
+        if hasattr(self, 'lbl_multi_peak'):
+            self.lbl_multi_peak.hide()
         for btn in getattr(self, 'spontaneous_buttons', []):
             btn.hide()
             btn.setEnabled(False)

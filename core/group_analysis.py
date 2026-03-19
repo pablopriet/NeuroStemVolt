@@ -22,6 +22,28 @@ class GroupAnalysis:
         else:
             raise ValueError("experiments must be None, a SpheroidExperiment, or a list of SpheroidExperiment objects.")
     
+    @staticmethod
+    def _resolve_peak_position(metadata):
+        """Return a single integer peak position from metadata.
+
+        For single-peak files the position is already a scalar.
+        For multi-peak files it is a list — we return the active peak
+        (stored as 'peak_amplitude_active_index') or fall back to the first one.
+        """
+        pos = metadata.get("peak_amplitude_positions")
+        if pos is None:
+            return 0
+        if isinstance(pos, (list, np.ndarray)):
+            if len(pos) == 0:
+                return 0
+            active = int(metadata.get("peak_amplitude_active_index", 0))
+            active = max(0, min(active, len(pos) - 1))
+            return int(pos[active])
+        try:
+            return int(pos)
+        except (TypeError, ValueError):
+            return 0
+
     def add_experiment(self, *experiments):
         """
         Add one or more SpheroidExperiment instances to the group analysis.
@@ -128,15 +150,10 @@ class GroupAnalysis:
                 spheroid_file = experiment.get_spheroid_file(j)
                 IT_individual = spheroid_file.get_processed_data_IT()
                 metadata = spheroid_file.get_metadata()
-                peak_amplitude_positions.append((metadata["peak_amplitude_positions"]))
+                peak_amplitude_positions.append(self._resolve_peak_position(metadata))
                 all_ITs[i*file_count+j, :] = IT_individual
 
-        # Turning peak_amplitude_positions into a list of integers
-        # Turning peak_amplitude_positions into a list of integers
-        try:
-            peaks = [p.item() for p in peak_amplitude_positions]
-        except AttributeError:
-            peaks = [int(p) for p in peak_amplitude_positions]
+        peaks = [int(p) for p in peak_amplitude_positions]
         min_peak = np.min(peaks)
 
         pre_allocated_ITs_array = np.full((n_experiments*file_count, n_timepoints - min_peak), np.nan)       
@@ -272,14 +289,13 @@ class GroupAnalysis:
                 metadata = spheroid_file.get_metadata()
                 peak_amplitude_values = metadata['peak_amplitude_values']
                 # If peak_amplitude_values is None, empty, or zero, keep as zero
-                if peak_amplitude_values is None or (isinstance(peak_amplitude_values, np.ndarray) and peak_amplitude_values.size == 0):
+                if peak_amplitude_values is None or (isinstance(peak_amplitude_values, (list, np.ndarray)) and len(peak_amplitude_values) == 0):
                     all_amplitudes[i, j] = 0.0
-                elif isinstance(peak_amplitude_values, np.ndarray):
-                    val = float(peak_amplitude_values[0]) if peak_amplitude_values.size == 1 else float(peak_amplitude_values)
-                    all_amplitudes[i, j] = val if val != 0 else 0.0
+                elif isinstance(peak_amplitude_values, (list, np.ndarray)):
+                    # Use mean for multi-peak files, scalar for single peak
+                    all_amplitudes[i, j] = float(np.mean(peak_amplitude_values))
                 else:
-                    val = float(peak_amplitude_values)
-                    all_amplitudes[i, j] = val if val != 0 else 0.0
+                    all_amplitudes[i, j] = float(peak_amplitude_values)
         mean_amplitudes = np.nanmean(all_amplitudes, axis=0)
         return time_points, mean_amplitudes, all_amplitudes, files_before_treatment
 
@@ -333,7 +349,7 @@ class GroupAnalysis:
             for j, spheroid_file in enumerate(experiment.files):
                 # Metadata and raw signal
                 metadata = spheroid_file.get_metadata()
-                peak_idx = metadata['peak_amplitude_positions']
+                peak_idx = self._resolve_peak_position(metadata)
                 raw = spheroid_file.get_processed_data_IT()
                 sig = raw.copy()
 
@@ -489,14 +505,10 @@ class GroupAnalysis:
                     "All replicates must have the same number of time points."
                 )
             metadata = file.get_metadata()
-            peak_amplitude_positions.append((metadata["peak_amplitude_positions"]))
+            peak_amplitude_positions.append(self._resolve_peak_position(metadata))
             all_ITs[i, :] = IT_individual
 
-        # Turning peak_amplitude_positions into a list of integers
-        try:
-            peaks = [p.item() for p in peak_amplitude_positions]
-        except AttributeError:
-            peaks = [int(p) for p in peak_amplitude_positions]
+        peaks = [int(p) for p in peak_amplitude_positions]
         min_peak = np.min(peaks)
         max_peak = np.max(peaks)
         pre_allocated_ITs_array = np.full((n_experiments, n_timepoints - min_peak), np.nan)       

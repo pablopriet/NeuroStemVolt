@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import (
-    QApplication, QComboBox, QWizardPage, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QDialog, QProgressDialog, QSlider, QToolTip, QCheckBox, QMessageBox
+    QApplication, QComboBox, QWizardPage, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QDialog, QProgressDialog, QSlider, QToolTip, QCheckBox, QMessageBox, QDoubleSpinBox
 )
 from PyQt5.QtCore import QSettings, Qt, QEvent
 
@@ -71,10 +71,12 @@ class ColorPlotPage(QWizardPage):
         self.current_rep_index = 0
         self.current_file_index = 0
 
-        self.btn_prev = QPushButton("Previous"); 
+        self.btn_prev = QPushButton("◀");
         apply_custom_styles(self.btn_prev)
-        self.btn_next = QPushButton("Next")
+        self.btn_prev.setToolTip("Previous file in the current replicate")
+        self.btn_next = QPushButton("▶")
         apply_custom_styles(self.btn_next)
+        self.btn_next.setToolTip("Next file in the current replicate")
         self.btn_prev.clicked.connect(self.on_prev_clicked)
         self.btn_next.clicked.connect(self.on_next_clicked)
 
@@ -93,8 +95,11 @@ class ColorPlotPage(QWizardPage):
         self.btn_export_all = QPushButton("Export All ITs")
         apply_custom_styles(self.btn_export_all)
         self.btn_export_all.clicked.connect(self.save_all_ITs)
+        self.btn_export_cv = QPushButton("Export CV Plot")
+        apply_custom_styles(self.btn_export_cv)
+        self.btn_export_cv.clicked.connect(self.save_cv_plot)
         for b in (self.btn_prev, self.btn_next, self.btn_eval, self.btn_filter,
-          self.btn_save, self.btn_export, self.btn_export_all):
+          self.btn_save, self.btn_export, self.btn_export_all, self.btn_export_cv):
             b.setAutoDefault(False)
             b.setDefault(False)
 
@@ -115,35 +120,109 @@ class ColorPlotPage(QWizardPage):
         apply_custom_styles(self.btn_edit_peaks)
         self.btn_edit_peaks.clicked.connect(self.on_edit_peaks_clicked)
 
+        # Replicate navigation buttons
+        self.btn_rep_prev = QPushButton("◀")
+        apply_custom_styles(self.btn_rep_prev)
+        self.btn_rep_prev.setToolTip("Previous replicate")
+        self.btn_rep_prev.clicked.connect(self.on_rep_prev_clicked)
+        self.btn_rep_next = QPushButton("▶")
+        apply_custom_styles(self.btn_rep_next)
+        self.btn_rep_next.setToolTip("Next replicate")
+        self.btn_rep_next.clicked.connect(self.on_rep_next_clicked)
+        for b in (self.btn_rep_prev, self.btn_rep_next):
+            b.setAutoDefault(False); b.setDefault(False)
+
+        # Standalone normalize toggle
+        self.btn_normalize = QPushButton("Normalize")
+        apply_custom_styles(self.btn_normalize)
+        self.btn_normalize.setCheckable(True)
+        self.btn_normalize.setToolTip("Toggle normalization and re-run")
+        self.btn_normalize.clicked.connect(self._toggle_normalize)
+        self.btn_normalize.setAutoDefault(False); self.btn_normalize.setDefault(False)
+
+        # Active filters info label
+        self.lbl_filters = QLabel("Active: None")
+        self.lbl_filters.setStyleSheet("color: #aaaaaa; font-size: 9pt; font-style: italic; padding: 2px 0px;")
+        self.lbl_filters.setWordWrap(True)
+
+        def _sec(text):
+            lbl = QLabel(text)
+            lbl.setStyleSheet(
+                "font-weight: bold; color: #cccccc; font-size: 9pt;"
+                " padding-top: 6px; border-top: 1px solid #555555;")
+            return lbl
+
         left = QVBoxLayout()
-        left.addWidget(self.btn_revert)
+        left.setSpacing(4)
+
+        # ── Navigation ───────────────────────────────
+        left.addWidget(_sec("Navigation"))
         left.addWidget(self.cbo_rep)
+        rep_nav = QHBoxLayout()
+        rep_nav.addWidget(self.btn_rep_prev)
+        rep_nav.addWidget(self.btn_rep_next)
+        left.addLayout(rep_nav)
         left.addWidget(self.cbo_file)
+        file_nav = QHBoxLayout()
+        file_nav.addWidget(self.btn_prev)
+        file_nav.addWidget(self.btn_next)
+        left.addLayout(file_nav)
 
-        nav = QHBoxLayout(); nav.addWidget(self.btn_prev); nav.addWidget(self.btn_next)
+        # ── Processing ───────────────────────────────
+        left.addWidget(_sec("Processing"))
+        proc_row = QHBoxLayout()
+        proc_row.addWidget(self.btn_filter)
+        proc_row.addWidget(self.btn_eval)
+        left.addLayout(proc_row)
+        norm_row = QHBoxLayout()
+        norm_row.addWidget(self.btn_normalize)
+        norm_row.addWidget(self.btn_revert)
+        left.addLayout(norm_row)
+        left.addWidget(self.lbl_filters)
 
-        left.addLayout(nav)
-        left.addWidget(self.btn_filter)
-        left.addWidget(self.btn_eval)
-        #left.addWidget(btn_apply)
+        # ── Export ───────────────────────────────────
+        left.addWidget(_sec("Export"))
         left.addWidget(self.btn_save)
-        left.addWidget(self.btn_export)
-        left.addWidget(self.btn_export_all)
+        export_row = QHBoxLayout()
+        export_row.addWidget(self.btn_export)
+        export_row.addWidget(self.btn_export_all)
+        left.addLayout(export_row)
+        left.addWidget(self.btn_export_cv)
+
         left.addStretch()
 
+        # ── Visualization ────────────────────────────
         self.chk_show_cv = QCheckBox("Show CV Plot")
         self.chk_show_cv.setStyleSheet("color: white;")
-        self.chk_show_cv.toggled.connect(lambda checked: self.cv_plot.setVisible(checked))
-        left.addWidget(self.chk_show_cv)
+        self.chk_show_cv.toggled.connect(self._on_show_cv_toggled)
 
-        peak_edit_label = QLabel("Peak Editing:")
-        peak_edit_label.setStyleSheet("font_size:10pt; font-weight: bold; color: white;")
-        left.addWidget(peak_edit_label)
+        self.chk_cv_ref = QCheckBox("Ref line")
+        self.chk_cv_ref.setStyleSheet("color: white;")
+        self.chk_cv_ref.setEnabled(False)
+        self.chk_cv_ref.toggled.connect(self._redraw_cv)
+
+        self.spin_cv_ref = QDoubleSpinBox()
+        self.spin_cv_ref.setRange(-1.5, 2.0)
+        self.spin_cv_ref.setSingleStep(0.05)
+        self.spin_cv_ref.setValue(0.0)
+        self.spin_cv_ref.setDecimals(2)
+        self.spin_cv_ref.setSuffix(" V")
+        self.spin_cv_ref.setEnabled(False)
+        self.spin_cv_ref.valueChanged.connect(self._redraw_cv)
+
+        left.addWidget(_sec("Visualization"))
+        left.addWidget(self.chk_show_cv)
+        cv_ref_row = QHBoxLayout()
+        cv_ref_row.addWidget(self.chk_cv_ref)
+        cv_ref_row.addWidget(self.spin_cv_ref)
+        left.addLayout(cv_ref_row)
+
+        # ── Peak Editing ─────────────────────────────
+        left.addWidget(_sec("Peak Editing"))
         peak_edit_row = QHBoxLayout()
         peak_edit_row.addWidget(self.btn_peak_click)
         peak_edit_row.addWidget(self.btn_edit_peaks)
         left.addLayout(peak_edit_row)
-
 
         self.left_layout = left
 
@@ -155,12 +234,12 @@ class ColorPlotPage(QWizardPage):
 
         bottom = QHBoxLayout()
         bottom.addWidget(self.it_plot)
-        bottom.addWidget(self.cv_plot)
         self.bottom_layout = bottom
 
         right = QVBoxLayout()
         right.addWidget(self.main_plot)
         right.addLayout(bottom)
+        right.addWidget(self.cv_plot)   # CV gets its own full-width row below IT
 
         # Main layout for the page
         main_layout = QVBoxLayout()
@@ -344,8 +423,10 @@ class ColorPlotPage(QWizardPage):
             self._redraw_all_peak_overlays(sph_file)
 
             if self.chk_show_cv.isChecked():
+                ref_voltage = self.spin_cv_ref.value() if self.chk_cv_ref.isChecked() else None
                 self.cv_plot.plot_cv(processed_data=processed_data, metadata=metadata,
-                                     title_suffix=f"File {self.current_file_index + 1}")
+                                     title_suffix=f"File {self.current_file_index + 1}",
+                                     ref_voltage=ref_voltage)
         except IndexError:
             # Handle error case
             print(f"Error: Cannot access file at index {self.current_file_index}")
@@ -391,25 +472,22 @@ class ColorPlotPage(QWizardPage):
         QApplication.processEvents()
 
         # Choose the appropriate amplitude finder based on file type
-        if file_type == "Spontaneous":
+        if file_type == "Multi-Peak":
             mandatory = FindAmplitudeMultiple(peak_pos)
         else:
-            print("Using default amplitude finder______________")
             mandatory = FindAmplitude(peak_pos)
 
         # Keep all user processors EXCEPT any existing amplitude finders
         user_processors = self.selected_processors or []
         processors = [p for p in user_processors if not isinstance(p, (FindAmplitude, FindAmplitudeMultiple))]
 
-        # Insert a FindAmplitude BEFORE Normalize so peak values are in context
+        # Insert a peak finder BEFORE Normalize so it has a reference amplitude for scaling
         has_normalize = any(isinstance(p, Normalize) for p in processors)
         if has_normalize:
-            # Build new list with FindAmplitude inserted before Normalize
             reordered = []
             for p in processors:
                 if isinstance(p, Normalize):
-                    # Insert a pre-normalization amplitude finder
-                    if file_type == "Spontaneous":
+                    if file_type == "Multi-Peak":
                         reordered.append(FindAmplitudeMultiple(peak_pos))
                     else:
                         reordered.append(FindAmplitude(peak_pos))
@@ -430,6 +508,7 @@ class ColorPlotPage(QWizardPage):
         self.update_file_display()
         self.completeChanged.emit()
         self._set_peak_controls_enabled(self.isComplete())
+        self._update_filters_label()
         progress.close()
 
 
@@ -437,44 +516,45 @@ class ColorPlotPage(QWizardPage):
         group_analysis = self.wizard().group_analysis
         for exp in group_analysis.get_experiments():
             exp.revert_processing()
+        self.selected_processors = []
         self._set_peak_controls_enabled(False)
         self.update_file_display()
         self.completeChanged.emit()
+        # Reset normalize button, filters label, and evaluate button
+        self.btn_normalize.setChecked(False)
+        self.btn_normalize.setText("Normalize")
+        apply_custom_styles(self.btn_normalize)
+        self.lbl_filters.setText("Active: None")
+        self.btn_eval.setText("Evaluate")
+
+    def _build_processors_from_dialog(self, dlg):
+        """Instantiate processors from dialog selections, preserving normalize button state."""
+        selected_names = dlg.get_selected_processors()
+        peak_pos = QSettings("HashemiLab", "NeuroStemVolt").value("peak_position", type=int)
+        processors = []
+        for name in selected_names:
+            proc = dlg.get_processor_instance(name, peak_pos)
+            if proc is not None:
+                processors.append(proc)
+        # Preserve normalize if the standalone button is active
+        if self.btn_normalize.isChecked() and not any(isinstance(p, Normalize) for p in processors):
+            processors.append(Normalize())
+        self.selected_processors = processors
 
     def show_processing_options(self):
-        """
-        Opens the processing options dialog and updates selected processors.
-
-        Retrieves the user’s choices and instantiates corresponding Processor objects.
-        When Normalize is selected, FindAmplitude is automatically inserted before it
-        to provide the normalization factor, then FindAmplitude runs again after Normalize.
-        """
+        """Opens the filter options dialog. Apply runs immediately; OK just closes."""
         dlg = ProcessingOptionsDialog(self)
+
+        def _on_apply():
+            self._build_processors_from_dialog(dlg)
+            self.run_processing()
+            self.btn_eval.setText("Find Peaks")
+
+        dlg.apply_requested.connect(_on_apply)
+
         if dlg.exec_() == QDialog.Accepted:
-            selected_names = dlg.get_selected_processors()
-            peak_pos = QSettings("HashemiLab", "NeuroStemVolt").value("peak_position", type=int)
-            
-            # Build processor list, inserting FindAmplitude before Normalize if needed
-            processors = []
-            normalize_enabled = "Normalize" in selected_names
-            
-            for name in selected_names:
-                # If Normalize is enabled, insert FindAmplitude right before it
-                if name == "Normalize" and normalize_enabled:
-                    # Add FindAmplitude first pass (for normalization factor)
-                    processors.append(dlg.get_processor_instance("Find Amplitude", peak_pos))
-                
-                proc = dlg.get_processor_instance(name, peak_pos)
-                if proc is not None:
-                    processors.append(proc)
-            
-            # Always add Find Amplitude at the end (on potentially normalized data)
-            # This is the "real" amplitude finding pass
-            find_amp = dlg.get_processor_instance("Find Amplitude", peak_pos)
-            if find_amp is not None:
-                processors.append(find_amp)
-            
-            self.selected_processors = processors
+            # OK was clicked — update processor list (no auto-run)
+            self._build_processors_from_dialog(dlg)
 
     def _show_processing_warnings(self, group_analysis):
         """Check for processing warnings and display them in a message box."""
@@ -566,6 +646,48 @@ class ColorPlotPage(QWizardPage):
 
         return True  # allow transition to next page
 
+    def on_rep_prev_clicked(self):
+        """Navigate to the previous replicate."""
+        idx = self.cbo_rep.currentIndex()
+        if idx > 0:
+            self.cbo_rep.setCurrentIndex(idx - 1)
+
+    def on_rep_next_clicked(self):
+        """Navigate to the next replicate."""
+        idx = self.cbo_rep.currentIndex()
+        if idx < self.cbo_rep.count() - 1:
+            self.cbo_rep.setCurrentIndex(idx + 1)
+
+    def _toggle_normalize(self, checked: bool):
+        """Toggle normalization in the processing pipeline and immediately re-run."""
+        if checked:
+            self.btn_normalize.setText("✓ Normalize")
+            self.btn_normalize.setStyleSheet(
+                "background-color: #27ae60; color: white; font-weight: bold;"
+                " border-radius: 12px; padding: 6px;")
+            if not any(isinstance(p, Normalize) for p in self.selected_processors):
+                self.selected_processors.append(Normalize())
+        else:
+            self.btn_normalize.setText("Normalize")
+            apply_custom_styles(self.btn_normalize)
+            self.selected_processors = [p for p in self.selected_processors
+                                        if not isinstance(p, Normalize)]
+        self.run_processing()
+
+    def _update_filters_label(self):
+        """Update the 'Active filters' label to reflect current selected_processors."""
+        name_map = {
+            'Normalize': 'Normalize',
+            'BaselineCorrection': 'Baseline',
+            'SmoothData': 'Smooth',
+            'StimArtifactRemoval': 'Artifact Removal',
+            'InvertData': 'Invert',
+        }
+        names = [name_map.get(type(p).__name__, type(p).__name__)
+                 for p in self.selected_processors
+                 if not isinstance(p, (FindAmplitude, FindAmplitudeMultiple))]
+        self.lbl_filters.setText(f"Active: {', '.join(names)}" if names else "Active: None")
+
     def _enable_peak_click_mode(self, enabled: bool):
         canvases = []
         if hasattr(self, "main_plot") and hasattr(self.main_plot, "fig"):
@@ -652,14 +774,20 @@ class ColorPlotPage(QWizardPage):
         idx = max(0, min(idx, int(total_len) - 1))
 
         # Apply change
+        file_type = QSettings("HashemiLab", "NeuroStemVolt").value("file_type", "None", type=str)
         if ev.button == 1:  # left add/make active
-            peaks.append(idx)
-            seen, uniq = set(), []
-            for p in peaks:
-                if p not in seen:
-                    uniq.append(p);
-                    seen.add(p)
-            active = uniq.index(idx)
+            if file_type == "Single Peak":
+                # Replace the existing peak rather than adding a second one
+                uniq = [idx]
+                active = 0
+            else:
+                peaks.append(idx)
+                seen, uniq = set(), []
+                for p in peaks:
+                    if p not in seen:
+                        uniq.append(p)
+                        seen.add(p)
+                active = uniq.index(idx)
             meta_set_peaks_and_active(file_obj, uniq, active)
         elif ev.button == 3:  # right remove nearest
             if peaks:
@@ -724,8 +852,10 @@ class ColorPlotPage(QWizardPage):
             self.it_plot.plot_IT(processed_data=processed, metadata=metadata,
                                  peak_position=peak_pos, temp_peak_detection=self.temp_peak)
             if self.chk_show_cv.isChecked():
+                ref_voltage = self.spin_cv_ref.value() if self.chk_cv_ref.isChecked() else None
                 self.cv_plot.plot_cv(processed_data=processed, metadata=metadata,
-                                     title_suffix=f"File {self.current_file_index + 1}")
+                                     title_suffix=f"File {self.current_file_index + 1}",
+                                     ref_voltage=ref_voltage)
             self._redraw_all_peak_overlays(file_obj)
         except Exception as e:
             print(f"ERROR: _refresh_plots_for_file failed: {e}")
@@ -791,4 +921,58 @@ class ColorPlotPage(QWizardPage):
         exp = self.wizard().group_analysis.get_single_experiments(self.current_rep_index)
         sph_file = exp.get_spheroid_file(self.current_file_index)
         output_folder_path = QSettings("HashemiLab", "NeuroStemVolt").value("output_folder")
-        OutputManager.save_IT_profile(sph_file,output_folder_path)
+        OutputManager.save_IT_profile(sph_file, output_folder_path)
+
+    def _on_show_cv_toggled(self, checked: bool):
+        """Show/hide the CV plot; populate it immediately when first made visible."""
+        self.cv_plot.setVisible(checked)
+        self.chk_cv_ref.setEnabled(checked)
+        self.spin_cv_ref.setEnabled(checked and self.chk_cv_ref.isChecked())
+        if not checked:
+            return
+        self._redraw_cv()
+
+    def _redraw_cv(self):
+        """Redraw the CV plot with current data and reference line settings."""
+        if not self.chk_show_cv.isChecked():
+            return
+        # Enable/disable spin based on checkbox state
+        self.spin_cv_ref.setEnabled(self.chk_cv_ref.isChecked())
+        ref_voltage = self.spin_cv_ref.value() if self.chk_cv_ref.isChecked() else None
+        try:
+            group_analysis = self.wizard().group_analysis
+            exp = group_analysis.get_single_experiments(self.current_rep_index)
+            actual = (self.file_index_mapping[self.current_file_index]
+                      if self.file_index_mapping and self.current_file_index < len(self.file_index_mapping)
+                      else self.current_file_index)
+            sph_file = exp.get_spheroid_file(actual)
+            processed_data = sph_file.get_processed_data()
+            metadata = sph_file.get_metadata()
+            self.cv_plot.plot_cv(processed_data=processed_data, metadata=metadata,
+                                 title_suffix=f"File {self.current_file_index + 1}",
+                                 ref_voltage=ref_voltage)
+        except Exception:
+            pass  # no data loaded yet
+
+    def save_cv_plot(self):
+        """
+        Saves the current CV plot as a PNG to the output folder.
+        """
+        if not self.chk_show_cv.isChecked() or self.cv_plot is None:
+            QMessageBox.warning(self, "CV Plot Not Visible",
+                                "Enable the CV plot using 'Show CV Plot' before exporting.")
+            return
+        try:
+            exp = self.wizard().group_analysis.get_single_experiments(self.current_rep_index)
+            actual = self.file_index_mapping[self.current_file_index] if (
+                self.file_index_mapping and self.current_file_index < len(self.file_index_mapping)
+            ) else self.current_file_index
+            sph_file = exp.get_spheroid_file(actual)
+            base_name = os.path.splitext(os.path.basename(sph_file.get_filepath()))[0]
+            output_folder_path = QSettings("HashemiLab", "NeuroStemVolt").value("output_folder")
+            output_folder_cv = os.path.join(output_folder_path, "CV_plots")
+            os.makedirs(output_folder_cv, exist_ok=True)
+            save_path = os.path.join(output_folder_cv, f"{base_name}_CV.png")
+            self.cv_plot.fig.savefig(save_path, dpi=150, bbox_inches='tight')
+        except Exception as e:
+            QMessageBox.warning(self, "Export Failed", f"Could not save CV plot:\n{e}")

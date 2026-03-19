@@ -8,6 +8,8 @@ from .rolling_mean import RollingMean
 from .background_subtraction import BackgroundSubtraction
 from .exponentialdecay import ExponentialFitting
 from .normalize import Normalize
+from .invert import InvertData
+from .stim_artifact_removal import StimArtifactRemoval
 
 __all__ = [
     "RawMean",
@@ -19,5 +21,7 @@ __all__ = [
     "RollingMean",
     "BackgroundSubtraction",
     "ExponentialFitting",
-    "Normalize"
+    "Normalize",
+    "InvertData",
+    "StimArtifactRemoval"
 ]

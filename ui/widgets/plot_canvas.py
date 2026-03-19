@@ -702,19 +702,115 @@ class PlotCanvas(FigureCanvas):
         finally:
             progress.close()
 
-    def plot_cv(self, processed_data, time_point=0, metadata=None, title_suffix=None):
+    def show_mean_amplitude_and_frequency(self, group_analysis):
+        """
+        Plot mean amplitude and peak frequency on a dual y-axis chart over time.
+        """
+        import numpy as np
+        from PyQt5.QtCore import QSettings
+        from PyQt5.QtWidgets import QProgressDialog, QApplication
+
+        progress = QProgressDialog("Processing amplitude & frequency data...", None, 0, 0, self)
+        progress.setWindowModality(Qt.ApplicationModal)
+        progress.setMinimumDuration(0)
+        progress.show()
+        QApplication.processEvents()
+
+        try:
+            settings = QSettings("HashemiLab", "NeuroStemVolt")
+            file_length_sec = settings.value("file_length", 100, type=int)
+            time_between_files = settings.value("time_between_files", 10, type=float)
+
+            experiments = group_analysis.get_experiments()
+            if not experiments:
+                self.axes.clear()
+                self.axes.set_title("No experiments to analyze")
+                self.draw()
+                return
+
+            n_files = experiments[0].get_file_count()
+            files_before_treatment = experiments[0].get_number_of_files_before_treatment()
+
+            if files_before_treatment > 0:
+                time_points = [time_between_files * (i - files_before_treatment) for i in range(n_files)]
+            else:
+                time_points = [i * time_between_files for i in range(n_files)]
+
+            all_amplitudes = []
+            all_frequencies = []
+
+            for exp in experiments:
+                exp_amplitudes = []
+                exp_frequencies = []
+                for spheroid_file in exp.files:
+                    meta = spheroid_file.get_metadata()
+
+                    peak_values = meta.get('peak_amplitude_values', [])
+                    if not isinstance(peak_values, (list, np.ndarray)):
+                        peak_values = [peak_values] if peak_values else []
+                    exp_amplitudes.append(np.mean(peak_values) if peak_values else 0)
+
+                    peak_positions = meta.get('peak_amplitude_positions', [])
+                    if not isinstance(peak_positions, (list, np.ndarray)):
+                        peak_positions = [peak_positions] if peak_positions else []
+                    exp_frequencies.append(len(peak_positions) / (file_length_sec / 60))
+
+                all_amplitudes.append(exp_amplitudes)
+                all_frequencies.append(exp_frequencies)
+
+            all_amplitudes = np.array(all_amplitudes)
+            all_frequencies = np.array(all_frequencies)
+            mean_amp = np.nanmean(all_amplitudes, axis=0)
+            std_amp = np.nanstd(all_amplitudes, axis=0)
+            mean_freq = np.nanmean(all_frequencies, axis=0)
+            std_freq = np.nanstd(all_frequencies, axis=0)
+
+            self.fig.clear()
+            ax1 = self.fig.add_subplot(111)
+            ax2 = ax1.twinx()
+
+            ax1.plot(time_points, mean_amp, 'o-', color='#8B008B', linewidth=2, markersize=6, label='Mean Amplitude')
+            ax1.fill_between(time_points, mean_amp - std_amp, mean_amp + std_amp, color='#8B008B', alpha=0.2)
+
+            ax2.plot(time_points, mean_freq, 's--', color='#2E8B57', linewidth=2, markersize=6, label='Frequency')
+            ax2.fill_between(time_points, mean_freq - std_freq, mean_freq + std_freq, color='#2E8B57', alpha=0.2)
+
+            if files_before_treatment > 0:
+                ax1.axvline(x=0, color='red', linestyle='--', linewidth=2, label='Treatment Start')
+
+            ax1.set_xlabel('Time (minutes)', fontsize=12)
+            ax1.set_ylabel('Mean Peak Amplitude (nA)', fontsize=12, color='#8B008B')
+            ax2.set_ylabel('Peak Frequency (peaks/min)', fontsize=12, color='#2E8B57')
+            ax1.set_title('Mean Amplitude & Frequency Over Time', fontweight='bold')
+
+            lines1, labels1 = ax1.get_legend_handles_labels()
+            lines2, labels2 = ax2.get_legend_handles_labels()
+            ax1.legend(lines1 + lines2, labels1 + labels2)
+            ax1.grid(True, alpha=0.3)
+            self.fig.tight_layout()
+            self.draw()
+
+        except Exception as e:
+            self.fig.clear()
+            ax = self.fig.add_subplot(111)
+            ax.text(0.5, 0.5, f"Error: {str(e)}", ha='center', va='center', transform=ax.transAxes)
+            self.draw()
+        finally:
+            progress.close()
+
+    def plot_cv(self, processed_data, time_point=0, metadata=None, title_suffix=None, ref_voltage=None):
         """
         Enhanced CV plot method that can handle both single time point and peak-correlated CVs.
         """
         # If metadata contains peak information, use the peak-correlated version
         if metadata and 'peak_amplitude_positions' in metadata:
-            self.plot_cv_multiple_peaks(processed_data, metadata, title_suffix)
+            self.plot_cv_multiple_peaks(processed_data, metadata, title_suffix, ref_voltage=ref_voltage)
         else:
             # Fallback to original single CV plot
-            self.plot_cv_single(processed_data, time_point, title_suffix)
+            self.plot_cv_single(processed_data, time_point, title_suffix, ref_voltage=ref_voltage)
 
 
-    def plot_cv_multiple_peaks(self, processed_data, metadata=None, title_suffix=None):
+    def plot_cv_multiple_peaks(self, processed_data, metadata=None, title_suffix=None, ref_voltage=None):
         """
         Plot cyclic voltammograms (CVs) at time points corresponding to detected peaks in I-T curve.
         Shows multiple CVs overlayed if multiple peaks are detected.
@@ -789,10 +885,12 @@ class PlotCanvas(FigureCanvas):
 
             # Annotate only the first CV or if there's only one CV to avoid clutter
             if i == 0 or len(peak_time_points) == 1:
-                self.axes.annotate(f"Peak: {peak_V:.2f}V\n{peak_I:.2f}nA",
+                self.axes.annotate(f"Peak: {peak_V:.2f} V\n{peak_I:.2f} nA",
                                    xy=(peak_V, peak_I),
-                                   xytext=(10, 10), textcoords='offset points',
-                                   bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', alpha=0.7),
+                                   xytext=(0, -42), textcoords='offset points',
+                                   ha='center',
+                                   bbox=dict(boxstyle='round,pad=0.3', facecolor='lightyellow',
+                                             edgecolor='#888888', alpha=0.9),
                                    arrowprops=dict(arrowstyle='->', color=color),
                                    fontsize=8)
 
@@ -825,10 +923,16 @@ class PlotCanvas(FigureCanvas):
                        fontsize=9, verticalalignment='top',
                        bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.8))
 
+        # Optional reference voltage line
+        if ref_voltage is not None:
+            self.axes.axvline(x=ref_voltage, color='#e74c3c', linestyle='--',
+                              linewidth=1.5, alpha=0.85, label=f'Ref: {ref_voltage:.2f} V')
+            self.axes.legend(fontsize=8, loc='upper right')
+
         self.fig.tight_layout()
         self.draw()
 
-    def plot_cv_single(self, processed_data, time_point=0, title_suffix=None):
+    def plot_cv_single(self, processed_data, time_point=0, title_suffix=None, ref_voltage=None):
         """
         Original single CV plot method (renamed for clarity).
         """
@@ -861,8 +965,10 @@ class PlotCanvas(FigureCanvas):
         self.axes.scatter([peak_V], [peak_I], color="#FF3877", s=100, zorder=5, label='Peak')
         self.axes.annotate(f"Peak: {peak_V:.2f} V\n{peak_I:.2f} nA",
                            xy=(peak_V, peak_I),
-                           xytext=(10, 10), textcoords='offset points',
-                           bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', alpha=0.7),
+                           xytext=(0, -42), textcoords='offset points',
+                           ha='center',
+                           bbox=dict(boxstyle='round,pad=0.3', facecolor='lightyellow',
+                                     edgecolor='#888888', alpha=0.9),
                            arrowprops=dict(arrowstyle='->', color='red'))
 
         self.axes.set_xlabel("Voltage (V)")
@@ -879,8 +985,13 @@ class PlotCanvas(FigureCanvas):
 
         self.axes.set_title(title, fontweight="bold")
         self.axes.grid(True, alpha=0.3)
-        self.axes.legend()
 
+        # Optional reference voltage line
+        if ref_voltage is not None:
+            self.axes.axvline(x=ref_voltage, color='#e74c3c', linestyle='--',
+                              linewidth=1.5, alpha=0.85, label=f'Ref: {ref_voltage:.2f} V')
+
+        self.axes.legend()
         self.fig.tight_layout()
         self.draw()
 

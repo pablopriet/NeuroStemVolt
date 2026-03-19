@@ -7,6 +7,7 @@ from core.group_analysis import GroupAnalysis
 from core.spheroid_experiment import SpheroidExperiment
 from ui.utils.styles import apply_custom_styles
 from ui.wizard_1_intro.settings_dialog import ExperimentSettingsDialog
+from PyQt5.QtCore import QSettings
 
 import os
 
@@ -125,7 +126,10 @@ class IntroPage(QWizardPage):
 
         # Also clear our own display_names_list
         self.display_names_list = []
-        
+
+        # Reset file count so the next load doesn't enforce the old count
+        self.number_of_files = 0
+
         # Re-evaluate isComplete
         self.completeChanged.emit()
 
@@ -166,9 +170,10 @@ class IntroPage(QWizardPage):
         if self.number_of_files != 0 and self.number_of_files != len(paths):
             QMessageBox.warning(
                 self,
-                "Warning! Missing Files!",
-                "Folders do not contain the same number of files.\n"
-                f"Expected: {self.number_of_files}, Found: {len(paths)}"
+                "File Count Mismatch",
+                f"This folder has {len(paths)} file(s), but previous replicates have "
+                f"{self.number_of_files}.\n\n"
+                "All replicates must contain the same number of files."
             )
             return
         
@@ -191,19 +196,47 @@ class IntroPage(QWizardPage):
 
         # if your Next button is gated on isComplete(), let Qt know the page state changed:
         self.completeChanged.emit()
-    
+
+    def validate_data_dimensions(self):
+        try:
+            from PyQt5.QtCore import QSettings
+            settings = QSettings("HashemiLab", "NeuroStemVolt")
+            peak_pos = settings.value("peak_position", 257, type=int)
+
+            exp = self.group_analysis.get_single_experiments(0)
+            sph_file = exp.get_spheroid_file(0)
+            data = sph_file.get_data()
+            max_cols = data.shape[1] - 1
+
+            if peak_pos > max_cols:
+                QMessageBox.warning(
+                    self,
+                    "Invalid Peak Position",
+                    f"Peak position {peak_pos} exceeds the data dimensions.\n"
+                    f"Maximum allowed value is {max_cols}.\n\n"
+                    "Please update your Experiment Settings before continuing."
+                )
+                return False
+            return True
+        except Exception:
+            return True
+
     def validatePage(self):
         """
         Called when the user clicks 'Next' in the wizard.
 
         Validates:
             - At least one replicate has been loaded.
+            - Peak position does not exceed data dimensions.
 
         Returns:
             bool: True if the page is valid and the wizard may continue; otherwise False.
         """
         if len(self.display_names_list) == 0:
             QMessageBox.warning(self, "No Replicates Loaded", "Please load at least one replicate before continuing.")
+            return False
+
+        if not self.validate_data_dimensions():
             return False
 
         self.wizard().group_analysis = self.group_analysis
@@ -233,6 +266,10 @@ class IntroPage(QWizardPage):
             del self.display_names_list[row]
             self.group_analysis.clear_single_experiment(row)
         
+        # Reset file count if all replicates have been removed
+        if not self.display_names_list:
+            self.number_of_files = 0
+
         # push the updated data back onto the wizard
         wiz.display_names_list = self.display_names_list
         wiz.group_analysis     = self.group_analysis
