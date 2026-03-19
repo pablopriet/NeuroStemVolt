@@ -6,7 +6,7 @@ import json
 
 from ui.utils.styles import apply_custom_styles
 from ui.utils.ui_helpers import make_labeled_field_with_help
-from core.processing import InvertData, BackgroundSubtraction, SavitzkyGolayFilter, RollingMean, GaussianSmoothing2D, ButterworthFilter, BaselineCorrection, Normalize, FindAmplitude, ExponentialFitting
+from core.processing import InvertData, BackgroundSubtraction, SavitzkyGolayFilter, RollingMean, GaussianSmoothing2D, ButterworthFilter, BaselineCorrection, Normalize, FindAmplitude, ExponentialFitting, StimArtifactRemoval
 
 from core.processing.spontaneous_peak_detector import FindAmplitudeMultiple
 
@@ -58,6 +58,10 @@ class ProcessingOptionsDialog(QDialog):
         else:
             self.processor_options.append(("Single Peak Detection", True))
 
+        if file_type == "Stimulation":
+            # Insert right after Background Subtraction (index 0) so it runs second in the pipeline
+            self.processor_options.insert(1, ("Artifact Removal", True))
+
         help_texts = {
             "Background Subtraction": "Subtracts baseline offset by averaging the signal between a specified 'start' and 'end' segment (given as data indices or time points at the beginning of the trace) and subtracting that mean from the entire recording.",
             "Rolling Mean": "Smooths the trace by computing a moving average over a sliding window of N points. The 'window size' parameter sets how many consecutive samples are included in each average. Larger windows yield smoother traces but can blur sharp features.",
@@ -68,6 +72,7 @@ class ProcessingOptionsDialog(QDialog):
             "Invert Data": "Inverts the sign of all data points. Use if your data is 'upside down' and you need to flip it.",
             "Single Peak Detection": "Detects peaks throughout the signal using a simple thresholding algorithm. Useful for analyzing stimulation activity patterns.",
             "Multiple Peak Detection": "Detects multiple peaks throughout the signal using adaptive validation windows. Useful for analyzing spontaneous activity patterns.",
+            "Artifact Removal": "Auto-detects and removes the stimulation artifact from files marked 'Has Artifact'. Finds large scan-to-scan jumps via a MAD-based threshold, then linearly interpolates across each detected region in every voltage column. Threshold: MAD multiplier (lower = more sensitive). Pad: extra scans buffered around each artifact edge. Max Scans: largest artifact window allowed (0 = auto, defaults to 2 × acquisition rate).",
         }
 
         for name, default_checked in self.processor_options:
@@ -151,6 +156,78 @@ class ProcessingOptionsDialog(QDialog):
                 rm_container.hide()
                 param_widget = rm_container
                 self.param_widgets[name] = rm_window
+            elif name == "Artifact Removal":
+                ar_layout = QVBoxLayout()
+
+                threshold_layout = QHBoxLayout()
+                threshold_label = QLabel("Threshold (MAD multiplier):")
+                threshold_label.setStyleSheet("font-size: 11px; color: #555; margin-left: 16px;")
+                threshold_edit = QLineEdit("8")
+                threshold_layout.addWidget(threshold_label)
+                threshold_layout.addWidget(make_labeled_field_with_help(
+                    "Threshold",
+                    threshold_edit,
+                    "Controls how sensitive the artifact detector is.\n\n"
+                    "The algorithm measures scan-to-scan jumps across all voltage columns, then "
+                    "flags any jump larger than: median + threshold × MAD.\n\n"
+                    "Lower value → more sensitive (catches smaller artifacts).\n"
+                    "Higher value → less sensitive (only catches very large artifacts).\n\n"
+                    "Start with 8. If the artifact is not being removed, try lowering to 4–6. "
+                    "If real signal is being erased, raise to 10–15."
+                ))
+
+                pad_layout = QHBoxLayout()
+                pad_label = QLabel("Pad (scans):")
+                pad_label.setStyleSheet("font-size: 11px; color: #555; margin-left: 16px;")
+                pad_edit = QLineEdit("2")
+                pad_layout.addWidget(pad_label)
+                pad_layout.addWidget(make_labeled_field_with_help(
+                    "Pad",
+                    pad_edit,
+                    "Extra scans added to both edges of the detected artifact window.\n\n"
+                    "The artifact onset and offset often include a slow ramp that the jump "
+                    "detector may not flag. Adding padding ensures these ramp scans are also "
+                    "replaced by the linear interpolation.\n\n"
+                    "Default of 2 works for most stimulation artifacts. "
+                    "Increase to 3–5 if the artifact edges still look noisy after removal."
+                ))
+
+                max_scans_layout = QHBoxLayout()
+                max_scans_label = QLabel("Max Artifact Scans (0 = auto):")
+                max_scans_label.setStyleSheet("font-size: 11px; color: #555; margin-left: 16px;")
+                max_scans_edit = QLineEdit("0")
+                max_scans_layout.addWidget(max_scans_label)
+                max_scans_layout.addWidget(make_labeled_field_with_help(
+                    "Max Artifact Scans",
+                    max_scans_edit,
+                    "Maximum number of scans that can be classified as a single artifact region.\n\n"
+                    "Prevents the algorithm from accidentally removing large sections of real signal "
+                    "if a strong response happens to produce a big jump.\n\n"
+                    "0 = auto, which sets the limit to 2 × acquisition frequency (≈ 2 seconds).\n\n"
+                    "Increase this if your stimulation lasts longer than 2 seconds. "
+                    "Decrease it (e.g. to 5–10) if you have very brief stimulations and want "
+                    "to be conservative about what gets interpolated."
+                ))
+
+                if "Artifact Removal" in saved_params:
+                    sp = saved_params["Artifact Removal"]
+                    threshold_edit.setText(sp.get("threshold", "8"))
+                    pad_edit.setText(sp.get("pad", "2"))
+                    max_scans_edit.setText(sp.get("max_artifact_scans", "0"))
+
+                ar_layout.addLayout(threshold_layout)
+                ar_layout.addLayout(pad_layout)
+                ar_layout.addLayout(max_scans_layout)
+                ar_container = QWidget()
+                ar_container.setLayout(ar_layout)
+                ar_container.setContentsMargins(24, 0, 0, 0)
+                ar_container.hide()
+                param_widget = ar_container
+                self.param_widgets[name] = {
+                    "threshold": threshold_edit,
+                    "pad": pad_edit,
+                    "max_artifact_scans": max_scans_edit,
+                }
             elif name == "Multiple Peak Detection":
                 # Parameters for multiple peak detection
                 mpd_layout = QVBoxLayout()
@@ -420,6 +497,16 @@ class ProcessingOptionsDialog(QDialog):
             )
         elif name == "Exponential Fitting":
             return ExponentialFitting()
+        elif name == "Artifact Removal":
+            params = self.param_widgets.get(name, {})
+            try:
+                threshold = float(params["threshold"].text())
+                pad = int(params["pad"].text())
+                raw_max = int(params["max_artifact_scans"].text())
+                max_artifact_scans = None if raw_max == 0 else raw_max
+            except (ValueError, KeyError):
+                threshold, pad, max_artifact_scans = 8, 2, None
+            return StimArtifactRemoval(threshold=threshold, pad=pad, max_artifact_scans=max_artifact_scans)
         else:
             return None
 
@@ -443,7 +530,13 @@ class ProcessingOptionsDialog(QDialog):
         # now save params
         out = {}
         for name, widget in self.param_widgets.items():
-            if name == "Multiple Peak Detection":
+            if name == "Artifact Removal":
+                out[name] = {
+                    "threshold": widget["threshold"].text(),
+                    "pad": widget["pad"].text(),
+                    "max_artifact_scans": widget["max_artifact_scans"].text(),
+                }
+            elif name == "Multiple Peak Detection":
                 # Special handling for multiple peak detection parameters
                 out[name] = {
                     "max_peaks": widget["max_peaks"].text(),
