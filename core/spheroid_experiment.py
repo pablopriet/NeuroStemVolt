@@ -10,6 +10,7 @@ from core.processing.normalize import Normalize
 from core.processing.sav_gol import SavitzkyGolayFilter
 from core.processing.background_subtraction import BackgroundSubtraction
 from core.processing.exponentialdecay import ExponentialFitting
+from core.processing.stim_artifact_removal import StimArtifactRemoval
 from core.utils import extract_timepoint
 import os
 
@@ -80,8 +81,10 @@ class SpheroidExperiment:
             # Note: When Normalize is enabled, FindAmplitude runs twice:
             #   1. Before Normalize to get the normalization factor
             #   2. After Normalize to find peaks on normalized data
+            artifact_processors = [StimArtifactRemoval()] if file_type == "Stimulation" else []
             self.processors = [
                 BackgroundSubtraction(region=(0, 10)),
+                *artifact_processors,
                 ButterworthFilter(),
                 BaselineCorrection(),
                 FindAmplitude(self.peak_position),  # First pass: find peak for normalization

@@ -9,6 +9,7 @@ from .background_subtraction import BackgroundSubtraction
 from .exponentialdecay import ExponentialFitting
 from .normalize import Normalize
 from .invert import InvertData
+from .stim_artifact_removal import StimArtifactRemoval
 
 __all__ = [
     "RawMean",
@@ -21,5 +22,6 @@ __all__ = [
     "BackgroundSubtraction",
     "ExponentialFitting",
     "Normalize",
-    "InvertData"
+    "InvertData",
+    "StimArtifactRemoval"
 ]
