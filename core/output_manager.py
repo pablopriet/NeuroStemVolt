@@ -1131,8 +1131,24 @@ class OutputManager:
                         if step in params:
                             param_info = params[step]
                             if isinstance(param_info, dict):
-                                for key, value in param_info.items():
-                                    log_file.write(f"   - {key}: {value}\n")
+                                if step == "Artifact Removal":
+                                    log_file.write(f"   - Threshold (MAD multiplier): {param_info.get('threshold', 'N/A')}\n")
+                                    log_file.write(f"   - Pad (extra scans per edge): {param_info.get('pad', 'N/A')}\n")
+                                    max_scans = param_info.get('max_artifact_scans', '0')
+                                    max_scans_label = "auto (2 × acquisition frequency)" if str(max_scans) == "0" else max_scans
+                                    log_file.write(f"   - Max Artifact Scans: {max_scans_label}\n")
+                                elif step == "Multiple Peak Detection":
+                                    log_file.write(f"   - Max Peaks: {param_info.get('max_peaks', 'N/A')}\n")
+                                    log_file.write(f"   - Min Prominence: {param_info.get('min_prominence', 'N/A')}\n")
+                                    log_file.write(f"   - Min Rise Window: {param_info.get('min_rise_window_sec', 'N/A')} s\n")
+                                    log_file.write(f"   - Max Rise Window: {param_info.get('max_rise_window_sec', 'N/A')} s\n")
+                                    log_file.write(f"   - Min Decay Window: {param_info.get('min_decay_window_sec', 'N/A')} s\n")
+                                    log_file.write(f"   - Max Decay Window: {param_info.get('max_decay_window_sec', 'N/A')} s\n")
+                                    log_file.write(f"   - CV Peak: {param_info.get('cv_peak', 'N/A')}\n")
+                                    log_file.write(f"   - Peak Height Threshold: {param_info.get('peak_height_threshold', 'N/A')}\n")
+                                else:
+                                    for key, value in param_info.items():
+                                        log_file.write(f"   - {key}: {value}\n")
                             elif isinstance(param_info, (list, tuple)):
                                 if step == "Background Subtraction":
                                     log_file.write(f"   - Region: start={param_info[0]}s, end={param_info[1]}s\n")
