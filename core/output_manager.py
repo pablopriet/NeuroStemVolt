@@ -561,7 +561,17 @@ class OutputManager:
     @staticmethod
     def save_all_exponential_fitting_params(group_experiments : GroupAnalysis, output_folder_path):
         """
-        Save exponential fitting parameters (A, tau, C) and related statistics over time.
+        Save exponential fitting parameters from the PER-REPLICATE-THEN-POOLED method.
+
+        For each file index, every replicate's post-peak IT trace is fit independently
+        with `f(t) = (A - C) * exp(-k * t) + C`, then summary statistics (mean, SE, SD,
+        95% CI) are pooled across replicates. Use this when you care about
+        between-replicate variability of the kinetics.
+
+        The companion `save_all_exponential_fitting_params_global` writes a SINGLE fit
+        of all replicates pooled into one dataset per file index. The two folders
+        (`exp_fit_per_replicate_then_pooled_stats` vs `exp_fit_global_to_all_replicates`)
+        are intentionally distinct so the difference is obvious from the filesystem.
 
         Args:
             group_experiments (GroupAnalysis): Group with time-series IT data.
@@ -585,22 +595,13 @@ class OutputManager:
             time_points = [interval * (i - n_before) for i in range(n_files)]
         else:
             time_points = [i * interval for i in range(n_files)]
-        
+
         # Build DataFrame with unpacked columns
         df = pd.DataFrame(params_matrix, columns=["A_fit",   "A_SE",   "A_SD",   "A_CI95",
                     "tau_fit", "tau_SE", "tau_SD", "tau_CI95",
                     "C_fit",   "C_SE",   "C_SD",   "C_CI95",
                     "t_half",  "t_half_SE", "t_half_SD", "t_half_CI95"])
-        
-        #df["Y0"] = df["A_fit"] + df["C_fit"]
-        #df["Y0_SE"] = np.sqrt(df["A_SE"]**2 + df["C_SE"]**2)
-        #df["Y0_SD"] = np.sqrt(df["A_SD"]**2 + df["C_SD"]**2)
-        #df["Y0_CI95"] = np.sqrt(df["A_CI95"]**2 + df["C_CI95"]**2)
         df.insert(0, "Time", time_points)
-
-        #y0_cols = ["Y0", "Y0_SE", "Y0_SD", "Y0_CI95"]
-        #new_order = ["Time"] + y0_cols + [c for c in df.columns if c not in (["Time"] + y0_cols)]
-        #df = df[new_order]
 
         df["tau_fit"]    = df["tau_fit"]    / freq
         df["tau_SE"]     = df["tau_SE"]     / freq
@@ -612,12 +613,104 @@ class OutputManager:
         df["t_half_SD"]  = df["t_half_SD"]  / freq
         df["t_half_CI95"]= df["t_half_CI95"]/ freq
 
-        # Save to CSV
-        output_folder = os.path.join(output_folder_path, "all_exponential_fit_params")
+        # Save to CSV — folder name describes the method explicitly.
+        output_folder = os.path.join(output_folder_path, "exp_fit_per_replicate_then_pooled_stats")
         os.makedirs(output_folder, exist_ok=True)
-        output_path = os.path.join(output_folder, "all_exp_fit_params.csv")
+        output_path = os.path.join(output_folder, "exp_fit_per_replicate_then_pooled_stats.csv")
         df.to_csv(output_path, index=False)
-        print(f"Saved all params for all replicates to {output_path}")
+        print(f"Saved per-replicate-then-pooled exp-fit params to {output_path}")
+
+    @staticmethod
+    def save_all_exponential_fitting_params_global(group_experiments : GroupAnalysis, output_folder_path):
+        """
+        Save exponential fitting parameters from the GLOBAL (single fit pooled across
+        replicates) method.
+
+        For each file index, all replicate post-peak IT traces are concatenated into a
+        single (t, I) dataset and ONE exponential `A * exp(-t / tau) + C` is fit to the
+        pooled data. Standard errors come from the covariance matrix of that single
+        fit; 95% CI uses z = 1.96. Use this when you want a single best-fit kinetic
+        per timepoint that weighs every sample of every replicate equally.
+
+        The companion `save_all_exponential_fitting_params` instead fits each replicate
+        independently and pools the *parameter* statistics, which captures between-
+        replicate variability. The two folders are named to make the distinction
+        obvious from the filesystem.
+
+        Args:
+            group_experiments (GroupAnalysis): Group with time-series IT data.
+            output_folder_path (str): Directory to write parameter outputs.
+
+        Returns:
+            None
+        """
+        experiments = group_experiments.get_experiments()
+        if not experiments:
+            return None
+
+        freq = experiments[0].get_acquisition_frequency()
+        n_files = experiments[0].get_file_count()
+        n_before = experiments[0].get_number_of_files_before_treatment()
+        interval = experiments[0].get_time_between_files()
+
+        if n_before > 0:
+            time_points = [interval * (i - n_before) for i in range(n_files)]
+        else:
+            time_points = [i * interval for i in range(n_files)]
+
+        z95 = 1.96
+        n_cols = 12
+        rows = []
+
+        # `exponential_fitting_replicated_legacy` adds files_before_treatment to its
+        # `replicate_time_point` arg, so to fit file index `t` we pass `t - n_before`.
+        for t in range(n_files):
+            rel_t = t - n_before
+            try:
+                result = group_experiments.exponential_fitting_replicated_legacy(
+                    replicate_time_point=rel_t
+                )
+                # Legacy returns a 4-tuple of Nones if no experiments; otherwise an 8-tuple.
+                if result is None or not isinstance(result, tuple) or len(result) < 8:
+                    raise ValueError("legacy fit returned no result")
+
+                _, _, t_half, popt, pcov, A_fit, tau_fit, C_fit = result
+
+                pcov = np.asarray(pcov, dtype=float)
+                if pcov.shape != (3, 3) or not np.all(np.isfinite(pcov)):
+                    raise ValueError("invalid covariance matrix")
+                perr = np.sqrt(np.maximum(np.diag(pcov), 0.0))
+                A_SE, tau_SE, C_SE = float(perr[0]), float(perr[1]), float(perr[2])
+                t_half_SE = float(abs(np.log(2) * tau_SE)) if np.isfinite(tau_SE) else np.nan
+
+                rows.append([
+                    float(A_fit),  A_SE,  z95 * A_SE,
+                    float(tau_fit), tau_SE, z95 * tau_SE,
+                    float(C_fit),  C_SE,  z95 * C_SE,
+                    float(t_half), t_half_SE, z95 * t_half_SE,
+                ])
+            except Exception as e:
+                print(f"[global exp-fit] file index {t}: skipping ({e})")
+                rows.append([np.nan] * n_cols)
+
+        df = pd.DataFrame(rows, columns=[
+            "A_fit",   "A_SE",   "A_CI95",
+            "tau_fit", "tau_SE", "tau_CI95",
+            "C_fit",   "C_SE",   "C_CI95",
+            "t_half",  "t_half_SE", "t_half_CI95",
+        ])
+        df.insert(0, "Time", time_points)
+
+        # tau and t_half come back in samples; convert to seconds.
+        for col in ("tau_fit", "tau_SE", "tau_CI95",
+                    "t_half", "t_half_SE", "t_half_CI95"):
+            df[col] = df[col] / freq
+
+        output_folder = os.path.join(output_folder_path, "exp_fit_global_to_all_replicates")
+        os.makedirs(output_folder, exist_ok=True)
+        output_path = os.path.join(output_folder, "exp_fit_global_to_all_replicates.csv")
+        df.to_csv(output_path, index=False)
+        print(f"Saved global (single-fit-to-all-replicates) exp-fit params to {output_path}")
 
     ### Methods for spheroid_files
     @staticmethod
