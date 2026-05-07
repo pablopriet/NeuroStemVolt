@@ -820,13 +820,27 @@ class GroupAnalysis:
 
             k0 = max(np.log(2) / half_idx, 1e-6)
 
+            y_min = float(np.min(y))
+            y_max = float(np.max(y))
+            y_range = max(y_max - y_min, 1e-12)
+            k_lower = 1.0 / (10.0 * n_points)
+            k_upper = 1.0
+            A_lower, A_upper = y_min - y_range, y_max + y_range
+            C_lower, C_upper = y_min - y_range, y_max + y_range
+            A0_clip = float(np.clip(A0, A_lower, A_upper))
+            C0_clip = float(np.clip(C0, C_lower, C_upper))
+            k0_clip = float(np.clip(k0, k_lower, k_upper))
+
             try:
                 popt, pcov = curve_fit(
                     _exp_decay,
                     time_axis,
                     y,
-                    p0=[A0, k0, C0],
-                    bounds=([-np.inf, 1e-12, -np.inf], [np.inf, np.inf, np.inf]),
+                    p0=[A0_clip, k0_clip, C0_clip],
+                    bounds=(
+                        [A_lower, k_lower, C_lower],
+                        [A_upper, k_upper, C_upper],
+                    ),
                     maxfev=20000,
                 )
                 errs = np.sqrt(np.diag(pcov))
@@ -1045,20 +1059,46 @@ class GroupAnalysis:
         A = np.arange(global_peak_amplitude_position, n_timepoints)
         time_all = np.tile(A, n_experiments)  # Repeat time point
 
-        # Improved initial guess for parameters
-        # A: amplitude (difference between max and min of cropped ITs)
-        # tau: decay constant (guess as 1/3 of the time range)
-        # C: baseline (last value of the mean trace)
+        # Initial guess derived from the model identity f(t)=A*exp(-t/tau)+C:
+        # C0 from the robust tail, A0 = f(0) - C0, tau0 from the half-life crossing.
         mean_trace = np.mean(cropped_ITs, axis=0)
-        A0 = float(np.max(mean_trace) - np.min(mean_trace))
-        tau0 = (n_timepoints - global_peak_amplitude_position) / 3.0
-        C0 = float(mean_trace[-1])
+        N_post = int(n_timepoints - global_peak_amplitude_position)
+        tail_n = max(3, int(np.ceil(0.1 * N_post)))
+        C0 = float(np.median(mean_trace[-tail_n:]))
+        A0 = float(mean_trace[0] - C0)
+
+        half_target = C0 + 0.5 * A0
+        if A0 >= 0:
+            half_candidates = np.where(mean_trace <= half_target)[0]
+        else:
+            half_candidates = np.where(mean_trace >= half_target)[0]
+        if half_candidates.size > 0 and half_candidates[0] > 0:
+            tau0 = float(half_candidates[0]) / np.log(2)
+        else:
+            tau0 = N_post / 3.0
+
+        # Bounds derived from the pooled data range to keep the fit physical.
+        y_min = float(np.min(ITs_flattened))
+        y_max = float(np.max(ITs_flattened))
+        y_range = max(y_max - y_min, 1e-12)
+        A_lower, A_upper = 0.0, 5.0 * y_range
+        tau_lower = 1.0
+        tau_upper = max(10.0 * N_post, tau_lower + 1.0)
+        C_lower, C_upper = y_min - y_range, y_max + y_range
+
+        A0 = float(np.clip(A0, A_lower, A_upper))
+        tau0 = float(np.clip(tau0, tau_lower, tau_upper))
+        C0 = float(np.clip(C0, C_lower, C_upper))
         p0 = [A0, tau0, C0]
 
         print(f"Initial guess: A={A0:.2f}, tau={tau0:.2f}, C={C0:.2f}")
 
         # Fit
-        popt, pcov = curve_fit(exp_decay, time_all, ITs_flattened, p0=p0)
+        popt, pcov = curve_fit(
+            exp_decay, time_all, ITs_flattened, p0=p0,
+            bounds=([A_lower, tau_lower, C_lower], [A_upper, tau_upper, C_upper]),
+            maxfev=20000,
+        )
 
         # Extract parameter estimates and standard errors
         A_fit, tau_fit, C_fit = popt
