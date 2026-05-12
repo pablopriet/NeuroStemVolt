@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import (
-    QApplication, QComboBox, QWizardPage, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QDialog, QProgressDialog, QSlider, QToolTip, QMessageBox
+    QApplication, QComboBox, QWizardPage, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QDialog, QProgressDialog, QSlider, QToolTip, QCheckBox, QMessageBox
 )
 from PyQt5.QtCore import QSettings, Qt, QEvent
 
@@ -8,6 +8,8 @@ from core.output_manager import OutputManager
 from ui.utils.styles import apply_custom_styles
 from ui.widgets.plot_canvas import PlotCanvas
 from ui.wizard_2_colorplot.processing_dialog import ProcessingOptionsDialog
+from ui.wizard_2_colorplot.peak_editor import PeakEditorDialog
+from ui.utils.peaks import meta_get_peaks_and_active, meta_set_peaks_and_active
 
 from core.output_manager import OutputManager
 from core.processing import *
@@ -91,25 +93,27 @@ class ColorPlotPage(QWizardPage):
         self.btn_export_all = QPushButton("Export All ITs")
         apply_custom_styles(self.btn_export_all)
         self.btn_export_all.clicked.connect(self.save_all_ITs)
-        self.btn_adj_peak = QPushButton("Apply Peak Adjustment")
-        apply_custom_styles(self.btn_adj_peak)
-        self.btn_adj_peak.clicked.connect(self.adjust_peak_position)
         for b in (self.btn_prev, self.btn_next, self.btn_eval, self.btn_filter,
-          self.btn_save, self.btn_export, self.btn_export_all, self.btn_adj_peak):
+          self.btn_save, self.btn_export, self.btn_export_all):
             b.setAutoDefault(False)
             b.setDefault(False)
 
-        self.peak_slider = QSlider(Qt.Orientation.Horizontal)
-        self.peak_slider.setMinimum(0)
-        self.peak_slider.setMaximum(600)
-        self.peak_slider.setValue(50)
-        self.peak_slider.setTickInterval(1)
-        self.peak_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
-        self.peak_slider.valueChanged.connect(self.on_peak_det_slider_value_changed)
-        self.peak_slider.setMaximumWidth(400)
-        self.peak_slider.setFixedHeight(30)
+        file_type = QSettings("HashemiLab", "NeuroStemVolt").value("file_type", "None", type=str)
 
-        self._set_peak_controls_enabled(False)
+        self.btn_adj_peak = None
+
+        self.btn_peak_click = None
+        self.btn_peak_click = QCheckBox("Edit on Plot")
+        self.btn_peak_click.setCheckable(True)
+        self.btn_peak_click.setToolTip("Left-click: add/make active; Right-click: remove nearest")
+        self.btn_peak_click.toggled.connect(self._enable_peak_click_mode)
+        self.btn_peak_click.toggled.connect(self._update_peak_click_style)
+        apply_custom_styles(self.btn_peak_click)
+
+
+        self.btn_edit_peaks = QPushButton("Edit Peaks")
+        apply_custom_styles(self.btn_edit_peaks)
+        self.btn_edit_peaks.clicked.connect(self.on_edit_peaks_clicked)
 
         left = QVBoxLayout()
         left.addWidget(self.btn_revert)
@@ -125,27 +129,31 @@ class ColorPlotPage(QWizardPage):
         left.addWidget(self.btn_save)
         left.addWidget(self.btn_export)
         left.addWidget(self.btn_export_all)
-        peak_label = QLabel("Peak Adjustment")
-        peak_label.setStyleSheet("font-size: 10pt; font-weight: bold;")
-        left.addWidget(peak_label)
-        left.addWidget(self.peak_slider)
-        left.addWidget(self.btn_adj_peak)
+        left.addStretch()
+        peak_edit_label = QLabel("Peak Editing:")
+        peak_edit_label.setStyleSheet("font_size:10pt; font-weight: bold; color: white;")
+        left.addWidget(peak_edit_label)
+        peak_edit_row = QHBoxLayout()
+        peak_edit_row.addWidget(self.btn_peak_click)
+        peak_edit_row.addWidget(self.btn_edit_peaks)
+        left.addLayout(peak_edit_row)
 
+
+        self.left_layout = left
 
         # Right plots
         self.main_plot = PlotCanvas(self, width=5, height=4)
-
         self.it_plot = PlotCanvas(self, width=4, height=3)
+        self.cv_plot = None
 
-        file_type = QSettings("HashemiLab", "NeuroStemVolt").value("file_type", "None", type=str)
         if file_type == "Spontaneous":
-            # Add CV plot canvas
-            self.cv_plot = PlotCanvas(self, width=2.5, height=2)
+            self.cv_plot = PlotCanvas(self, width=4, height=3)
 
         bottom = QHBoxLayout()
         bottom.addWidget(self.it_plot)
         if file_type == "Spontaneous":
-            bottom.addWidget(self.cv_plot)  # Add the CV plot here
+            bottom.addWidget(self.cv_plot)
+        self.bottom_layout = bottom
 
         right = QVBoxLayout()
         right.addWidget(self.main_plot)
@@ -156,6 +164,8 @@ class ColorPlotPage(QWizardPage):
         content_layout = QHBoxLayout()
         content_layout.addLayout(left)
         content_layout.addLayout(right)
+        content_layout.setStretch(0, 1)
+        content_layout.setStretch(1, 2)
         main_layout.addLayout(content_layout)
 
         # Footer
@@ -266,6 +276,9 @@ class ColorPlotPage(QWizardPage):
             canvas.fig.clear()
             canvas.draw()
 
+        self._peak_lines_color = []
+        self._peak_lines_it = []
+
     def on_replicate_changed(self, index):
         """
         Handles replicate selection changes.
@@ -325,11 +338,23 @@ class ColorPlotPage(QWizardPage):
             self.it_plot.plot_IT(processed_data=processed_data, metadata=metadata, peak_position=peak_pos,
                                  temp_peak_detection=self.temp_peak)
 
+            self._redraw_all_peak_overlays(sph_file)
+
             file_type = QSettings("HashemiLab", "NeuroStemVolt").value("file_type", "None", type=str)
             if file_type == "Spontaneous":
-                # Plot CV(s) correlated with detected peaks
+                if not hasattr(self, "cv_plot") or self.cv_plot is None:
+                    self.cv_plot = PlotCanvas(self, width=4, height=3)
+                    try:
+                        self.bottom_layout.addWidget(self.cv_plot)
+                    except Exception:
+                        pass
                 self.cv_plot.plot_cv(processed_data=processed_data, metadata=metadata,
-                                   title_suffix=f"File {self.current_file_index + 1}")
+                                     title_suffix=f"File {self.current_file_index + 1}")
+                if not hasattr(self, "chk_peak_click") or not self.chk_peak_click:
+                    self.chk_peak_click = QCheckBox("Click to edit peaks")
+                    self.chk_peak_click.setToolTip("Left-click: add/make active; Right-click: remove nearest")
+                    self.chk_peak_click.toggled.connect(self._enable_peak_click_mode)
+                    self.left_layout.addWidget(self.chk_peak_click)
 
         except IndexError:
             # Handle error case
@@ -350,94 +375,6 @@ class ColorPlotPage(QWizardPage):
         if self.current_file_index > 0:
             self.current_file_index -= 1
             self.cbo_file.setCurrentIndex(self.current_file_index)
-
-    def on_peak_det_slider_value_changed(self, changed_value):
-        if not self.peak_slider.isEnabled() or not self.isComplete():
-            return
-        self.temp_peak = changed_value
-        self.update_file_display()
-
-    def adjust_peak_position(self):
-        if self.temp_peak is not None:
-            try:
-                group_analysis = self.wizard().group_analysis
-                if group_analysis and group_analysis.get_experiments():
-                    current_exp = group_analysis.get_single_experiments(self.current_rep_index)
-                    if current_exp:
-                        print(f"DEBUG: Adjusting to voltage position {self.temp_peak}")
-
-                        # Use the mapping to get the actual file index
-                        if (self.file_index_mapping and
-                                self.current_file_index < len(self.file_index_mapping)):
-                            actual_file_index = self.file_index_mapping[self.current_file_index]
-                        else:
-                            # Fallback if mapping is not available
-                            actual_file_index = self.current_file_index
-                        # Get the current file
-                        current_file = current_exp.get_spheroid_file(actual_file_index)
-
-                        # Get the processed data to calculate the new peak value
-                        processed_data = current_file.get_processed_data()
-                        if processed_data is not None and self.temp_peak < processed_data.shape[1]:
-                            # Get the IT profile at the new voltage position
-
-                            new_peak_value = 0
-                            metadata = current_file.get_metadata()
-                            new_peak_time_index = self.temp_peak
-                            new_peak_value = processed_data[new_peak_time_index, metadata["peak_position"]]
-
-
-                            print(
-                                f"DEBUG: At voltage {self.temp_peak}: peak_value={new_peak_value:.3f}, time_index={new_peak_time_index}")
-                        else:
-                            new_peak_value = 0.0
-                            new_peak_time_index = 0
-
-                        # Update metadata
-                        update_dict = {
-                            'peak_amplitude_positions': new_peak_time_index,
-                            'peak_amplitude_values': new_peak_value
-                        }
-                        current_file.update_metadata(update_dict)
-                        print(f"DEBUG: Updated metadata - positions: {new_peak_time_index}, values: {new_peak_value}")
-
-                        # **DIRECTLY UPDATE THE PLOTS WITHOUT CALLING update_file_display()**
-                        # This prevents any processing pipeline from overwriting our manual metadata
-                        try:
-                            peak_pos = QSettings("HashemiLab", "NeuroStemVolt").value("peak_position")
-
-                            # Get the CURRENT metadata (which should have our manual values)
-                            current_metadata = current_file.get_metadata()
-                            print(
-                                f"DEBUG: Using metadata for display: positions={current_metadata.get('peak_amplitude_positions')}, values={current_metadata.get('peak_amplitude_values')}")
-
-                            # Update plots directly
-                            self.main_plot.plot_color(processed_data=processed_data, peak_pos=peak_pos)
-                            self.it_plot.plot_IT(processed_data=processed_data, metadata=current_metadata,
-                                                 peak_position=peak_pos)
-
-                            file_type = QSettings("HashemiLab", "NeuroStemVolt").value("file_type", "None", type=str)
-                            if file_type == "Spontaneous":
-                                self.cv_plot.plot_cv(processed_data=processed_data, metadata=current_metadata,
-                                                     title_suffix=f"File {self.current_file_index + 1}")
-
-                            print("DEBUG: Plots updated directly with manual metadata")
-
-                        except Exception as plot_error:
-                            print(f"Error updating plots directly: {plot_error}")
-                            # Fallback to normal update if direct update fails
-                            self.update_file_display()
-
-                        print(
-                            f"Applied peak amplitude update at voltage position: {self.temp_peak}, time index: {new_peak_time_index}, value: {new_peak_value:.3f}")
-
-                        # Reset temp value
-                        self.temp_peak = None
-            except Exception as e:
-                print(f"Error applying peak detection change: {e}")
-                import traceback
-                traceback.print_exc()
-        self.completeChanged.emit()
 
     def run_processing(self):
         """
@@ -510,7 +447,6 @@ class ColorPlotPage(QWizardPage):
         group_analysis = self.wizard().group_analysis
         for exp in group_analysis.get_experiments():
             exp.revert_processing()
-        # disarm the slider & clear temp point
         self._set_peak_controls_enabled(False)
         self.update_file_display()
         self.completeChanged.emit()
@@ -640,6 +576,203 @@ class ColorPlotPage(QWizardPage):
 
         return True  # allow transition to next page
 
+    def _enable_peak_click_mode(self, enabled: bool):
+        canvases = []
+        if hasattr(self, "main_plot") and hasattr(self.main_plot, "fig"):
+            canvases.append(self.main_plot.fig.canvas)
+        if hasattr(self, "it_plot") and hasattr(self.it_plot, "fig"):
+            canvases.append(self.it_plot.fig.canvas)
+        if not hasattr(self, "_mpl_cids"):
+            self._mpl_cids = []
+        for (cv, cid) in list(self._mpl_cids):
+            try: cv.mpl_disconnect(cid)
+            except Exception: pass
+        self._mpl_cids = []
+        if enabled:
+            for cv in canvases:
+                try: cid = cv.mpl_connect("button_press_event", self._on_plot_click)
+                except Exception: cid = None
+                self._mpl_cids.append((cv, cid))
+
+    def _update_peak_click_style(self, checked: bool):
+        if checked:
+            self.btn_peak_click.setText("Edit on Plot ✎")
+            self.btn_peak_click.setStyleSheet(
+                "background-color: #e67e22; color: white; font-weight: bold; border-radius: 12px; padding: 6px;")
+        else:
+            self.btn_peak_click.setText("Edit on Plot")
+            apply_custom_styles(self.btn_peak_click)
+
+    def _on_plot_click(self, ev):
+        """Generic handler: left-click add/make active; right-click remove-nearest.
+        Converts x to sample index depending on which axes was clicked (IT = seconds).
+        """
+        if ev.inaxes is None or ev.xdata is None:
+            return
+        group_analysis = self.wizard().group_analysis
+        exp = group_analysis.get_single_experiments(self.current_rep_index)
+        actual = self.file_index_mapping[self.current_file_index] if (
+                self.file_index_mapping and self.current_file_index < len(
+            self.file_index_mapping)) else self.current_file_index
+        file_obj = exp.get_spheroid_file(actual)
+
+        md = file_obj.get_metadata() or {}
+        peaks, active = meta_get_peaks_and_active(md)
+
+        # Determine if click came from the IT axes (seconds) or colour plot (samples)
+        it_ax = None
+        try:
+            it_ax = self.it_plot.fig.axes[0] if self.it_plot and self.it_plot.fig.axes else None
+        except Exception:
+            it_ax = None
+        is_it_axis = (it_ax is not None and ev.inaxes is it_ax)
+
+        # Sampling frequency for IT seconds→samples conversion
+        fs = md.get('acquisition_frequency', 1)
+        try:
+            fs = float(fs)
+        except Exception:
+            fs = 1.0
+        fs = max(fs, 1.0)
+
+        # Convert x to sample index
+        if is_it_axis:
+            x_sec = max(0.0, float(ev.xdata))
+            idx = int(round(x_sec * fs))
+        else:
+            idx = int(round(ev.xdata))
+
+        # Clamp to data length
+        total_len = None
+        try:
+            it = getattr(file_obj, 'get_processed_data_IT', lambda: None)()
+            if it is not None:
+                total_len = len(it)
+        except Exception:
+            total_len = None
+        if total_len is None:
+            try:
+                mat = getattr(file_obj, 'get_processed_data', lambda: None)()
+                if mat is not None:
+                    total_len = mat.shape[0]
+            except Exception:
+                total_len = None
+        if total_len is None:
+            total_len = idx + 1
+        idx = max(0, min(idx, int(total_len) - 1))
+
+        # Apply change
+        if ev.button == 1:  # left add/make active
+            peaks.append(idx)
+            seen, uniq = set(), []
+            for p in peaks:
+                if p not in seen:
+                    uniq.append(p);
+                    seen.add(p)
+            active = uniq.index(idx)
+            meta_set_peaks_and_active(file_obj, uniq, active)
+        elif ev.button == 3:  # right remove nearest
+            if peaks:
+                nearest = min(range(len(peaks)), key=lambda i: abs(peaks[i] - idx))
+                del peaks[nearest]
+                active = 0 if not peaks else max(0, min(active, len(peaks) - 1))
+                meta_set_peaks_and_active(file_obj, peaks, active)
+
+        self._refresh_plots_for_file(file_obj)
+
+    def _draw_peak_overlays_color(self, file_obj):
+        md = file_obj.get_metadata() or {}
+        peaks, active = meta_get_peaks_and_active(md)
+        if not self.main_plot.fig.axes: return
+        ax = self.main_plot.fig.axes[0]
+        if not hasattr(self, "_peak_lines_color"): self._peak_lines_color = []
+        for ln in self._peak_lines_color:
+            try: ln.remove()
+            except Exception: pass
+        self._peak_lines_color = []
+        for i, p in enumerate(peaks):
+            ln = ax.axvline(x=float(p),
+                            color="white" if i == active else "red",
+                            linewidth=2.5 if i == active else 1.5,
+                            linestyle="--" if i == active else ":",
+                            alpha=0.9 if i == active else 0.5)
+            self._peak_lines_color.append(ln)
+        self.main_plot.fig.canvas.draw_idle()
+
+    def _draw_peak_overlays_it(self, file_obj):
+        md = file_obj.get_metadata() or {}
+        peaks, active = meta_get_peaks_and_active(md)
+        if not self.it_plot.fig.axes: return
+        ax = self.it_plot.fig.axes[0]
+        if not hasattr(self, "_peak_lines_it"): self._peak_lines_it = []
+        for ln in self._peak_lines_it:
+            try: ln.remove()
+            except Exception: pass
+        self._peak_lines_it = []
+        settings = QSettings("HashemiLab", "NeuroStemVolt")
+        try: fs = max(float(md.get('acquisition_frequency', settings.value("acquisition_frequency", 10, type=int))), 1.0)
+        except Exception: fs = 10.0
+        for i, p in enumerate(peaks):
+            ln = ax.axvline(x=float(p)/fs,
+                            color="black" if i == active else "red",
+                            linewidth=2.5 if i == active else 1.0,
+                            linestyle="--" if i == active else ":",
+                            alpha=0.9 if i == active else 0.5)
+            self._peak_lines_it.append(ln)
+        self.it_plot.fig.canvas.draw_idle()
+
+    def _redraw_all_peak_overlays(self, file_obj):
+        self._draw_peak_overlays_color(file_obj)
+        self._draw_peak_overlays_it(file_obj)
+
+    def _refresh_plots_for_file(self, file_obj):
+        try:
+            processed = file_obj.get_processed_data()
+            metadata = file_obj.get_metadata() or {}
+            peak_pos = QSettings("HashemiLab", "NeuroStemVolt").value("peak_position")
+            self.main_plot.plot_color(processed_data=processed, peak_pos=peak_pos)
+            self.it_plot.plot_IT(processed_data=processed, metadata=metadata,
+                                 peak_position=peak_pos, temp_peak_detection=self.temp_peak)
+            self._redraw_all_peak_overlays(file_obj)
+        except Exception as e:
+            print(f"ERROR: _refresh_plots_for_file failed: {e}")
+
+    def on_edit_peaks_clicked(self):
+        group_analysis = self.wizard().group_analysis
+        exp = group_analysis.get_single_experiments(self.current_rep_index)
+        actual = self.file_index_mapping[self.current_file_index] if (
+            self.file_index_mapping and self.current_file_index < len(self.file_index_mapping)) else self.current_file_index
+        file_obj = exp.get_spheroid_file(actual)
+        md = file_obj.get_metadata() or {}
+        peaks, active = meta_get_peaks_and_active(md)
+        processed = file_obj.get_processed_data()
+        max_index = int(processed.shape[0] - 1) if processed is not None else 0
+        canvases = []
+        if hasattr(self.main_plot, 'fig'): canvases.append(self.main_plot.fig.canvas)
+        if hasattr(self.it_plot, 'fig'): canvases.append(self.it_plot.fig.canvas)
+        try: acq_freq = max(float(md.get('acquisition_frequency', 10)), 1.0)
+        except Exception: acq_freq = 10.0
+        file_type = QSettings("HashemiLab", "NeuroStemVolt").value("file_type", "None", type=str)
+        dlg = PeakEditorDialog(peaks, active_idx=active, max_index=max_index, canvases=canvases,
+                               file_type=file_type, acq_freq=acq_freq, parent=self)
+        def _on_peaks_changed(new_peaks, new_active):
+            meta_set_peaks_and_active(file_obj, new_peaks, new_active)
+            self._refresh_plots_for_file(file_obj)
+        try: dlg.peaks_changed.connect(_on_peaks_changed)
+        except Exception: pass
+        if dlg.exec_() == QDialog.Accepted:
+            try:
+                new_peaks, new_active = dlg.result()
+                meta_set_peaks_and_active(file_obj, new_peaks, new_active)
+            except Exception: pass
+            self._refresh_plots_for_file(file_obj)
+
+    def _set_peak_controls_enabled(self, enabled: bool):
+        if self.btn_adj_peak is not None:
+            self.btn_adj_peak.setEnabled(enabled)
+        if not enabled:
+            self.temp_peak = None
+
     def save_all_ITs(self):
         """
         Saves all I-T profiles from all experiments to the specified output folder.
@@ -666,13 +799,3 @@ class ColorPlotPage(QWizardPage):
         sph_file = exp.get_spheroid_file(self.current_file_index)
         output_folder_path = QSettings("HashemiLab", "NeuroStemVolt").value("output_folder")
         OutputManager.save_IT_profile(sph_file,output_folder_path)
-
-    def _set_peak_controls_enabled(self, enabled: bool):
-        """
-        
-        """
-        self.peak_slider.setEnabled(enabled)
-        self.btn_adj_peak.setEnabled(enabled)
-        if not enabled:
-            # also clear any temporary selection so nothing is drawn
-            self.temp_peak = None

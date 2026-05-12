@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QPushButton, QListWidget
+from PyQt5.QtWidgets import QPushButton, QListWidget, QCheckBox
 
 def apply_custom_styles(widget):
     """
@@ -95,5 +95,23 @@ def apply_custom_styles(widget):
                 font-weight: bold;
                 border-radius: 8px;
                 padding: 4px;
+            }
+        """)
+    elif isinstance(widget, QCheckBox):
+        widget.setStyleSheet("""
+            QCheckBox {
+                background-color: #21AE62;
+                color: white;
+                font-family: Arial, sans-serif;
+                font-weight: bold;
+                border-radius: 10px;
+                padding: 6px 12px;
+            }
+            QCheckBox:hover {
+                background-color: #1E9955;
+            }
+            QCheckBox:disabled {
+                background-color: #A0D5BA;
+                color: white;
             }
         """)
