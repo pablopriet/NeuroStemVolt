@@ -25,9 +25,7 @@ def extract_timepoint(filepath):
     Both conventions sort correctly and produce the same timepoint labels!
 
     Handles multiple naming patterns:
-    - Sequence + timepoint format: "04_-30_COLOR.txt" → -30 (extracts SECOND number)
     - Underscore-prefixed numbers: "file_-30_COLOR.txt" → -30 (for sorting)
-    - Leading negative number: "-30_COLOR.txt" → -30 (for sorting)
     - Leading numbers: "01 recording.txt" → 1 (for sorting)
     - Generic numbers: "recording_120.txt" → 120 (for sorting)
 
@@ -40,31 +38,19 @@ def extract_timepoint(filepath):
     import os
     filename = os.path.basename(filepath)
     
-    # Pattern 1: Sequence_Timepoint format: "04_-30_COLOR.txt" → -30
-    # Matches: digits, underscore, (capture: optional minus + digits), underscore
-    # This ensures we get the SECOND number (timepoint) not the first (sequence)
-    match = re.search(r"^\d+_(-?\d+)_", filename)
+    # Pattern 1: Underscore followed by a (possibly negative) number (original format)
+    # e.g., "05_-30_COLOR.txt" → -30
+    match = re.search(r"_(\-?\d+)", filename)
     if match:
         return int(match.group(1))
     
-    # Pattern 2: Leading negative number at start: "-30_COLOR.txt" → -30
-    match = re.search(r"^(-?\d+)_", filename)
-    if match:
-        return int(match.group(1))
-    
-    # Pattern 3: Underscore followed by a (possibly negative) number
-    # e.g., "file_-30_COLOR.txt" → -30
-    match = re.search(r"_(-?\d+)", filename)
-    if match:
-        return int(match.group(1))
-    
-    # Pattern 4: Leading number at start of filename (new format)
+    # Pattern 2: Leading number at start of filename (new format)
     # e.g., "01 recording.txt" → 1, "16_recording.txt" → 16
     match = re.search(r"^(\d+)", filename)
     if match:
         return int(match.group(1))
     
-    # Pattern 5: Any number in the filename as fallback
+    # Pattern 3: Any number in the filename as fallback
     match = re.search(r"(\d+)", filename)
     if match:
         return int(match.group(1))

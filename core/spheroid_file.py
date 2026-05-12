@@ -29,8 +29,7 @@ class SpheroidFile:
         self.filepath = filepath
         self.raw_data = self.load_data()
         self.acq_freq = acq_freq
-        self.calibrated_data = self.raw_data  # Initially same as raw
-        self.processed_data = self.calibrated_data
+        self.processed_data = self.raw_data
         # Default peak position for serotonin (5HT) in FSCV plots
         self.peak_position = 257
         self.window_size = None  # Default window size for rolling mean or smoothing
@@ -41,15 +40,9 @@ class SpheroidFile:
             f"Loaded SpheroidFile from {self.filepath} with shape {self.raw_data.shape} and waveform {self.waveform}")
 
     def load_data(self):
-        # Transpose to match (time points, voltage steps)
-        initial_data = np.loadtxt(self.filepath)
-        if initial_data.ndim != 2:
-            raise ValueError(
-                f"Expected a 2D data file (voltage_steps × time_points), but '{self.filepath}' "
-                f"loaded as shape {initial_data.shape}. "
-                f"The file may be empty, have only one row, or be corrupted. Check that you arent trying to load ITs!"
-            )
-        data = -initial_data.T  # Invert the data since FSCV txt color plots will be inverted
+        # Transpose to match (voltage steps, time points)
+        initial_data = np.loadtxt(self.filepath).T
+        data = -initial_data  # Invert the data since FSCV txt color plots will be inverted
         return data
 
     def set_peak_position(self, peak_position):
@@ -77,7 +70,7 @@ class SpheroidFile:
         Returns:
             np.ndarray: Unprocessed current-time data.
         """
-        return self.calibrated_data[:, self.peak_position] 
+        return self.raw_data[:, self.peak_position] 
     
     def get_processed_data(self):
         """
@@ -88,14 +81,6 @@ class SpheroidFile:
         """
         return self.processed_data
     
-    def apply_calibration(self, slope, intercept):
-        #print("Applying slope and intercept")
-        #print(slope, intercept)
-        print("slope:", repr(slope), "intercept:", repr(intercept),
-      "types:", type(slope), type(intercept))
-        self.calibrated_data = (self.raw_data - intercept)/ slope
-        self.processed_data = self.calibrated_data  # Reset processed to calibrated
-
     def set_processed_data_as_original(self):
         """
         Reset the processed data to the original raw input.
@@ -103,7 +88,7 @@ class SpheroidFile:
         Returns:
             None
         """
-        self.processed_data = self.calibrated_data
+        self.processed_data = self.raw_data
         self.metadata['peak_amplitude_positions'] = None
         self.metadata['peak_amplitude_values'] = None
         self.metadata['decay_validation_params'] = None
@@ -465,16 +450,10 @@ class SpheroidFile:
                 "Peak amplitude positions are missing from metadata.")
 
         peak_positions = self.metadata["peak_amplitude_positions"]
-        # Handle both scalar (Stimulation) and list (Spontaneous) formats
-        if isinstance(peak_positions, (list, tuple)):
-            if len(peak_positions) == 0:
-                raise ValueError("No peak positions found in metadata.")
-            peak_position = int(peak_positions[0])
-        else:
-            try:
-                peak_position = int(peak_positions)
-            except (TypeError, ValueError):
-                raise ValueError("Invalid peak position in metadata.")
+        if len(peak_positions) == 0:
+            raise ValueError("No peak positions found in metadata.")
+
+        peak_position = int(peak_positions[0])  # Use the first peak position
 
         # Slice the profile starting from the peak position
         y = profile[peak_position:]
@@ -616,34 +595,21 @@ class Waveforms:
             voltage.extend(list(np.linspace(start, end, npts, endpoint=False)))
         return np.array(voltage)
 
+
 class PLOT_SETTINGS:
     def __init__(self):
-        # Original color anchors — untouched
-        hex_list = ['#001524', '#002f5e', '#f4c300', '#a84900',
-                    '#64005f', '#21AE62', '#00751c', '#00ff00']
-        original_positions = [0, 0.2478, 0.3805, 0.6555, 0.701, 0.7603, 0.7779, 1]
-
-        self.custom = self.get_continuous_cmap(hex_list, original_positions)
-
-    def get_norm(self, data, clim=None):
-        """
-        Fixed 3:2 ratio norm.
-        Zero always maps to ~0.6 on the colormap (between yellow and orange).
-
-        Args:
-            data: the FSCV data array
-            clim: optional positive limit (e.g., 1.5).
-                  Negative limit is auto-set to -clim.
-                  Positive limit becomes (2/3) × clim.
-        """
-        if clim is None:
-            clim = np.nanmax(np.abs(data))
-        return mcolors.Normalize(vmin=-clim, vmax=(2 / 3) * clim)
+        # Custom colormap only
+        self.custom = self.get_continuous_cmap(
+            ['#001524', '#002f5e', '#f4c300', '#a84900',
+                '#64005f', '#21AE62', '#00751c', '#00ff00'],
+            [0, 0.2478, 0.3805, 0.6555, 0.701, 0.7603, 0.7779, 1]
+        )
 
     def get_continuous_cmap(self, hex_list, float_list=None):
         rgb_list = [self.rgb_to_dec(self.hex_to_rgb(i)) for i in hex_list]
         if float_list is None:
             float_list = list(np.linspace(0, 1, len(rgb_list)))
+
         cdict = dict()
         for num, col in enumerate(['red', 'green', 'blue']):
             col_list = [[float_list[i], rgb_list[i][num], rgb_list[i][num]]
@@ -659,7 +625,7 @@ class PLOT_SETTINGS:
         return tuple(int(value[i:i + lv // 3], 16) for i in range(0, lv, lv // 3))
 
     def rgb_to_dec(self, value):
-        return [v / 256 for v in value]
+        return [v/256 for v in value]
 
 
 if __name__ == "__main__":

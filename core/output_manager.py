@@ -4,8 +4,6 @@ import os
 import pandas as pd
 import numpy as np
 from scipy.stats import sem
-from datetime import datetime
-import json
 
 class OutputManager:
     @staticmethod
@@ -25,32 +23,23 @@ class OutputManager:
         n_experiments = len(group_experiments.get_experiments())
         if n_experiments == 0:
             return None
-
+        # Initialise the matrix 
         for i, experiment in enumerate(group_experiments.get_experiments()):
             it_matrix = []
             file_names = []
-            # collect ITs and file names
             for j, spheroid_file in enumerate(experiment.files):
                 IT_individual = spheroid_file.get_processed_data_IT()
-                if IT_individual is None:
-                    IT_individual = np.array([], dtype=float)
-                it_matrix.append(np.asarray(IT_individual, dtype=float))
+                it_matrix.append(IT_individual)
                 file_name = spheroid_file.get_filepath()
                 file_names.append(file_name)
-            # determine max length and pad with zeros
-            if len(it_matrix) == 0:
-                continue
-            max_len = max(arr.size for arr in it_matrix)
-            try:
-                it_matrix_padded = [np.pad(arr, (0, max_len - arr.size), mode='edge') for arr in it_matrix]
-            except Exception:
-                it_matrix_padded = [np.pad(arr, (0, max_len - arr.size), mode='constant', constant_values=0.0) for arr in it_matrix]
             # Transpose so each column is a file
-            df = pd.DataFrame(it_matrix_padded).T
-            df.columns = [os.path.basename(f) for f in file_names]
+            df = pd.DataFrame(it_matrix).T
+            df.columns = [f"File_{i}" for i in range(len(file_names))]
+            df.columns = [file_name.split("/")[-1] for file_name in file_names]
             output_csv = "All_ITs_experiment_n{0}.csv".format(i)
             output_IT_folder = os.path.join(output_folder_path,"replicate_ITs")
-            os.makedirs(output_IT_folder, exist_ok=True)
+            if os.path.isdir(output_IT_folder) == False:
+                os.mkdir(output_IT_folder)
             output_path = os.path.join(output_IT_folder, output_csv)
             df.to_csv(output_path, index_label="TimePoint")
 
@@ -69,41 +58,37 @@ class OutputManager:
         # This function takes all experiments (after processing) 
         # and creates output_csv files for all of them
         experiments = group_experiments.get_experiments()
-        if not experiments:
+        n_experiments = len(group_experiments.get_experiments())
+        n_ITs = group_experiments.get_experiments()[0].get_file_count()
+        n_timepoints = group_experiments.get_experiments()[0].get_file_time_points()
+        if n_experiments == 0:
             return None
-
-        # Build list of columns (replicate, file) and collect all IT arrays
+        # Initialise the matrix
         arrays = []
-        it_series = []
+        data = []
+        # For each experiment (replicate)
         for exp_idx, experiment in enumerate(experiments):
             rep_name = f"Rep{exp_idx+1}"
             for file_idx, spheroid_file in enumerate(experiment.files):
                 file_short = os.path.basename(spheroid_file.get_filepath())
-                arrays.append((rep_name, file_short))
-                IT_individual = spheroid_file.get_processed_data_IT()
-                if IT_individual is None:
-                    IT_individual = np.array([], dtype=float)
-                it_series.append(np.asarray(IT_individual, dtype=float))
+                arrays.append((rep_name, file_short))    
+                
+        for t in range(n_timepoints):
+            row = []
+            for exp_idx, experiment in enumerate(experiments):
+                for file_idx, spheroid_file in enumerate(experiment.files):
+                    IT_individual = spheroid_file.get_processed_data_IT()
+                    if t < len(IT_individual):
+                        row.append(IT_individual[t])
+                    else:
+                        row.append(None)
+            data.append(row)
 
-        if len(it_series) == 0:
-            return None
+        # Create time axis in seconds
+        acq_freq = group_experiments.get_single_experiments(0).get_acquisition_frequency()
+        time_seconds = np.arange(n_timepoints) / acq_freq
 
-        # Determine max length across all ITs and pad with zeros
-        max_len = max(arr.size for arr in it_series)
-        try:
-            padded_series = [np.pad(arr, (0, max_len - arr.size), mode='edge') for arr in it_series]
-        except Exception:
-            padded_series = [np.pad(arr, (0, max_len - arr.size), mode='constant', constant_values=0.0) for arr in it_series]
-        data = np.column_stack(padded_series)
-
-        # Create time axis in seconds (use acquisition freq from first experiment if available)
-        try:
-            acq_freq = experiments[0].get_acquisition_frequency()
-            time_seconds = np.arange(max_len) / acq_freq
-        except Exception:
-            time_seconds = np.arange(max_len)
-
-        # Create MultiIndex columns and DataFrame
+        # Create MultiIndex columns
         columns = pd.MultiIndex.from_tuples(arrays, names=["Replicate", "File"])
         df = pd.DataFrame(data, columns=columns)
         df.index = time_seconds
@@ -116,16 +101,16 @@ class OutputManager:
         df.to_csv(output_path)
         print(f"Saved all ITs for all replicates to {output_path}")
 
-        # paired view
-        try:
-            df_paired = df.swaplevel("Replicate","File", axis=1).sort_index(axis=1)
-            paired_folder = os.path.join(output_folder_path, "all_replicates_ITs_paired")
-            os.makedirs(paired_folder, exist_ok=True)
-            paired_path = os.path.join(paired_folder, "All_ITs_all_replicates_paired_by_file.csv")
-            df_paired.to_csv(paired_path)
-            print(f"Saved paired ITs (same file side-by-side) to {paired_path}")
-        except Exception:
-            pass
+        df_paired = df.swaplevel("Replicate","File", axis=1)   \
+                      .sort_index(axis=1)                    
+
+        paired_folder = os.path.join(output_folder_path,
+                                     "all_replicates_ITs_paired")
+        os.makedirs(paired_folder, exist_ok=True)
+        paired_path = os.path.join(paired_folder,
+                                   "All_ITs_all_replicates_paired_by_file.csv")
+        df_paired.to_csv(paired_path)
+        print(f"Saved paired ITs (same file side-by-side) to {paired_path}")
         
     @staticmethod
     def save_original_ITs(group_experiments : GroupAnalysis, output_folder_path):
@@ -349,97 +334,48 @@ class OutputManager:
         keys = ['peak_amplitude_values', 'peak_amplitude_positions']
 
         experiments = group_experiments.get_experiments()
-        if not experiments:
-            print("No experiments available to export peak amplitudes.")
-            return None
-
+        acq_freq = experiments[0].get_acquisition_frequency()
         n_experiments = len(experiments)
-        # determine maximum number of files across experiments
-        max_files = max(getattr(exp, 'get_file_count', lambda: len(getattr(exp, 'files', [])))() for exp in experiments)
+        n_files = experiments[0].get_file_count()
+        n_before = experiments[0].get_number_of_files_before_treatment()
+        interval = experiments[0].get_time_between_files()  # e.g., 10
 
-        # timing parameters (use first experiment defaults if present)
-        try:
-            n_before = experiments[0].get_number_of_files_before_treatment()
-            interval = experiments[0].get_time_between_files()
-        except Exception:
-            n_before = 0
-            interval = 0
-
-        # build time axis using max_files
+        if n_experiments == 0:
+            return None
+        # Initialise the time axis (first column)
         if n_before > 0:
-            time_points = [interval * (i - n_before) for i in range(max_files)]
+            time_points = [interval * (i - n_before) for i in range(n_files)]
         else:
-            time_points = [i * interval for i in range(max_files)]
+            time_points = [i * interval for i in range(n_files)]
 
-        # prepare DataFrames indexed by file index, columns per replicate
-        rep_cols = [f"Rep{idx+1}" for idx in range(n_experiments)]
-        df_amp = pd.DataFrame(index=range(max_files), columns=rep_cols, dtype=float)
-        df_pos = pd.DataFrame(index=range(max_files), columns=rep_cols, dtype=float)
+        all_amplitudes = []
+        all_amplitude_pos = []
+        for i, experiment in enumerate(group_experiments.get_experiments()):
+            records_amp = []
+            records_pos = []
+            for j, spheroid_file in enumerate(experiment.files):
+                meta = spheroid_file.get_metadata()
+                # Save only selected keys
+                records_amp.append(meta.get(keys[0], None) if keys else meta)
+                records_pos.append(meta.get(keys[1], None) if keys else meta)
+            all_amplitudes.append(records_amp)
+            all_amplitude_pos.append(records_pos)
+        
+        # Build DataFrame
+        df_amp = pd.DataFrame(all_amplitudes).T  # shape: (n_files, n_experiments)
+        df_pos = pd.DataFrame(all_amplitude_pos).T / acq_freq
 
-        # fill with NaN by default (already NaN)
-        for exp_idx, exp in enumerate(experiments):
-            col = f"Rep{exp_idx+1}"
-            try:
-                file_count = exp.get_file_count()
-            except Exception:
-                file_count = len(getattr(exp, "files", []))
-            for file_idx in range(file_count):
-                try:
-                    sf = exp.get_spheroid_file(file_idx)
-                except Exception:
-                    continue
-                try:
-                    meta = sf.get_metadata() or {}
-                except Exception:
-                    meta = {}
+        df_amp.columns = [f"Rep{idx+1}" for idx in range(n_experiments)]
+        df_pos.columns = [f"Rep{idx+1}" for idx in range(n_experiments)]
 
-                # amplitude
-                amp_raw = meta.get('peak_amplitude_values', None)
-                amp_val = None
-                if amp_raw is not None:
-                    try:
-                        arr = np.asarray(amp_raw)
-                        if arr.size == 0:
-                            amp_val = np.nan
-                        else:
-                            amp_val = float(arr.ravel()[0])
-                    except Exception:
-                        try:
-                            amp_val = float(amp_raw)
-                        except Exception:
-                            amp_val = np.nan
-                # position (convert to seconds if numeric)
-                pos_raw = meta.get('peak_amplitude_positions', None)
-                pos_val = None
-                if pos_raw is not None:
-                    try:
-                        parr = np.asarray(pos_raw)
-                        if parr.size == 0:
-                            pos_val = np.nan
-                        else:
-                            pos_val = float(parr.ravel()[0]) / (experiments[0].get_acquisition_frequency() or 1.0)
-                    except Exception:
-                        try:
-                            pos_val = float(pos_raw) / (experiments[0].get_acquisition_frequency() or 1.0)
-                        except Exception:
-                            pos_val = np.nan
+        df = pd.concat({'Amplitude': df_amp, 'Position (s)': df_pos}, axis=1)
+        df.insert(0, "Time", time_points)
 
-                # assign into DataFrames (leave NaN if missing)
-                if amp_val is not None:
-                    df_amp.at[file_idx, col] = amp_val
-                if pos_val is not None:
-                    df_pos.at[file_idx, col] = pos_val
-
-        # combine amplitude and position into a single multi-column DataFrame
-        combined = pd.concat({'Amplitude': df_amp, 'Position (s)': df_pos}, axis=1)
-        # insert Time column
-        combined.insert(0, "Time", time_points[:combined.shape[0]])
-
-        # save
+        # Save to CSV
         output_folder = os.path.join(output_folder_path, "all_replicates_amplitudes")
         os.makedirs(output_folder, exist_ok=True)
         output_path = os.path.join(output_folder, "All_amplitudes_all_replicates.csv")
-        combined.to_csv(output_path, index=False)
+        df.to_csv(output_path, index=False)
         print(f"Saved all amplitudes for all replicates to {output_path}")
 
     def save_all_AUC(group_experiments:GroupAnalysis, output_folder_path):
@@ -561,17 +497,7 @@ class OutputManager:
     @staticmethod
     def save_all_exponential_fitting_params(group_experiments : GroupAnalysis, output_folder_path):
         """
-        Save exponential fitting parameters from the PER-REPLICATE-THEN-POOLED method.
-
-        For each file index, every replicate's post-peak IT trace is fit independently
-        with `f(t) = (A - C) * exp(-k * t) + C`, then summary statistics (mean, SE, SD,
-        95% CI) are pooled across replicates. Use this when you care about
-        between-replicate variability of the kinetics.
-
-        The companion `save_all_exponential_fitting_params_global` writes a SINGLE fit
-        of all replicates pooled into one dataset per file index. The two folders
-        (`exp_fit_per_replicate_then_pooled_stats` vs `exp_fit_global_to_all_replicates`)
-        are intentionally distinct so the difference is obvious from the filesystem.
+        Save exponential fitting parameters (A, tau, C) and related statistics over time.
 
         Args:
             group_experiments (GroupAnalysis): Group with time-series IT data.
@@ -595,13 +521,22 @@ class OutputManager:
             time_points = [interval * (i - n_before) for i in range(n_files)]
         else:
             time_points = [i * interval for i in range(n_files)]
-
+        
         # Build DataFrame with unpacked columns
         df = pd.DataFrame(params_matrix, columns=["A_fit",   "A_SE",   "A_SD",   "A_CI95",
                     "tau_fit", "tau_SE", "tau_SD", "tau_CI95",
                     "C_fit",   "C_SE",   "C_SD",   "C_CI95",
                     "t_half",  "t_half_SE", "t_half_SD", "t_half_CI95"])
+        
+        #df["Y0"] = df["A_fit"] + df["C_fit"]
+        #df["Y0_SE"] = np.sqrt(df["A_SE"]**2 + df["C_SE"]**2)
+        #df["Y0_SD"] = np.sqrt(df["A_SD"]**2 + df["C_SD"]**2)
+        #df["Y0_CI95"] = np.sqrt(df["A_CI95"]**2 + df["C_CI95"]**2)
         df.insert(0, "Time", time_points)
+
+        #y0_cols = ["Y0", "Y0_SE", "Y0_SD", "Y0_CI95"]
+        #new_order = ["Time"] + y0_cols + [c for c in df.columns if c not in (["Time"] + y0_cols)]
+        #df = df[new_order]
 
         df["tau_fit"]    = df["tau_fit"]    / freq
         df["tau_SE"]     = df["tau_SE"]     / freq
@@ -613,104 +548,12 @@ class OutputManager:
         df["t_half_SD"]  = df["t_half_SD"]  / freq
         df["t_half_CI95"]= df["t_half_CI95"]/ freq
 
-        # Save to CSV — folder name describes the method explicitly.
-        output_folder = os.path.join(output_folder_path, "exp_fit_per_replicate_then_pooled_stats")
+        # Save to CSV
+        output_folder = os.path.join(output_folder_path, "all_exponential_fit_params")
         os.makedirs(output_folder, exist_ok=True)
-        output_path = os.path.join(output_folder, "exp_fit_per_replicate_then_pooled_stats.csv")
+        output_path = os.path.join(output_folder, "all_exp_fit_params.csv")
         df.to_csv(output_path, index=False)
-        print(f"Saved per-replicate-then-pooled exp-fit params to {output_path}")
-
-    @staticmethod
-    def save_all_exponential_fitting_params_global(group_experiments : GroupAnalysis, output_folder_path):
-        """
-        Save exponential fitting parameters from the GLOBAL (single fit pooled across
-        replicates) method.
-
-        For each file index, all replicate post-peak IT traces are concatenated into a
-        single (t, I) dataset and ONE exponential `A * exp(-t / tau) + C` is fit to the
-        pooled data. Standard errors come from the covariance matrix of that single
-        fit; 95% CI uses z = 1.96. Use this when you want a single best-fit kinetic
-        per timepoint that weighs every sample of every replicate equally.
-
-        The companion `save_all_exponential_fitting_params` instead fits each replicate
-        independently and pools the *parameter* statistics, which captures between-
-        replicate variability. The two folders are named to make the distinction
-        obvious from the filesystem.
-
-        Args:
-            group_experiments (GroupAnalysis): Group with time-series IT data.
-            output_folder_path (str): Directory to write parameter outputs.
-
-        Returns:
-            None
-        """
-        experiments = group_experiments.get_experiments()
-        if not experiments:
-            return None
-
-        freq = experiments[0].get_acquisition_frequency()
-        n_files = experiments[0].get_file_count()
-        n_before = experiments[0].get_number_of_files_before_treatment()
-        interval = experiments[0].get_time_between_files()
-
-        if n_before > 0:
-            time_points = [interval * (i - n_before) for i in range(n_files)]
-        else:
-            time_points = [i * interval for i in range(n_files)]
-
-        z95 = 1.96
-        n_cols = 12
-        rows = []
-
-        # `exponential_fitting_replicated_legacy` adds files_before_treatment to its
-        # `replicate_time_point` arg, so to fit file index `t` we pass `t - n_before`.
-        for t in range(n_files):
-            rel_t = t - n_before
-            try:
-                result = group_experiments.exponential_fitting_replicated_legacy(
-                    replicate_time_point=rel_t
-                )
-                # Legacy returns a 4-tuple of Nones if no experiments; otherwise an 8-tuple.
-                if result is None or not isinstance(result, tuple) or len(result) < 8:
-                    raise ValueError("legacy fit returned no result")
-
-                _, _, t_half, popt, pcov, A_fit, tau_fit, C_fit = result
-
-                pcov = np.asarray(pcov, dtype=float)
-                if pcov.shape != (3, 3) or not np.all(np.isfinite(pcov)):
-                    raise ValueError("invalid covariance matrix")
-                perr = np.sqrt(np.maximum(np.diag(pcov), 0.0))
-                A_SE, tau_SE, C_SE = float(perr[0]), float(perr[1]), float(perr[2])
-                t_half_SE = float(abs(np.log(2) * tau_SE)) if np.isfinite(tau_SE) else np.nan
-
-                rows.append([
-                    float(A_fit),  A_SE,  z95 * A_SE,
-                    float(tau_fit), tau_SE, z95 * tau_SE,
-                    float(C_fit),  C_SE,  z95 * C_SE,
-                    float(t_half), t_half_SE, z95 * t_half_SE,
-                ])
-            except Exception as e:
-                print(f"[global exp-fit] file index {t}: skipping ({e})")
-                rows.append([np.nan] * n_cols)
-
-        df = pd.DataFrame(rows, columns=[
-            "A_fit",   "A_SE",   "A_CI95",
-            "tau_fit", "tau_SE", "tau_CI95",
-            "C_fit",   "C_SE",   "C_CI95",
-            "t_half",  "t_half_SE", "t_half_CI95",
-        ])
-        df.insert(0, "Time", time_points)
-
-        # tau and t_half come back in samples; convert to seconds.
-        for col in ("tau_fit", "tau_SE", "tau_CI95",
-                    "t_half", "t_half_SE", "t_half_CI95"):
-            df[col] = df[col] / freq
-
-        output_folder = os.path.join(output_folder_path, "exp_fit_global_to_all_replicates")
-        os.makedirs(output_folder, exist_ok=True)
-        output_path = os.path.join(output_folder, "exp_fit_global_to_all_replicates.csv")
-        df.to_csv(output_path, index=False)
-        print(f"Saved global (single-fit-to-all-replicates) exp-fit params to {output_path}")
+        print(f"Saved all params for all replicates to {output_path}")
 
     ### Methods for spheroid_files
     @staticmethod
@@ -768,54 +611,7 @@ class OutputManager:
         os.makedirs(output_folder, exist_ok=True)
         save_path = os.path.join(output_folder, "save_IT_profile_plot.png")
         spheroid_file.visualize_IT_profile(save_path=save_path)
-    
-    @staticmethod
-    def save_color_plot_mean_data(group_experiments : GroupAnalysis, output_folder_path):
-        experiments = group_analysis.get_experiments()
-        for exp_idx, experiment in enumerate(experiments):
-            if not experiments:
-                return None
-
-        file_count = experiments[0].get_file_count()
-        acq_freq = experiments[0].get_acquisition_frequency()
-        file_length = experiments[0].get_file_length()
-        n_timepoints = experiments[0].get_file_time_points()
-
-        # Get column headers from first experiment's file base names
-        base_names = [os.path.splitext(os.path.basename(sf.get_filepath()))[0] for sf in experiments[0].files]
-
-        # Collect ITs for each file index across experiments
-        mean_ITs = []
-        for file_idx in range(file_count):
-            # Gather ITs for this file index from all experiments
-            it_matrix = []
-            for exp in experiments:
-                IT_individual = exp.get_spheroid_file(file_idx).get_processed_data()
-                it_matrix.append(IT_individual)
-            # Pad to same length if needed
-            max_len = max(len(it) for it in it_matrix)
-            it_matrix_padded = [np.pad(it, (0, max_len - len(it)), constant_values=np.nan) for it in it_matrix]
-            # Average across experiments (axis=0)
-            mean_IT = np.nanmean(it_matrix_padded, axis=0)
-            mean_ITs.append(mean_IT)
-
-        # Transpose so each column is a file index, each row is a timepoint
-        mean_ITs_array = np.array(mean_ITs).T  # shape: (n_timepoints, file_count)
-
-        # Create time axis in seconds
-        time_seconds = np.arange(mean_ITs_array.shape[0]) / acq_freq
-
-        # Build DataFrame
-        df = pd.DataFrame(mean_ITs_array, columns=base_names)
-        df.insert(0, "Time (s)", time_seconds)
-
-        # Save to CSV
-        output_folder = os.path.join(output_folder_path, "mean_ITs")
-        os.makedirs(output_folder, exist_ok=True)
-        output_path = os.path.join(output_folder, "Mean_ITs_across_experiments.csv")
-        df.to_csv(output_path, index=False)
-        print(f"Saved mean ITs across experiments to {output_path}")
-
+        
     
     @staticmethod
     def save_color_plot(spheroid_file, output_path):
@@ -885,23 +681,6 @@ class OutputManager:
         os.makedirs(output_folder, exist_ok=True)
         save_path = os.path.join(output_folder, "plot_tau_over_time.png")
         group_analysis.plot_tau_over_time(save_path=save_path)
-
-    @staticmethod
-    def save_plot_frequency_over_time(group_analysis, output_path):
-        """
-        Save the plot of decay constant (tau) over all replicate time points.
-
-        Args:
-            group_analysis: GroupAnalysis object.
-            output_path (str): Output directory for the plot.
-
-        Returns:
-            None
-        """
-        output_folder = os.path.join(output_path, "plots")
-        os.makedirs(output_folder, exist_ok=True)
-        save_path = os.path.join(output_folder, "plot_frequency_over_time.png")
-        group_analysis.plot_frequency_over_time(save_path=save_path)
 
     @staticmethod
     def save_plot_exponential_fit_aligned(group_analysis, output_path, replicated_time_point=0):
@@ -978,421 +757,6 @@ class OutputManager:
         save_path = os.path.join(output_folder, "plot_first_stim_amplitudes.png")
         group_analysis.plot_first_stim_amplitudes(save_path=save_path)
         
-    @staticmethod
-    def save_mean_ITs(group_experiments: GroupAnalysis, output_folder_path):
-        """
-        Save the mean IT trace for each file index across all experiments into a single CSV file.
-        Each column corresponds to a file index (e.g., timepoint), using the base filename from the first experiment.
-
-        Args:
-            group_experiments (GroupAnalysis): Group containing multiple experiments.
-            output_folder_path (str): Directory to save the output file.
-
-        Returns:
-            None
-        """
-        experiments = group_experiments.get_experiments()
-        if not experiments:
-            return None
-
-        file_count = experiments[0].get_file_count()
-        acq_freq = experiments[0].get_acquisition_frequency()
-        file_length = experiments[0].get_file_length()
-        n_timepoints = experiments[0].get_file_time_points()
-
-        # Get column headers from first experiment's file base names
-        base_names = [os.path.splitext(os.path.basename(sf.get_filepath()))[0] for sf in experiments[0].files]
-
-        # Collect ITs for each file index across experiments
-        mean_ITs = []
-        for file_idx in range(file_count):
-            # Gather ITs for this file index from all experiments
-            it_matrix = []
-            for exp in experiments:
-                IT_individual = exp.get_spheroid_file(file_idx).get_processed_data_IT()
-                it_matrix.append(IT_individual)
-            # Pad to same length if needed
-            max_len = max(len(it) for it in it_matrix)
-            try:
-                it_matrix_padded = [np.pad(it, (0, max_len - len(it)), mode='edge') for it in it_matrix]
-            except Exception:
-                it_matrix_padded = [np.pad(it, (0, max_len - len(it)), mode='constant', constant_values=np.nan) for it in it_matrix]
-            # Average across experiments (axis=0)
-            mean_IT = np.nanmean(it_matrix_padded, axis=0)
-            mean_ITs.append(mean_IT)
-
-        # Transpose so each column is a file index, each row is a timepoint
-        mean_ITs_array = np.array(mean_ITs).T  # shape: (n_timepoints, file_count)
-
-        # Create time axis in seconds
-        time_seconds = np.arange(mean_ITs_array.shape[0]) / acq_freq
-
-        # Build DataFrame
-        df = pd.DataFrame(mean_ITs_array, columns=base_names)
-        df.insert(0, "Time (s)", time_seconds)
-
-        # Save to CSV
-        output_folder = os.path.join(output_folder_path, "mean_ITs")
-        os.makedirs(output_folder, exist_ok=True)
-        output_path = os.path.join(output_folder, "Mean_ITs_across_experiments.csv")
-        df.to_csv(output_path, index=False)
-        print(f"Saved mean ITs across experiments to {output_path}")
-
-    @staticmethod
-    def save_mean_processed_data_matrices(group_experiments: GroupAnalysis, output_folder_path):
-        """
-        For each file index, compute the mean processed data matrix across all experiments,
-        and save each as an individual CSV named after the base file name (from the first experiment).
-
-        Args:
-            group_experiments (GroupAnalysis): Group containing multiple experiments.
-            output_folder_path (str): Directory to save the output files.
-
-        Returns:
-            None
-        """
-        experiments = group_experiments.get_experiments()
-        if not experiments:
-            return None
-
-        file_count = experiments[0].get_file_count()
-        base_names = [os.path.splitext(os.path.basename(sf.get_filepath()))[0] for sf in experiments[0].files]
-
-        output_folder = os.path.join(output_folder_path, "mean_processed_matrices")
-        os.makedirs(output_folder, exist_ok=True)
-
-        for file_idx in range(file_count):
-            # Gather processed data matrices for this file index from all experiments
-            matrices = []
-            for exp in experiments:
-                matrix = exp.get_spheroid_file(file_idx).get_processed_data()
-                matrices.append(matrix)
-            # Pad matrices to the same shape if needed
-            shapes = [m.shape for m in matrices]
-            max_shape = (max(s[0] for s in shapes), max(s[1] for s in shapes))
-            try:
-                matrices_padded = [
-                    np.pad(m, ((0, max_shape[0] - m.shape[0]), (0, max_shape[1] - m.shape[1])), mode='edge')
-                    for m in matrices
-                ]
-            except Exception:
-                matrices_padded = [
-                    np.pad(m, ((0, max_shape[0] - m.shape[0]), (0, max_shape[1] - m.shape[1])), mode='constant', constant_values=np.nan)
-                    for m in matrices
-                ]
-            # Compute mean matrix
-            mean_matrix = np.nanmean(matrices_padded, axis=0).T
-            # Save to CSV
-            df = pd.DataFrame(mean_matrix)
-            output_path = os.path.join(output_folder, f"{base_names[file_idx]}_mean_processed_matrix.csv")
-            df.to_csv(output_path, index=False, header=False)
-            print(f"Saved mean processed matrix for {base_names[file_idx]} to {output_path}")
-
-    @staticmethod
-    def save_experiment_log(group_experiments: GroupAnalysis, output_folder_path, qsettings=None):
-        """
-        Generate and save a comprehensive log file documenting all experiment metadata,
-        settings, processing steps, and data provenance.
-
-        This log captures:
-        - Experiment configuration (acquisition parameters, waveform, treatment)
-        - Stimulation parameters (if applicable)
-        - Calibration settings
-        - All data file paths and replicate organization
-        - Processing pipeline steps with parameters
-        - File-level metadata (peaks, amplitudes, exponential fit parameters)
-        - Export timestamp and software version
-
-        Args:
-            group_experiments (GroupAnalysis): Group containing all experiment replicates.
-            output_folder_path (str): Directory where the log will be saved.
-            qsettings (QSettings, optional): Qt settings object containing user configuration.
-
-        Returns:
-            str: Path to the saved log file, or None if no experiments exist.
-        """
-        from PyQt5.QtCore import QSettings
-        
-        experiments = group_experiments.get_experiments()
-        if not experiments:
-            print("No experiments available to create log.")
-            return None
-
-        # Use provided qsettings or create new instance
-        if qsettings is None:
-            qsettings = QSettings("HashemiLab", "NeuroStemVolt")
-
-        # Create log folder
-        log_folder = os.path.join(output_folder_path, "experiment_logs")
-        os.makedirs(log_folder, exist_ok=True)
-
-        # Generate timestamp for log filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_filename = f"experiment_log_{timestamp}.txt"
-        log_path = os.path.join(log_folder, log_filename)
-
-        with open(log_path, 'w', encoding='utf-8') as log_file:
-            # Header
-            log_file.write("=" * 80 + "\n")
-            log_file.write("NEUROSTEMVOLT EXPERIMENT LOG\n")
-            log_file.write("=" * 80 + "\n")
-            log_file.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            log_file.write(f"Software Version: v1.0.0\n")
-            log_file.write(f"Output Folder: {output_folder_path}\n")
-            log_file.write("=" * 80 + "\n\n")
-
-            # ===== EXPERIMENT CONFIGURATION =====
-            log_file.write("=" * 80 + "\n")
-            log_file.write("EXPERIMENT CONFIGURATION\n")
-            log_file.write("=" * 80 + "\n\n")
-
-            # Global settings
-            file_type = qsettings.value("file_type", "Unknown", type=str)
-            acquisition_freq = qsettings.value("acquisition_frequency", "Not set", type=str)
-            file_length = qsettings.value("file_length", "Not set", type=str)
-            peak_position = qsettings.value("peak_position", "Not set", type=str)
-            waveform = qsettings.value("waveform", "Not set", type=str)
-            treatment = qsettings.value("treatment", "Not set", type=str)
-            time_between_files = qsettings.value("time_between_files", "Not set", type=str)
-            files_before_treatment = qsettings.value("files_before_treatment", "Not set", type=str)
-
-            log_file.write(f"File Type: {file_type}\n")
-            log_file.write(f"Waveform: {waveform}\n")
-            log_file.write(f"Treatment: {treatment}\n")
-            log_file.write(f"Acquisition Frequency: {acquisition_freq} Hz\n")
-            log_file.write(f"File Length: {file_length} seconds\n")
-            log_file.write(f"Peak Position (voltage index): {peak_position}\n")
-            log_file.write(f"Time Between Files: {time_between_files} minutes\n")
-            log_file.write(f"Files Before Treatment: {files_before_treatment}\n\n")
-
-            # Stimulation parameters (if applicable)
-            if file_type != "Spontaneous":
-                log_file.write("-" * 80 + "\n")
-                log_file.write("STIMULATION PARAMETERS\n")
-                log_file.write("-" * 80 + "\n")
-                try:
-                    stim_params_str = qsettings.value("stim_params", "{}")
-                    stim_params = json.loads(stim_params_str) if stim_params_str else {}
-                    
-                    if stim_params:
-                        log_file.write(f"Stimulation Start: {stim_params.get('start', 'N/A')} seconds\n")
-                        log_file.write(f"Stimulation Duration: {stim_params.get('duration', 'N/A')} seconds\n")
-                        log_file.write(f"Stimulation Frequency: {stim_params.get('frequency', 'N/A')} Hz\n")
-                        log_file.write(f"Stimulation Amplitude: {stim_params.get('amplitude', 'N/A')} V\n")
-                        log_file.write(f"Number of Pulses: {stim_params.get('pulses', 'N/A')}\n")
-                    else:
-                        log_file.write("No stimulation parameters configured.\n")
-                except Exception as e:
-                    log_file.write(f"Error reading stimulation parameters: {e}\n")
-                log_file.write("\n")
-
-            # Calibration settings
-            log_file.write("-" * 80 + "\n")
-            log_file.write("CALIBRATION SETTINGS\n")
-            log_file.write("-" * 80 + "\n")
-            calibration_enabled = qsettings.value("calibration_enabled", False, type=bool)
-            log_file.write(f"Calibration Enabled: {calibration_enabled}\n")
-            # Set unit label based on calibration
-            unit = "nM" if calibration_enabled else "nA"
-            if calibration_enabled:
-                slope = qsettings.value("calibration_slope", 1.0, type=float)
-                intercept = qsettings.value("calibration_intercept", 0.0, type=float)
-                log_file.write(f"Slope: {slope}\n")
-                log_file.write(f"Y-intercept: {intercept}\n")
-                log_file.write(f"Conversion Formula: Concentration = (Current - {intercept}) / {slope}\n")
-                log_file.write(f"Data is in concentration units ({unit}).\n")
-            else:
-                log_file.write(f"Data is in raw current units ({unit}).\n")
-            log_file.write("\n")
-
-            # ===== PROCESSING PIPELINE =====
-            log_file.write("=" * 80 + "\n")
-            log_file.write("PROCESSING PIPELINE\n")
-            log_file.write("=" * 80 + "\n\n")
-
-            try:
-                pipeline_str = qsettings.value("processing_pipeline", "[]")
-                pipeline = json.loads(pipeline_str) if pipeline_str else []
-                
-                params_str = qsettings.value("processing_params", "{}")
-                params = json.loads(params_str) if params_str else {}
-
-                if pipeline:
-                    log_file.write("Applied Processing Steps (in order):\n\n")
-                    for idx, step in enumerate(pipeline, 1):
-                        log_file.write(f"{idx}. {step}\n")
-                        if step in params:
-                            param_info = params[step]
-                            if isinstance(param_info, dict):
-                                if step == "Artifact Removal":
-                                    log_file.write(f"   - Threshold (MAD multiplier): {param_info.get('threshold', 'N/A')}\n")
-                                    log_file.write(f"   - Pad (extra scans per edge): {param_info.get('pad', 'N/A')}\n")
-                                    max_scans = param_info.get('max_artifact_scans', '0')
-                                    max_scans_label = "auto (2 × acquisition frequency)" if str(max_scans) == "0" else max_scans
-                                    log_file.write(f"   - Max Artifact Scans: {max_scans_label}\n")
-                                elif step == "Multiple Peak Detection":
-                                    log_file.write(f"   - Max Peaks: {param_info.get('max_peaks', 'N/A')}\n")
-                                    log_file.write(f"   - Min Prominence: {param_info.get('min_prominence', 'N/A')}\n")
-                                    log_file.write(f"   - Min Rise Window: {param_info.get('min_rise_window_sec', 'N/A')} s\n")
-                                    log_file.write(f"   - Max Rise Window: {param_info.get('max_rise_window_sec', 'N/A')} s\n")
-                                    log_file.write(f"   - Min Decay Window: {param_info.get('min_decay_window_sec', 'N/A')} s\n")
-                                    log_file.write(f"   - Max Decay Window: {param_info.get('max_decay_window_sec', 'N/A')} s\n")
-                                    log_file.write(f"   - CV Peak: {param_info.get('cv_peak', 'N/A')}\n")
-                                    log_file.write(f"   - Peak Height Threshold: {param_info.get('peak_height_threshold', 'N/A')}\n")
-                                else:
-                                    for key, value in param_info.items():
-                                        log_file.write(f"   - {key}: {value}\n")
-                            elif isinstance(param_info, (list, tuple)):
-                                if step == "Background Subtraction":
-                                    log_file.write(f"   - Region: start={param_info[0]}s, end={param_info[1]}s\n")
-                                elif step == "Savitzky-Golay Filter":
-                                    log_file.write(f"   - Window: {param_info[0]}, Order: {param_info[1]}\n")
-                                elif step == "Butterworth Filter":
-                                    log_file.write(f"   - Order (p): {param_info[0]}\n")
-                                    log_file.write(f"   - Cutoff cx: {param_info[1]} Hz\n")
-                                    log_file.write(f"   - Cutoff cy: {param_info[2]} Hz\n")
-                                else:
-                                    # Generic handling for other list/tuple parameters
-                                    log_file.write(f"   - Parameters: {', '.join(str(p) for p in param_info)}\n")
-                            else:
-                                log_file.write(f"   - Parameter: {param_info}\n")
-                        log_file.write("\n")
-                else:
-                    log_file.write("No processing steps configured or default pipeline used.\n")
-            except Exception as e:
-                log_file.write(f"Error reading processing pipeline: {e}\n")
-            log_file.write("\n")
-
-            # ===== SUMMARY =====
-            log_file.write("=" * 80 + "\n")
-            log_file.write("SUMMARY\n")
-            log_file.write("=" * 80 + "\n\n")
-
-            try:
-                total_files = sum(exp.get_file_count() for exp in experiments)
-                log_file.write(f"Total Files Processed: {total_files}\n")
-                
-                # Get unique folder paths
-                folders = set()
-                for exp in experiments:
-                    for file_idx in range(exp.get_file_count()):
-                        try:
-                            filepath = exp.get_spheroid_file(file_idx).get_filepath()
-                            folder = os.path.dirname(filepath)
-                            folders.add(folder)
-                        except:
-                            pass
-                
-                log_file.write(f"Source Folders: {len(folders)}\n")
-                for folder in sorted(folders):
-                    log_file.write(f"  - {folder}\n")
-                
-            except Exception as e:
-                log_file.write(f"Error computing summary statistics: {e}\n")
-
-            log_file.write("\n")
-
-            # ===== REPLICATE DATA =====
-            log_file.write("=" * 80 + "\n")
-            log_file.write("REPLICATE DATA\n")
-            log_file.write("=" * 80 + "\n\n")
-            log_file.write(f"Total Number of Replicates: {len(experiments)}\n\n")
-
-            for exp_idx, exp in enumerate(experiments, 1):
-                log_file.write("-" * 80 + "\n")
-                log_file.write(f"REPLICATE {exp_idx}\n")
-                log_file.write("-" * 80 + "\n")
-                
-                # Experiment-level info
-                try:
-                    log_file.write(f"Treatment: {getattr(exp, 'treatment', 'N/A')}\n")
-                    log_file.write(f"Waveform: {getattr(exp, 'waveform', 'N/A')}\n")
-                    log_file.write(f"Number of Files (Timepoints): {exp.get_file_count()}\n")
-                    log_file.write(f"File Length: {exp.get_file_length()} seconds\n")
-                    log_file.write(f"Acquisition Frequency: {exp.get_acquisition_frequency()} Hz\n")
-                    log_file.write(f"Time Between Files: {exp.get_time_between_files()} minutes\n")
-                    log_file.write(f"Files Before Treatment: {exp.get_number_of_files_before_treatment()}\n")
-                except Exception as e:
-                    log_file.write(f"Error retrieving experiment info: {e}\n")
-                
-                log_file.write("\n")
-
-                # Data files
-                log_file.write("Data Files:\n")
-                try:
-                    for file_idx in range(exp.get_file_count()):
-                        sf = exp.get_spheroid_file(file_idx)
-                        filepath = sf.get_filepath()
-                        filename = os.path.basename(filepath)
-                        
-                        # Calculate time in minutes
-                        time_min = file_idx * exp.get_time_between_files()
-                        baseline_marker = " [BASELINE]" if file_idx < exp.get_number_of_files_before_treatment() else ""
-                        
-                        log_file.write(f"  {file_idx + 1}. {filename} (t={time_min} min){baseline_marker}\n")
-                        log_file.write(f"     Path: {filepath}\n")
-                        
-                        # File metadata
-                        try:
-                            meta = sf.get_metadata()
-                            if meta:
-                                # Peak amplitude
-                                if 'peak_amplitude_values' in meta and meta['peak_amplitude_values'] is not None:
-                                    amp_val = meta['peak_amplitude_values']
-                                    if isinstance(amp_val, (list, np.ndarray)):
-                                        if len(amp_val) > 0:
-                                            if file_type == "Spontaneous":
-                                                log_file.write(f"     Peaks Detected: {len(amp_val)}\n")
-                                                log_file.write(f"     Mean Amplitude: {np.mean(amp_val):.4f} {unit}\n")
-                                            else:
-                                                log_file.write(f"     Peak Amplitude: {amp_val[0]:.4f} {unit}\n")
-                                    else:
-                                        log_file.write(f"     Peak Amplitude: {amp_val:.4f} {unit}\n")
-                                
-                                # Peak position
-                                if 'peak_amplitude_positions' in meta and meta['peak_amplitude_positions'] is not None:
-                                    pos_val = meta['peak_amplitude_positions']
-                                    if isinstance(pos_val, (list, np.ndarray)) and len(pos_val) > 0:
-                                        if file_type != "Spontaneous":
-                                            pos_sec = pos_val[0] / exp.get_acquisition_frequency()
-                                            log_file.write(f"     Peak Position: {pos_val[0]} samples ({pos_sec:.2f} s)\n")
-                                    elif not isinstance(pos_val, (list, np.ndarray)):
-                                        pos_sec = pos_val / exp.get_acquisition_frequency()
-                                        log_file.write(f"     Peak Position: {pos_val} samples ({pos_sec:.2f} s)\n")
-                                
-                                # Exponential fitting (for stimulated data)
-                                if file_type != "Spontaneous" and 'exponential fitting parameters' in meta:
-                                    fit_params = meta['exponential fitting parameters']
-                                    if fit_params and isinstance(fit_params, dict):
-                                        log_file.write(f"     Exponential Fit:\n")
-                                        log_file.write(f"       - Amplitude (A): {fit_params.get('A', 'N/A'):.4f}\n")
-                                        log_file.write(f"       - Tau (τ): {fit_params.get('tau', 'N/A'):.4f}\n")
-                                        log_file.write(f"       - Constant (C): {fit_params.get('C', 'N/A'):.4f}\n")
-                                        log_file.write(f"       - Half-life (t½): {fit_params.get('t_half', 'N/A'):.4f}\n")
-                                
-                                # Baseline info
-                                if 'baseline' in meta and meta['baseline'] is not None:
-                                    baseline = meta['baseline']
-                                    if isinstance(baseline, (list, np.ndarray)) and len(baseline) > 0:
-                                        log_file.write(f"     Baseline: {baseline[0]:.4f} {unit}\n")
-                                    elif not isinstance(baseline, (list, np.ndarray)):
-                                        log_file.write(f"     Baseline: {baseline:.4f} {unit}\n")
-                        except Exception as e:
-                            log_file.write(f"     Error reading metadata: {e}\n")
-                        
-                        log_file.write("\n")
-                except Exception as e:
-                    log_file.write(f"Error listing files: {e}\n")
-                
-                log_file.write("\n")
-
-            # Footer
-            log_file.write("=" * 80 + "\n")
-            log_file.write("END OF LOG\n")
-            log_file.write("=" * 80 + "\n")
-
-        print(f"Experiment log saved to: {log_path}")
-        return log_path
 
 if __name__ == "__main__":
     # Example usage

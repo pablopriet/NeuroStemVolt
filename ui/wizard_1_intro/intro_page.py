@@ -1,7 +1,8 @@
+
 from PyQt5.QtWidgets import (
-    QWizardPage, QLabel, QPushButton, QVBoxLayout, QListWidget, QMessageBox, QFileDialog, QShortcut, QDialog, QProgressDialog
+    QWizardPage, QLabel, QPushButton, QVBoxLayout, QListWidget, QMessageBox, QFileDialog, QShortcut, QDialog
 )
-from PyQt5.QtCore import Qt, QSettings, QCoreApplication
+from PyQt5.QtCore import Qt
 from core.group_analysis import GroupAnalysis
 from core.spheroid_experiment import SpheroidExperiment
 from ui.utils.styles import apply_custom_styles
@@ -96,14 +97,12 @@ class IntroPage(QWizardPage):
         Launches a dialog window for experiment configuration.
 
         Returns:
-            bool: True if settings were accepted, False otherwise.
+            None
         """
         dlg = ExperimentSettingsDialog(self)
         if dlg.exec_() == QDialog.Accepted:
             # Here, extract the settings from the dialog and store them
             self.experiment_settings = dlg.get_settings()
-            return True
-        return False
 
     def clear_replicates(self):
         """
@@ -128,29 +127,6 @@ class IntroPage(QWizardPage):
         # Also clear our own display_names_list
         self.display_names_list = []
         
-        # Clear the persistent file_type and other settings that may interfere
-        settings = QSettings("HashemiLab", "NeuroStemVolt")
-
-        # Remove only the most relevant keys (safer)
-        keys_to_remove = [
-            "file_type",
-            "processing_pipeline",
-            "processing_params",
-            "peak_amplitude_positions",
-            "global_peak_position",
-            "last_opened_folder",
-            "recent_files",
-            "experiment_settings"
-        ]
-        for key in keys_to_remove:
-            if settings.contains(key):
-                settings.remove(key)
-
-        # To completely wipe all settings for this app, uncomment:
-        # settings.clear()
-
-        settings.sync()
-
         # Re-evaluate isComplete
         self.completeChanged.emit()
 
@@ -176,14 +152,9 @@ class IntroPage(QWizardPage):
 
         settings = self.experiment_settings
 
-        # Use separate history for replicate folder
-        qsettings = QSettings("HashemiLab", "NeuroStemVolt")
-        last_replicate_dir = qsettings.value("last_replicate_folder", "", type=str)
-        folder = QFileDialog.getExistingDirectory(self, "Select replicate folder", last_replicate_dir)
+        folder = QFileDialog.getExistingDirectory(self, "Select replicate folder")
         if not folder:
             return
-        # Save this folder as the last used replicate folder
-        qsettings.setValue("last_replicate_folder", folder)
         
         # collect all .txt files in that folder
         paths = [os.path.join(folder, f)
@@ -192,52 +163,35 @@ class IntroPage(QWizardPage):
         if not paths:
             # optional: warn “no .txt found”
             return
-        # Show a simple modal dialog
-        # create persistent progress dialog so it isn't GC'd before shown
-        progress = QProgressDialog(self)
-        progress.setWindowTitle("Please wait")
-        progress.setLabelText("Loading replicate…")
-        progress.setWindowModality(Qt.ApplicationModal)
-        progress.setCancelButton(None)
-        progress.setMinimumDuration(0)
-        progress.setAutoClose(False)
-        progress.setAutoReset(False)
-        progress.setMinimumWidth(420)
-        progress.setRange(0, 0)  # indeterminate
-        # keep as attribute to avoid GC and ensure it stays visible
-        self._loading_progress = progress
-        progress.show()
-        progress.repaint()
-        QCoreApplication.processEvents()
+        
+        if self.number_of_files != 0 and self.number_of_files != len(paths):
+            QMessageBox.warning(
+                self,
+                "Warning! Missing Files!",
+                "Folders do not contain the same number of files.\n"
+                f"Expected: {self.number_of_files}, Found: {len(paths)}"
+            )
+            return
+        
+        # If first replicate, set number_of_files
+        if self.number_of_files == 0:
+            self.number_of_files = len(paths)
 
-        try:
-            # We do not pass calibration to initializing the SpheroidExperiments
-            expected_keys = [
-                'file_length', 'acquisition_frequency', 'peak_position', 'treatment',
-                'waveform', 'stim_params', 'time_between_files', 'files_before_treatment', 'file_type'
-            ]
+        filtered = {k: v for k, v in settings.items() if k != "output_folder"}
+        exp = SpheroidExperiment(paths,**filtered)
+        
+        self.group_analysis.add_experiment(exp)
+        # store it and show it in the list
+        self.display_names_list.append(f"{os.path.basename(folder)}")
+        display_name = f"{os.path.basename(folder)}"
+        self.list_widget.addItem(display_name)
 
-            filtered = {k: v for k, v in settings.items() if k in expected_keys}
-            exp = SpheroidExperiment(paths, **filtered)
-            
-            self.group_analysis.add_experiment(exp)
-            # store it and show it in the list
-            self.display_names_list.append(f"{os.path.basename(folder)}")
-            display_name = f"{os.path.basename(folder)}"
-            self.list_widget.addItem(display_name)
+        wiz = self.wizard()
+        wiz.group_analysis = self.group_analysis
+        wiz.display_names_list = self.display_names_list
 
-            wiz = self.wizard()
-            wiz.group_analysis = self.group_analysis
-            wiz.display_names_list = self.display_names_list
-
-            # if your Next button is gated on isComplete(), let Qt know the page state changed:
-            self.completeChanged.emit()
-        finally:
-            # close and remove persistent reference
-            if hasattr(self, "_loading_progress"):
-                self._loading_progress.close()
-                del self._loading_progress
-            QCoreApplication.processEvents()
+        # if your Next button is gated on isComplete(), let Qt know the page state changed:
+        self.completeChanged.emit()
     
     def validatePage(self):
         """
@@ -252,13 +206,7 @@ class IntroPage(QWizardPage):
         if len(self.display_names_list) == 0:
             QMessageBox.warning(self, "No Replicates Loaded", "Please load at least one replicate before continuing.")
             return False
-        
-        # Run conversion from current to concentration
-        #if self.QSettings():
-        # Running 
-        slope = QSettings("HashemiLab", "NeuroStemVolt").value("calibration_slope", type=float)
-        intercept = QSettings("HashemiLab", "NeuroStemVolt").value("calibration_intercept", type=float)
-        self.group_analysis.apply_calibration_to_all_experiments(slope,intercept)
+
         self.wizard().group_analysis = self.group_analysis
         self.wizard().display_names_list = self.display_names_list
         return True

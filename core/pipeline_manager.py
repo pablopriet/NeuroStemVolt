@@ -52,8 +52,6 @@ class PipelineManager:
         data = spheroid_file.get_processed_data()
         context = context or {}  # Initialize context if not provided
         for processor in self.list_processors:
-            if processor is None:
-                continue
             # Check if the processor's process method accepts a 'context' argument
             process_signature = inspect.signature(processor.process)
             if 'context' in process_signature.parameters:

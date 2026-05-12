@@ -4,8 +4,8 @@ from scipy.signal import find_peaks
 from PyQt5.QtCore import QSettings
 
 class FindAmplitudeMultiple(Processor):
-    def __init__(self, peak_position, min_prominence=0.05, min_decay_ratio=0.2,
-                 min_rise_window_sec=0.2, max_rise_window_sec = 3.0, min_decay_window_sec=5.0, max_decay_window_sec = 20.0, max_peaks=10, peak_height_threshold=0.2, cv_peak=0.6):
+    def __init__(self, peak_position, min_prominence=0.05, min_decay_ratio=0.1, 
+                 rise_window_sec=1.0, decay_window_sec=20.0, max_peaks=10):
         """
         Initialize FindAmplitudeMultiple for spontaneous signal analysis.
         
@@ -19,31 +19,27 @@ class FindAmplitudeMultiple(Processor):
         """
         self.peak_position = peak_position
         self.min_prominence = min_prominence
-
         self.min_decay_ratio = min_decay_ratio
-
-        self.min_rise_window_sec = min_rise_window_sec
-        self.max_rise_window_sec = max_rise_window_sec
-        self.min_decay_window_sec = min_decay_window_sec
-        self.max_decay_window_sec = max_decay_window_sec
-
+        self.rise_window_sec = rise_window_sec
+        self.decay_window_sec = decay_window_sec
         self.max_peaks = max_peaks
-        self.cv_peak = cv_peak
-
-        self.peak_height_threshold = peak_height_threshold
-        self.peak_width_threshold = 2
 
     def _find_adaptive_time_windows(self, fx, peak_idx, freq):
         """
         Dynamically find optimal rise and decay windows for spontaneous signals.
         Uses shorter time windows compared to stimulated signals.
         """
+        # Adjusted minimum and maximum window constraints for spontaneous signals
+        MIN_RISE_TIME_SEC = 0.2   # Reduced from 0.5s - spontaneous events can be faster
+        MAX_RISE_TIME_SEC = 3.0   # Reduced from 5.0s
+        MIN_DECAY_TIME_SEC = 1.0  # Reduced from 2.0s
+        MAX_DECAY_TIME_SEC = 10.0 # Reduced from 20.0s
 
         # Convert to samples
-        min_rise_samples = max(3, int(self.min_rise_window_sec * freq))
-        max_rise_samples = int(self.max_rise_window_sec * freq)
-        min_decay_samples = max(5, int(self.min_decay_window_sec * freq))
-        max_decay_samples = int(self.max_decay_window_sec * freq)
+        min_rise_samples = max(3, int(MIN_RISE_TIME_SEC * freq))
+        max_rise_samples = int(MAX_RISE_TIME_SEC * freq)
+        min_decay_samples = max(5, int(MIN_DECAY_TIME_SEC * freq))
+        max_decay_samples = int(MAX_DECAY_TIME_SEC * freq)
 
         peak_val = fx[peak_idx]
 
@@ -206,7 +202,7 @@ class FindAmplitudeMultiple(Processor):
             end_val = np.median(decay_region[-3:])  # Last 3 points
             decay_ratio = (peak_val - end_val) / peak_val if peak_val != 0 else 0
 
-            return decay_ratio >= self.min_decay_ratio  # Reduced from 0.2
+            return decay_ratio >= 0.1  # Reduced from 0.2
 
         except:
             return False
@@ -251,8 +247,8 @@ class FindAmplitudeMultiple(Processor):
         peaks, properties = find_peaks(fx,
                                        prominence=self.min_prominence,  # Lower threshold
                                        distance=max(5, freq // 2),      # 0.5 second minimum distance
-                                       height=self.peak_height_threshold,                     # Lower height threshold
-                                       width=self.peak_width_threshold)                         # Narrower minimum width
+                                       height=0.02,                     # Lower height threshold
+                                       width=2)                         # Narrower minimum width
 
         print(f"Initial peaks found for spontaneous analysis: {len(peaks)}")
 
@@ -348,7 +344,7 @@ class FindAmplitudeMultiple(Processor):
                     'rise_window_samples': rise_samples,
                     'decay_window_samples': decay_samples,
                     'acquisition_frequency': freq,
-                    'peak_passed_validation': is_valid,
+                    'peak_passed_validation': True,
                     'validation_type': 'adaptive_spontaneous_multiple_peaks',
                     'signal_type': 'spontaneous',
                     'multiple_peaks': True

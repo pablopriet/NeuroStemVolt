@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QFormLayout, QComboBox, QLineEdit, QHBoxLayout,
-    QPushButton, QDialogButtonBox, QFileDialog, QCheckBox, QLabel, QWidget, QMessageBox
+    QPushButton, QDialogButtonBox, QFileDialog
 )
 from PyQt5.QtCore import QSettings
 import json
@@ -29,16 +29,13 @@ class ExperimentSettingsDialog(QDialog):
             "acquisition_frequency": self.qsettings.value("acquisition_frequency", 10,     type=int),
             "peak_position":         self.qsettings.value("peak_position",         257,    type=int),
             "treatment":             self.qsettings.value("treatment",             "None", type=str),
-            "waveform":              self.qsettings.value("waveform",              "5HT",  type=str),
+            #"waveform":              self.qsettings.value("waveform",              "5HT",  type=str),
             "time_between_files":    self.qsettings.value("time_between_files",    10,     type=int),
             "files_before_treatment":self.qsettings.value("files_before_treatment",3,      type=int),
             "file_type":             self.qsettings.value("file_type",             "None", type=str),
             # stim_params might be stored as JSON
             "stim_params":           json.loads(self.qsettings.value("stim_params", "{}")),
             "output_folder": self.qsettings.value("output_folder", "", type=str),
-            "calibration_enabled": self.qsettings.value("calibration_enabled", False, type=bool),
-            "calibration_slope": self.qsettings.value("calibration_slope", 1.0, type=float),
-            "calibration_intercept": self.qsettings.value("calibration_intercept", 0.0, type=float),
         }
 
         vbox = QVBoxLayout()
@@ -47,10 +44,10 @@ class ExperimentSettingsDialog(QDialog):
         form = QFormLayout()
         vbox.addLayout(form)
 
-        self.cb_waveform    = QComboBox();  self.cb_waveform.addItems(["5HT","HA","DA"])
-        self.cb_waveform.setCurrentText(defaults["waveform"]);                     form.addRow("Waveform:", self.cb_waveform)
+        #self.cb_waveform    = QComboBox();  self.cb_waveform.addItems(["5HT","Else"])
+        #self.cb_waveform.setCurrentText(defaults["waveform"]);                     form.addRow("Waveform:", self.cb_waveform)
 
-        self.cb_file_type = QComboBox(); self.cb_file_type.addItems(["Stimulation", "Spontaneous"])
+        self.cb_file_type = QComboBox(); self.cb_file_type.addItems(["None","Stimulation"])
         self.cb_file_type.setCurrentText(defaults["file_type"]);                   form.addRow("File Type:", self.cb_file_type)
 
         self.le_acq_freq = QLineEdit(str(defaults["acquisition_frequency"]))  
@@ -91,33 +88,6 @@ class ExperimentSettingsDialog(QDialog):
             "(e.g., 3 untreated files, followed by treated ones)."
         ))
 
-        # Calibration Curve Checkbox and fields
-        self.cb_calibration = QCheckBox("Calibration Curve (Current → Concentration)")
-        self.cb_calibration.setChecked(defaults["calibration_enabled"])
-        form.addRow(self.cb_calibration)
-
-        self.le_slope = QLineEdit(str(defaults["calibration_slope"]))
-        self.le_intercept = QLineEdit(str(defaults["calibration_intercept"]))
-
-        self.le_slope.setPlaceholderText("Slope")
-        self.le_intercept.setPlaceholderText("Y-intercept")
-
-        # Container for calibration fields
-        h_calib = QHBoxLayout()
-        h_calib.addWidget(QLabel("Slope:"))
-        h_calib.addWidget(self.le_slope)
-        h_calib.addWidget(QLabel("Y-intercept:"))
-        h_calib.addWidget(self.le_intercept)
-        self.calib_widget = QWidget()
-        self.calib_widget.setLayout(h_calib)
-        form.addRow(self.calib_widget)
-
-        # Show/hide calibration fields based on checkbox
-        self.calib_widget.setVisible(self.cb_calibration.isChecked())
-        self.cb_calibration.stateChanged.connect(
-            lambda checked: self.calib_widget.setVisible(bool(checked))
-        )
-
         # store loaded stim_params so get_settings() can return it if user doesn’t change it
         self.stim_params = defaults["stim_params"]
 
@@ -144,13 +114,9 @@ class ExperimentSettingsDialog(QDialog):
         Returns:
             None
         """
-        # Use separate history for output folder
-        last_output_dir = self.qsettings.value("last_output_folder", "", type=str)
-        folder = QFileDialog.getExistingDirectory(self, "Select Output Folder", last_output_dir)
+        folder = QFileDialog.getExistingDirectory(self, "Select Output Folder")
         if folder:
             self.le_output_folder.setText(folder)
-            # Save this folder as the last used output folder
-            self.qsettings.setValue("last_output_folder", folder)
 
     def handle_accept(self):
         """
@@ -174,7 +140,7 @@ class ExperimentSettingsDialog(QDialog):
         self.qsettings.setValue("file_length",           int(self.le_file_length.text()))
         self.qsettings.setValue("peak_position",         int(self.le_peak_pos.text()))
         self.qsettings.setValue("treatment",             self.le_treatment.text())
-        self.qsettings.setValue("waveform",              self.cb_waveform.currentText())
+        #self.qsettings.setValue("waveform",              self.cb_waveform.currentText())
         self.qsettings.setValue("time_between_files",    int(self.le_time_btw.text()))
         self.qsettings.setValue("files_before_treatment",int(self.le_files_before.text()))
         self.qsettings.setValue("output_folder", self.le_output_folder.text())
@@ -182,28 +148,6 @@ class ExperimentSettingsDialog(QDialog):
         print("Saving stim_params:", self.stim_params)
         self.qsettings.setValue("stim_params", json.dumps(self.stim_params))
         print("After setValue, reload raw:", self.qsettings.value("stim_params"))
-
-        self.qsettings.setValue("calibration_enabled", self.cb_calibration.isChecked())
-        if self.cb_calibration.isChecked():
-            try:
-                slope = float(self.le_slope.text())
-            except ValueError:
-                QMessageBox.warning(self, "Invalid Input", "Slope must be a number. Defaulting to 1.0.")
-                slope = 1.0
-            try:
-                intercept = float(self.le_intercept.text())
-            except ValueError:
-                QMessageBox.warning(self, "Invalid Input", "Y-intercept must be a number. Defaulting to 0.0.")
-                intercept = 0.0
-            self.qsettings.setValue("calibration_slope", slope)
-            self.qsettings.setValue("calibration_intercept", intercept)
-        else:
-            self.qsettings.setValue("calibration_slope", 1.0)
-            self.qsettings.setValue("calibration_intercept", 0.0)
-
-        slope = QSettings("HashemiLab", "NeuroStemVolt").value("calibration_slope", type=float)
-        intercept = QSettings("HashemiLab", "NeuroStemVolt").value("calibration_intercept", type=float)
-        print(slope,intercept)
 
         # close dialog
         self.accept()
@@ -229,15 +173,12 @@ class ExperimentSettingsDialog(QDialog):
             "acquisition_frequency":  int(self.le_acq_freq.text()),
             "peak_position":          int(self.le_peak_pos.text()),
             "treatment":              self.le_treatment.text(),
-            "waveform":               self.cb_waveform.currentText(),
+            #"waveform":               self.cb_waveform.currentText(),
             "time_between_files":     float(self.le_time_btw.text()),
             "files_before_treatment": int(self.le_files_before.text()),
             "file_type":              self.cb_file_type.currentText(),
             "stim_params":            self.stim_params,    # initialized in __init__
             "output_folder": self.le_output_folder.text(),
-            "calibration_enabled": self.cb_calibration.isChecked(),
-            "calibration_slope": float(self.le_slope.text()) if self.cb_calibration.isChecked() else 1.0,
-            "calibration_intercept": float(self.le_intercept.text()) if self.cb_calibration.isChecked() else 0.0,
         }
 
 class StimParamsDialog(QDialog):
