@@ -130,6 +130,12 @@ class ColorPlotPage(QWizardPage):
         left.addWidget(self.btn_export)
         left.addWidget(self.btn_export_all)
         left.addStretch()
+
+        self.chk_show_cv = QCheckBox("Show CV Plot")
+        self.chk_show_cv.setStyleSheet("color: white;")
+        self.chk_show_cv.toggled.connect(lambda checked: self.cv_plot.setVisible(checked))
+        left.addWidget(self.chk_show_cv)
+
         peak_edit_label = QLabel("Peak Editing:")
         peak_edit_label.setStyleSheet("font_size:10pt; font-weight: bold; color: white;")
         left.addWidget(peak_edit_label)
@@ -144,15 +150,12 @@ class ColorPlotPage(QWizardPage):
         # Right plots
         self.main_plot = PlotCanvas(self, width=5, height=4)
         self.it_plot = PlotCanvas(self, width=4, height=3)
-        self.cv_plot = None
-
-        if file_type == "Spontaneous":
-            self.cv_plot = PlotCanvas(self, width=4, height=3)
+        self.cv_plot = PlotCanvas(self, width=4, height=3)
+        self.cv_plot.setVisible(False)
 
         bottom = QHBoxLayout()
         bottom.addWidget(self.it_plot)
-        if file_type == "Spontaneous":
-            bottom.addWidget(self.cv_plot)
+        bottom.addWidget(self.cv_plot)
         self.bottom_layout = bottom
 
         right = QVBoxLayout()
@@ -340,22 +343,9 @@ class ColorPlotPage(QWizardPage):
 
             self._redraw_all_peak_overlays(sph_file)
 
-            file_type = QSettings("HashemiLab", "NeuroStemVolt").value("file_type", "None", type=str)
-            if file_type == "Spontaneous":
-                if not hasattr(self, "cv_plot") or self.cv_plot is None:
-                    self.cv_plot = PlotCanvas(self, width=4, height=3)
-                    try:
-                        self.bottom_layout.addWidget(self.cv_plot)
-                    except Exception:
-                        pass
+            if self.chk_show_cv.isChecked():
                 self.cv_plot.plot_cv(processed_data=processed_data, metadata=metadata,
                                      title_suffix=f"File {self.current_file_index + 1}")
-                if not hasattr(self, "chk_peak_click") or not self.chk_peak_click:
-                    self.chk_peak_click = QCheckBox("Click to edit peaks")
-                    self.chk_peak_click.setToolTip("Left-click: add/make active; Right-click: remove nearest")
-                    self.chk_peak_click.toggled.connect(self._enable_peak_click_mode)
-                    self.left_layout.addWidget(self.chk_peak_click)
-
         except IndexError:
             # Handle error case
             print(f"Error: Cannot access file at index {self.current_file_index}")
@@ -733,6 +723,9 @@ class ColorPlotPage(QWizardPage):
             self.main_plot.plot_color(processed_data=processed, peak_pos=peak_pos)
             self.it_plot.plot_IT(processed_data=processed, metadata=metadata,
                                  peak_position=peak_pos, temp_peak_detection=self.temp_peak)
+            if self.chk_show_cv.isChecked():
+                self.cv_plot.plot_cv(processed_data=processed, metadata=metadata,
+                                     title_suffix=f"File {self.current_file_index + 1}")
             self._redraw_all_peak_overlays(file_obj)
         except Exception as e:
             print(f"ERROR: _refresh_plots_for_file failed: {e}")
