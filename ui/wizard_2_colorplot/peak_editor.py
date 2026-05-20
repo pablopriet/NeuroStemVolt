@@ -6,7 +6,7 @@ from PyQt5.QtCore import pyqtSignal
 class PeakEditorDialog(QDialog):
     peaks_changed = pyqtSignal(list, int)  # emits (peaks_list, active_index)
     """Edit/add/remove peaks and choose the active one; optional plot-click picking."""
-    def __init__(self, peaks, active_idx=0, max_index=10, canvas=None, canvases=None, file_type="Spontaneous", acq_freq=10.0, parent=None):
+    def __init__(self, peaks, active_idx=0, max_index=10, canvas=None, canvases=None, file_type="Multi-Peak", acq_freq=10.0, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Edit Peaks")
         # Support one or many Matplotlib canvases (e.g., colour plot + IT plot)
@@ -65,7 +65,7 @@ class PeakEditorDialog(QDialog):
             lbl = f"{p}" + ("   (active)" if i == self._active else "")
             self.listw.addItem(lbl)
         # Enforce UI constraint for stimulation files: only one peak allowed
-        if self._file_type == "Stimulation":
+        if self._file_type == "Single-Peak":
             self.btn_add.setEnabled(len(self._peaks) == 0)
         else:
             self.btn_add.setEnabled(True)
@@ -83,7 +83,7 @@ class PeakEditorDialog(QDialog):
 
     def _on_add(self):
         v = max(0, min(int(self.spin.value()), self._max_index))
-        if self._file_type == "Stimulation":
+        if self._file_type == "Single-Peak":
             if len(self._peaks) >= 1:
                 # Replace the current (active or first) peak instead of adding a second
                 target = self.listw.currentRow()
@@ -149,7 +149,7 @@ class PeakEditorDialog(QDialog):
             if p not in seen:
                 uniq.append(p); seen.add(p)
         # Clamp to a single peak in Stimulation mode
-        if self._file_type == "Stimulation" and len(uniq) > 1:
+        if self._file_type == "Single-Peak" and len(uniq) > 1:
             keep_idx = self._active if 0 <= self._active < len(uniq) else 0
             uniq = [uniq[keep_idx]]
         active = 0 if not uniq else max(0, min(self._active, len(uniq)-1))
@@ -157,7 +157,7 @@ class PeakEditorDialog(QDialog):
 
     def accept(self):
         peaks, _ = self.result()
-        if self._file_type == "Stimulation":
+        if self._file_type == "Single-Peak":
             if len(peaks) > 1:
                 QMessageBox.warning(self, "Too many peaks", "Only one peak is allowed for Stimulation files.")
                 return

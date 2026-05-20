@@ -7,7 +7,6 @@ from core.group_analysis import GroupAnalysis
 from core.spheroid_experiment import SpheroidExperiment
 from ui.utils.styles import apply_custom_styles
 from ui.wizard_1_intro.settings_dialog import ExperimentSettingsDialog
-from ui.wizard_1_intro.settings_dialog import StimParamsDialog
 
 import os
 

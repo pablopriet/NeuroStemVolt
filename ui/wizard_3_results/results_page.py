@@ -37,8 +37,8 @@ class ResultsPage(QWizardPage):
         btn_amp    = QPushButton("Individual Amplitudes Over Time");          apply_custom_styles(btn_amp)
 
         # Spontaneous analysis buttons
-        self.btn_spont_freq = QPushButton("Spontaneous Peak Frequency");     apply_custom_styles(self.btn_spont_freq)
-        self.btn_spont_amp = QPushButton("Spontaneous Peak Amplitudes");     apply_custom_styles(self.btn_spont_amp)
+        self.btn_spont_freq = QPushButton("Multi-Peak Peak Frequency");     apply_custom_styles(self.btn_spont_freq)
+        self.btn_spont_amp = QPushButton("Multi-Peak Peak Amplitudes");     apply_custom_styles(self.btn_spont_amp)
         self.spontaneous_buttons = [self.btn_spont_freq, self.btn_spont_amp]
 
         # Initially hide spontaneous buttons
@@ -158,7 +158,7 @@ class ResultsPage(QWizardPage):
             # Export spontaneous peak metrics if applicable
             settings = QSettings("HashemiLab", "NeuroStemVolt")
             file_type = settings.value("file_type", "None", type=str)
-            if file_type == "Spontaneous":
+            if file_type == "Multi-Peak":
                 OutputManager.save_spontaneous_peak_metrics(ga, output_folder)
         except Exception as e:
             QMessageBox.critical(
@@ -229,7 +229,7 @@ class ResultsPage(QWizardPage):
             # Save spontaneous analysis plots if applicable
             settings = QSettings("HashemiLab", "NeuroStemVolt")
             file_type = settings.value("file_type", "None", type=str)
-            if file_type == "Spontaneous":
+            if file_type == "Multi-Peak":
                 # Create temporary plots and save them
                 self.result_plot.show_spontaneous_peak_amplitudes(group_analysis)
                 self.result_plot.fig.savefig(os.path.join(output_folder, "spontaneous_peak_amplitudes.png"), 
@@ -264,7 +264,7 @@ class ResultsPage(QWizardPage):
             # Check if spontaneous analysis should be shown
             settings = QSettings("HashemiLab", "NeuroStemVolt")
             file_type = settings.value("file_type", "None", type=str)
-            if file_type == "Spontaneous":
+            if file_type == "Multi-Peak":
                 for btn in self.spontaneous_buttons:
                     btn.show()
                     btn.setEnabled(True)

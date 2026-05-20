@@ -38,7 +38,7 @@ class ProcessingOptionsDialog(QDialog):
             ("Baseline Correction", True),
             ("Normalize", True),
             ("Find Amplitude", True),
-            #("Multiple Peak Detection", False),  # New option
+            ("Multiple Peak Detection", False),  # New option
         ]
 
         self.checkboxes = {}
@@ -58,7 +58,7 @@ class ProcessingOptionsDialog(QDialog):
             "Savitzky-Golay Filter": "Fits a local polynomial of a given 'order' over each segment of the data to smooth noise. The 'window size' sets how many points are used per fit, while 'order' (the 'p' polynomial order) controls how closely the fit can follow rapid changes.",
             "Baseline Correction": "Removes baseline drift from the signal.",
             "Normalize": "Normalizes each trace based on the peak amplitude of the first file within each replicate.",
-            #"Multiple Peak Detection": "Detects multiple spontaneous peaks throughout the signal using adaptive validation windows. Useful for analyzing spontaneous activity patterns.",
+            "Multiple Peak Detection": "Detects multiple spontaneous peaks throughout the signal using adaptive validation windows. Useful for analyzing spontaneous activity patterns.",
         }
 
         for name, default_checked in self.processor_options:
@@ -296,7 +296,7 @@ class ProcessingOptionsDialog(QDialog):
             settings = QSettings("HashemiLab", "NeuroStemVolt")
             file_type = settings.value("file_type", "None", type=str)
 
-            if file_type == "Spontaneous":
+            if file_type == "Multi-Peak":
                 return FindAmplitudeMultiple(peak_position)
             else:
                 return FindAmplitude(peak_position)

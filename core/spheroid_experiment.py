@@ -69,7 +69,7 @@ class SpheroidExperiment:
         # Initialize processors after acquisition_frequency is set
         if processors is None:
             # Choose the appropriate amplitude finder based on file type
-            if file_type == "Spontaneous":
+            if file_type == "Multi-Peak":
                 from core.processing.spontaneous_peak_detector import FindAmplitudeMultiple
                 amplitude_processor = FindAmplitudeMultiple(self.peak_position)
             else:
