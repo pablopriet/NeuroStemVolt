@@ -107,7 +107,7 @@ class ProcessingOptionsDialog(QDialog):
                 sg_layout = QHBoxLayout()
                 sg_label_w = QLabel("Window:")
                 sg_label_w.setStyleSheet("font-size: 11px; color: #555; margin-left: 16px;")
-                sg_window = QLineEdit("20")
+                sg_window = QLineEdit("5")
                 sg_label_o = QLabel("Order:")
                 sg_label_o.setStyleSheet("font-size: 11px; color: #555;")
                 sg_order = QLineEdit("2")
@@ -125,6 +125,28 @@ class ProcessingOptionsDialog(QDialog):
                 sg_container.hide()
                 param_widget = sg_container
                 self.param_widgets[name] = (sg_window, sg_order)
+            elif name == "Butterworth Filter":
+                bw_layout = QHBoxLayout()
+                bw_label_c = QLabel("Cutoff (% of Nyquist):")
+                bw_label_c.setStyleSheet("font-size: 11px; color: #555; margin-left: 16px;")
+                bw_cutoff = QLineEdit("15")
+                bw_label_o = QLabel("Order:")
+                bw_label_o.setStyleSheet("font-size: 11px; color: #555;")
+                bw_order = QLineEdit("4")
+                if "Butterworth Filter" in saved_params:
+                    c, o = saved_params["Butterworth Filter"]
+                    bw_cutoff.setText(c)
+                    bw_order.setText(o)
+                bw_layout.addWidget(bw_label_c)
+                bw_layout.addWidget(bw_cutoff)
+                bw_layout.addWidget(bw_label_o)
+                bw_layout.addWidget(bw_order)
+                bw_container = QWidget()
+                bw_container.setLayout(bw_layout)
+                bw_container.setContentsMargins(24, 0, 0, 0)
+                bw_container.hide()
+                param_widget = bw_container
+                self.param_widgets[name] = (bw_cutoff, bw_order)
             elif name == "Rolling Mean":
                 rm_layout = QHBoxLayout()
                 rm_label = QLabel("Window Size:")
@@ -204,10 +226,11 @@ class ProcessingOptionsDialog(QDialog):
             if param_widget:
                 filter_layout.addWidget(param_widget)
 
-                # Show/hide parameter widget based on checkbox
+                # Show/hide parameter widget based on checkbox; resize dialog to fit
                 def toggle_widget(checked, widget=param_widget):
                     widget.setVisible(checked)
-                cb.stateChanged.connect(toggle_widget)
+                    self.adjustSize()
+                cb.toggled.connect(toggle_widget)
                 # Set initial visibility
                 param_widget.setVisible(cb.isChecked())
 
@@ -316,7 +339,16 @@ class ProcessingOptionsDialog(QDialog):
         elif name == "Gaussian Smoothing 2D":
             return GaussianSmoothing2D()
         elif name == "Butterworth Filter":
-            return ButterworthFilter()
+            if name in self.param_widgets:
+                bw_cutoff, bw_order = self.param_widgets[name]
+                try:
+                    cutoff = float(bw_cutoff.text()) / 100.0  # convert % to fraction
+                    order = int(bw_order.text())
+                except ValueError:
+                    cutoff, order = 0.15, 4
+            else:
+                cutoff, order = 0.15, 4
+            return ButterworthFilter(cutoff=cutoff, p=order)
         elif name == "Baseline Correction":
             return BaselineCorrection()
         elif name == "Normalize":

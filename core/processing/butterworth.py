@@ -4,13 +4,14 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 
 class ButterworthFilter(Processor):
-    def __init__(self, p=4, fs_x=10, fs_y=500000):
+    def __init__(self, p=4, cutoff=0.15, fs_x=10, fs_y=500000):
         """
-        Apply a 2D low-pass Butterworth filter to FSCV color plot data. The implementation is inspired by the paper Novel, User-Friendly Experimental and Analysis Strategies for Fast Voltammetry: 1. The Analysis Kid for FSCV by Mena et al. (2021) 
+        Apply a 2D low-pass Butterworth filter to FSCV color plot data. The implementation is inspired by the paper Novel, User-Friendly Experimental and Analysis Strategies for Fast Voltammetry: 1. The Analysis Kid for FSCV by Mena et al. (2021)
         https://doi.org/10.1021/acs.analchem.1c01258
 
         Args:
             p (int): Filter order.
+            cutoff (float): Cutoff frequency as a fraction of Nyquist (0–1). Default 0.15 = 15%.
             fs_x (int): Sampling rate in time direction.
             fs_y (int): Sampling rate in voltage direction.
 
@@ -19,6 +20,7 @@ class ButterworthFilter(Processor):
             visualize_cutoff(data): Shows cutoff region on FFT spectrum.
         """
         self.p = p
+        self.cutoff = cutoff
 
     def process(self, data):
         """
@@ -57,9 +59,9 @@ class ButterworthFilter(Processor):
 
         WX, WY = np.meshgrid(wx, wy)
 
-        # 3. 15% cutoff
-        cx = 0.15 * (fs_x / 2)
-        cy = 0.15 * (fs_y / 2)
+        # Cutoff frequencies (user-configurable fraction of Nyquist)
+        cx = self.cutoff * (fs_x / 2)
+        cy = self.cutoff * (fs_y / 2)
 
         #print(f"Cutoff frequencies: cx={cx}, cy={cy}") -> cx=0.75, cy=37500.0
         # 4. Compute the custom 2D Butterworth transfer function
@@ -100,8 +102,8 @@ class ButterworthFilter(Processor):
         WX, WY = np.meshgrid(fx, fy)
 
         # 3. Cutoff frequencies
-        cx = 0.15 * (fs_x / 2)
-        cy = 0.15 * (fs_y / 2)
+        cx = self.cutoff * (fs_x / 2)
+        cy = self.cutoff * (fs_y / 2)
 
         # 4. Plot magnitude spectrum
         fig, ax = plt.subplots(figsize=(8, 6))
