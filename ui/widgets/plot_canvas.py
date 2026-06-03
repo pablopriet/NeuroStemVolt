@@ -57,9 +57,10 @@ class PlotCanvas(FigureCanvas):
 
         plot_settings = PLOT_SETTINGS()
         custom_cmap = plot_settings.custom
+        norm = plot_settings.get_norm(processed_data)
 
-        vmin = np.percentile(processed_data, 1)
-        vmax = np.percentile(processed_data, 99)
+        freq = QSettings("HashemiLab", "NeuroStemVolt").value("acquisition_frequency", 10, type=int)
+        time_extent_seconds = processed_data.shape[0] / freq
 
         self.fig.clear()
         self.axes = self.fig.add_subplot(111)
@@ -69,9 +70,8 @@ class PlotCanvas(FigureCanvas):
             aspect='auto',
             cmap=custom_cmap,
             origin='lower',
-            extent=[0, processed_data.shape[0], 0, processed_data.shape[1]],
-            vmin=vmin,
-            vmax=vmax
+            extent=[0, time_extent_seconds, 0, processed_data.shape[1]],
+            norm=norm
         )
         if peak_pos != None:
             self.axes.axhline(
@@ -83,7 +83,7 @@ class PlotCanvas(FigureCanvas):
         # Add colorbar using the figure object (Qt-safe)
         self.cbar = self.fig.colorbar(im, ax=self.axes, label="Current (nA)")
 
-        self.axes.set_xlabel("Time Points")
+        self.axes.set_xlabel("Time (seconds)")
         self.axes.set_ylabel("Voltage Steps")
         title = f"Color Plot{': ' + title_suffix if title_suffix else ''}"
         self.axes.set_title(title, fontweight='bold')       

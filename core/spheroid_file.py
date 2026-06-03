@@ -605,6 +605,18 @@ class PLOT_SETTINGS:
             [0, 0.2478, 0.3805, 0.6555, 0.701, 0.7603, 0.7779, 1]
         )
 
+    def get_norm(self, data, clim=None):
+        """
+        Fixed 3:2 ratio norm so zero current always sits between yellow and orange.
+
+        Args:
+            data: the FSCV data array
+            clim: optional positive limit. Negative limit = -clim, positive = (2/3)*clim.
+        """
+        if clim is None:
+            clim = np.nanmax(np.abs(data))
+        return mcolors.Normalize(vmin=-clim, vmax=(2 / 3) * clim)
+
     def get_continuous_cmap(self, hex_list, float_list=None):
         rgb_list = [self.rgb_to_dec(self.hex_to_rgb(i)) for i in hex_list]
         if float_list is None:

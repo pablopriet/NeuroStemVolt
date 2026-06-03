@@ -808,8 +808,11 @@ class ColorPlotPage(QWizardPage):
             try: ln.remove()
             except Exception: pass
         self._peak_lines_color = []
+        settings = QSettings("HashemiLab", "NeuroStemVolt")
+        try: fs = max(float(md.get('acquisition_frequency', settings.value("acquisition_frequency", 10, type=int))), 1.0)
+        except Exception: fs = 10.0
         for i, p in enumerate(peaks):
-            ln = ax.axvline(x=float(p),
+            ln = ax.axvline(x=float(p) / fs,   # convert sample index → seconds
                             color="white" if i == active else "red",
                             linewidth=2.5 if i == active else 1.5,
                             linestyle="--" if i == active else ":",
