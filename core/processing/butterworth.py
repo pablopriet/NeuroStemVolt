@@ -4,23 +4,23 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 
 class ButterworthFilter(Processor):
-    def __init__(self, p=4, cutoff=0.15, fs_x=10, fs_y=500000):
+    def __init__(self, p=4, cx=0.75, cy=37500.0):
         """
         Apply a 2D low-pass Butterworth filter to FSCV color plot data. The implementation is inspired by the paper Novel, User-Friendly Experimental and Analysis Strategies for Fast Voltammetry: 1. The Analysis Kid for FSCV by Mena et al. (2021)
         https://doi.org/10.1021/acs.analchem.1c01258
 
         Args:
             p (int): Filter order.
-            cutoff (float): Cutoff frequency as a fraction of Nyquist (0–1). Default 0.15 = 15%.
-            fs_x (int): Sampling rate in time direction.
-            fs_y (int): Sampling rate in voltage direction.
+            cx (float): Cutoff frequency in the time direction (Hz).
+            cy (float): Cutoff frequency in the voltage direction (Hz).
 
         Methods:
             process(data): Returns filtered data.
             visualize_cutoff(data): Shows cutoff region on FFT spectrum.
         """
         self.p = p
-        self.cutoff = cutoff
+        self.cx = cx
+        self.cy = cy
 
     def process(self, data):
         """
@@ -52,20 +52,20 @@ class ButterworthFilter(Processor):
 
         # 2. Frequency vectors in Hz
         fx = np.fft.fftfreq(padded_cols, d=1/fs_x)
-        fy = np.fft.fftfreq(padded_rows, d=1/fs_y) 
+        fy = np.fft.fftfreq(padded_rows, d=1/fs_y)
 
         wx = np.fft.fftshift(fx)
         wy = np.fft.fftshift(fy)
 
         WX, WY = np.meshgrid(wx, wy)
 
-        # Cutoff frequencies (user-configurable fraction of Nyquist)
-        cx = self.cutoff * (fs_x / 2)
-        cy = self.cutoff * (fs_y / 2)
+        # 3. 15% cutoff
+        #cx = 0.15 * (fs_x / 2)
+        #cy = 0.15 * (fs_y / 2)
 
         #print(f"Cutoff frequencies: cx={cx}, cy={cy}") -> cx=0.75, cy=37500.0
         # 4. Compute the custom 2D Butterworth transfer function
-        H = 1 / (1 + (WX / cx)**(2) + (WY / cy)**(2))**self.p
+        H = 1 / (1 + (WX / self.cx)**(2) + (WY / self.cy)**(2))**self.p
 
         # 5. Apply transfer function in frequency domain
         F_filtered = F_shifted * H
@@ -102,8 +102,8 @@ class ButterworthFilter(Processor):
         WX, WY = np.meshgrid(fx, fy)
 
         # 3. Cutoff frequencies
-        cx = self.cutoff * (fs_x / 2)
-        cy = self.cutoff * (fs_y / 2)
+        cx = self.cx
+        cy = self.cy
 
         # 4. Plot magnitude spectrum
         fig, ax = plt.subplots(figsize=(8, 6))

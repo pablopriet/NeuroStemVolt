@@ -21,7 +21,7 @@ class BackgroundSubtraction(Processor):
         Apply background subtraction to FSCV color plot data.
 
         Args:
-            data (np.ndarray): 2D array (voltage_steps × time_points).
+            data (np.ndarray): 2D array (time_points × voltage_steps).
             context (dict): Must include "acquisition_frequency" (Hz).
 
         Returns:
@@ -31,7 +31,9 @@ class BackgroundSubtraction(Processor):
         start_idx = int(self.region[0] * acq_freq)
         end_idx = int(self.region[1] * acq_freq)
 
-        n_voltage, n_time = data.shape
+        # data is (time_points, voltage_steps); the background region is in time,
+        # so all the index bounds below must be clamped against the time axis (dim 0).
+        n_time, n_voltage = data.shape
         warning_msg = None
 
         # Handle invalid regions gracefully

@@ -132,13 +132,15 @@ class SpheroidFile:
         """
         return self.metadata
 
-    def visualize_color_plot_data(self, title_suffix="", save_path=None):
+    def visualize_color_plot_data(self, title_suffix="", save_path=None, vmax=None):
         """
         Visualize the FSCV data as a 2D color plot.
 
         Args:
             title_suffix (str, optional): Optional string to add to the plot title.
             save_path (str, optional): Directory path to save the plot as PNG. If None, displays the plot.
+            vmax (float, optional): Manual upper color limit (nA). If None, auto-scales.
+                The lower limit always stays automatic so only the top stretches.
 
         Returns:
             tuple: (fig, ax) where fig is the Matplotlib Figure object and ax is the Axes.
@@ -150,9 +152,10 @@ class SpheroidFile:
         # Use the loaded data
         processed_data = self.processed_data
 
-        # Calculate limits
-        vmin = np.percentile(processed_data, 1)
-        vmax = np.percentile(processed_data, 99)
+        # Use the same norm as the on-screen canvas so the exported color plot
+        # matches the UI (auto lower limit, optional manual upper limit), instead of
+        # the old percentile-based scaling.
+        norm = plot_settings.get_norm(processed_data, vmax=vmax)
 
         # Create and save plot
         fig, ax = plt.subplots(figsize=(10, 6), constrained_layout=True)
@@ -162,13 +165,12 @@ class SpheroidFile:
                        origin='lower',
                        extent=[0, processed_data.shape[0],
                                0, processed_data.shape[1]],
-                       vmin=vmin,
-                       vmax=vmax)
+                       norm=norm)
         cbar = fig.colorbar(im, ax=ax, label="Current (nA)")
         ax.set_xlabel("Time Points")
         ax.set_ylabel("Voltage Steps")
         ax.set_title(
-            f"Color Plot{': ' + title_suffix if title_suffix else ''}\nRange: [{vmin:.2f}, {vmax:.2f}] nA")
+            f"Color Plot{': ' + title_suffix if title_suffix else ''}\nRange: [{norm.vmin:.2f}, {norm.vmax:.2f}] nA")
 
         #plt.tight_layout()
 
@@ -178,6 +180,8 @@ class SpheroidFile:
             base_name = os.path.splitext(os.path.basename(self.filepath))[0]  # Remove .txt
             output_file = os.path.join(output_folder, base_name + "_CP" +".png")
             fig.savefig(output_file, dpi=300, bbox_inches='tight')
+            # Also export an SVG (vector) version for editing individual elements
+            fig.savefig(os.path.splitext(output_file)[0] + ".svg", bbox_inches='tight')
             plt.close(fig)
         else:
             plt.show()
@@ -415,6 +419,8 @@ class SpheroidFile:
             base_name = os.path.splitext(os.path.basename(self.filepath))[0]  # Remove .txt
             output_file = os.path.join(output_folder, base_name + "_IT" + ".png")
             plt.savefig(output_file, dpi=300, bbox_inches='tight')
+            # Also export an SVG (vector) version for editing individual elements
+            plt.savefig(os.path.splitext(output_file)[0] + ".svg", bbox_inches='tight')
             plt.close(fig)
         else:
             plt.show()
@@ -605,17 +611,31 @@ class PLOT_SETTINGS:
             [0, 0.2478, 0.3805, 0.6555, 0.701, 0.7603, 0.7779, 1]
         )
 
-    def get_norm(self, data, clim=None):
+    def get_norm(self, data, clim=None, vmax=None):
         """
-        Fixed 3:2 ratio norm so zero current always sits between yellow and orange.
+        Color normalization for the FSCV color plot.
+
+        The positive (oxidation) side always takes the full limit and the negative
+        (reduction) side is fixed at -(2/3) of it. The top of the colorbar is therefore
+        always higher in magnitude than the bottom (the range below 0.0 nA is smaller
+        than above it), with 0.0 nA sitting at a constant ~0.4 up the colorbar.
+
+        When a manual upper limit ``vmax`` is given it sets the top directly
+        (e.g. top 1.0 -> bottom -0.67, top 14 -> bottom -9.33). With no manual limit
+        the top auto-scales to max(|data|).
 
         Args:
-            data: the FSCV data array
-            clim: optional positive limit. Negative limit = -clim, positive = (2/3)*clim.
+            data: the FSCV data array.
+            clim: optional positive limit for the auto path; defaults to max(|data|).
+            vmax: optional manual upper limit (nA). Lower limit becomes -(2/3)*vmax.
         """
+        if vmax is not None:
+            # Manual top: bottom = -(2/3) * top  ->  0.0 sits at ~0.4 of the colormap.
+            return mcolors.Normalize(vmin=-(2 / 3) * vmax, vmax=vmax)
         if clim is None:
             clim = np.nanmax(np.abs(data))
-        return mcolors.Normalize(vmin=-clim, vmax=(2 / 3) * clim)
+        # Auto top = clim, bottom = -(2/3)*clim: positive side always larger in magnitude.
+        return mcolors.Normalize(vmin=-(2 / 3) * clim, vmax=clim)
 
     def get_continuous_cmap(self, hex_list, float_list=None):
         rgb_list = [self.rgb_to_dec(self.hex_to_rgb(i)) for i in hex_list]

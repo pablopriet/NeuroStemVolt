@@ -210,11 +210,15 @@ class ResultsPage(QWizardPage):
             self,
             "Save Current Plot As",
             "",
-            "PNG Files (*.png);;All Files (*)",
+            "PNG Files (*.png);;SVG Files (*.svg);;All Files (*)",
             options=options
         )
         if file_path:
             self.result_plot.fig.savefig(file_path, dpi=300, bbox_inches='tight')
+            # Also export an SVG (vector) version for editing individual elements
+            svg_path = os.path.splitext(file_path)[0] + ".svg"
+            if svg_path != file_path:
+                self.result_plot.fig.savefig(svg_path, bbox_inches='tight')
             QMessageBox.information(self, "Plot Saved", f"Plot saved to:\n{file_path}")
 
     def save_all_plots(self):

@@ -4,6 +4,13 @@ from PyQt5.QtWidgets import QSplashScreen, QApplication, QWizard
 import sys
 import os
 
+import matplotlib
+# Keep SVG text as editable <text> elements (not vector outlines), so labels can be
+# edited in Affinity/Illustrator, and render labels in Helvetica.
+matplotlib.rcParams['svg.fonttype'] = 'none'
+matplotlib.rcParams['font.family'] = 'sans-serif'
+matplotlib.rcParams['font.sans-serif'] = ['Helvetica', 'Arial', 'DejaVu Sans']
+
 from ui.wizard_1_intro.intro_page import IntroPage
 from ui.wizard_2_colorplot.colorplot_page import ColorPlotPage
 from ui.wizard_3_results.results_page import ResultsPage

@@ -41,7 +41,7 @@ class PlotCanvas(FigureCanvas):
         fig.tight_layout()
         self.cbar = None
 
-    def plot_color(self, processed_data, peak_pos = None, title_suffix=None):
+    def plot_color(self, processed_data, peak_pos = None, title_suffix=None, vmax=None):
         """
         Display a 2D color plot of the FSCV data matrix.
 
@@ -49,6 +49,8 @@ class PlotCanvas(FigureCanvas):
             processed_data (np.ndarray): 2D data array (voltage x time).
             peak_pos (int, optional): Index of the peak position for annotation.
             title_suffix (str, optional): Text to append to the plot title.
+            vmax (float, optional): Manual upper color limit (nA). If None, auto-scales.
+                The lower limit always stays automatic (-max|data|).
 
         Returns:
             None
@@ -57,7 +59,8 @@ class PlotCanvas(FigureCanvas):
 
         plot_settings = PLOT_SETTINGS()
         custom_cmap = plot_settings.custom
-        norm = plot_settings.get_norm(processed_data)
+        # Optional manual upper limit; the lower limit is fixed at -(2/3) of the top.
+        norm = plot_settings.get_norm(processed_data, vmax=vmax)
 
         freq = QSettings("HashemiLab", "NeuroStemVolt").value("acquisition_frequency", 10, type=int)
         time_extent_seconds = processed_data.shape[0] / freq
@@ -825,9 +828,15 @@ class PlotCanvas(FigureCanvas):
         self.fig.clear()
         self.axes = self.fig.add_subplot(111)
 
-        # Generate voltage waveform (assuming 5HT waveform parameters)
+        # Generate voltage waveform based on the configured waveform type
+        waveform_type = QSettings("HashemiLab", "NeuroStemVolt").value("waveform", "5HT", type=str)
         try:
-            wf = Waveforms(-0.5, [-0.7, 1.1], -0.5, 600, processed_data.shape[1])
+            if waveform_type == "5HT":
+                wf = Waveforms(0.2, [1.0, -0.1], 0.2, 1000, processed_data.shape[1])
+            elif waveform_type == "DA":
+                wf = Waveforms(-0.4, [1.3, -0.4], -0.4, 400, processed_data.shape[1])
+            else:
+                wf = Waveforms(-0.5, [-0.7, 1.1], -0.5, 600, processed_data.shape[1])
             voltage = wf.voltage_waveform()
         except:
             # Fallback: create a simple linear voltage sweep if Waveforms fails
@@ -941,9 +950,15 @@ class PlotCanvas(FigureCanvas):
         self.fig.clear()
         self.axes = self.fig.add_subplot(111)
 
-        # Generate voltage waveform (assuming 5HT waveform parameters)
+        # Generate voltage waveform based on the configured waveform type
+        waveform_type = QSettings("HashemiLab", "NeuroStemVolt").value("waveform", "5HT", type=str)
         try:
-            wf = Waveforms(0.2, [1.0, -0.1], 0.2, 1000, processed_data.shape[1])
+            if waveform_type == "5HT":
+                wf = Waveforms(0.2, [1.0, -0.1], 0.2, 1000, processed_data.shape[1])
+            elif waveform_type == "DA":
+                wf = Waveforms(-0.4, [1.3, -0.4], -0.4, 400, processed_data.shape[1])
+            else:
+                wf = Waveforms(-0.5, [-0.7, 1.1], -0.5, 600, processed_data.shape[1])
             voltage = wf.voltage_waveform()
         except:
             # Fallback: create a simple linear voltage sweep if Waveforms fails

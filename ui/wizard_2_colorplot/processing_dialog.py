@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QCheckBox, QLabel, QLineEdit, QDialogButtonBox, QWidget, QPushButton
+    QDialog, QVBoxLayout, QHBoxLayout, QCheckBox, QLabel, QLineEdit, QDialogButtonBox, QWidget, QPushButton, QComboBox
 )
 from PyQt5.QtCore import QSettings, pyqtSignal
 import json
@@ -7,7 +7,8 @@ import json
 from ui.utils.styles import apply_custom_styles
 from ui.utils.ui_helpers import make_labeled_field_with_help
 from core.processing import BackgroundSubtraction, SavitzkyGolayFilter, RollingMean, GaussianSmoothing2D, \
-    ButterworthFilter, BaselineCorrection, Normalize, FindAmplitude, ExponentialFitting, StimArtifactRemoval, InvertData
+    ButterworthFilter, BaselineCorrection, Normalize, FindAmplitude, ExponentialFitting, \
+    StimArtifactRemoval, InvertData
 
 from core.processing.spontaneous_peak_detector import FindAmplitudeMultiple
 
@@ -57,7 +58,7 @@ class ProcessingOptionsDialog(QDialog):
         help_texts = {
             "Background Subtraction": "Subtracts baseline offset by averaging the signal between a specified 'start' and 'end' segment (given as data indices or time points at the beginning of the trace) and subtracting that mean from the entire recording.",
             "Rolling Mean": "Smooths the trace by computing a moving average over a sliding window of N points. The 'window size' parameter sets how many consecutive samples are included in each average. Larger windows yield smoother traces but can blur sharp features.",
-            "Butterworth Filter": "Applies a low-pass filter while preserving waveform.",
+            "Butterworth Filter": "Applies a low-pass filter while preserving waveform. The 'order' (p) controls the steepness of the filter roll-off, while 'cx' and 'cy' set the cutoff frequencies (Hz) in the time and voltage dimensions, respectively. Lower cx = more smoothing along the time axis.",
             "Savitzky-Golay Filter": "Fits a local polynomial of a given 'order' over each segment of the data to smooth noise. The 'window size' sets how many points are used per fit, while 'order' (the 'p' polynomial order) controls how closely the fit can follow rapid changes.",
             "Baseline Correction": "Removes baseline drift from the signal.",
             "Artifact Removal": "Automatically detects and removes stimulation artifacts using scan-to-scan jump detection. Safe to apply to all file types — if no artifact is found the data is returned unchanged.",
@@ -125,28 +126,6 @@ class ProcessingOptionsDialog(QDialog):
                 sg_container.hide()
                 param_widget = sg_container
                 self.param_widgets[name] = (sg_window, sg_order)
-            elif name == "Butterworth Filter":
-                bw_layout = QHBoxLayout()
-                bw_label_c = QLabel("Cutoff (% of Nyquist):")
-                bw_label_c.setStyleSheet("font-size: 11px; color: #555; margin-left: 16px;")
-                bw_cutoff = QLineEdit("15")
-                bw_label_o = QLabel("Order:")
-                bw_label_o.setStyleSheet("font-size: 11px; color: #555;")
-                bw_order = QLineEdit("4")
-                if "Butterworth Filter" in saved_params:
-                    c, o = saved_params["Butterworth Filter"]
-                    bw_cutoff.setText(c)
-                    bw_order.setText(o)
-                bw_layout.addWidget(bw_label_c)
-                bw_layout.addWidget(bw_cutoff)
-                bw_layout.addWidget(bw_label_o)
-                bw_layout.addWidget(bw_order)
-                bw_container = QWidget()
-                bw_container.setLayout(bw_layout)
-                bw_container.setContentsMargins(24, 0, 0, 0)
-                bw_container.hide()
-                param_widget = bw_container
-                self.param_widgets[name] = (bw_cutoff, bw_order)
             elif name == "Rolling Mean":
                 rm_layout = QHBoxLayout()
                 rm_label = QLabel("Window Size:")
@@ -162,6 +141,34 @@ class ProcessingOptionsDialog(QDialog):
                 rm_container.hide()
                 param_widget = rm_container
                 self.param_widgets[name] = rm_window
+            elif name == "Butterworth Filter":
+                bw_layout = QHBoxLayout()
+                bw_label_p = QLabel("Order (p):")
+                bw_label_p.setStyleSheet("font-size: 11px; color: #555; margin-left: 16px;")
+                bw_p = QLineEdit("4")
+                bw_label_cx = QLabel("cx:")
+                bw_label_cx.setStyleSheet("font-size: 11px; color: #555;")
+                bw_cx = QLineEdit("2.5")
+                bw_label_cy = QLabel("cy:")
+                bw_label_cy.setStyleSheet("font-size: 11px; color: #555;")
+                bw_cy = QLineEdit("37500.0")
+                if "Butterworth Filter" in saved_params:
+                    p, cx, cy = saved_params["Butterworth Filter"]
+                    bw_p.setText(p)
+                    bw_cx.setText(cx)
+                    bw_cy.setText(cy)
+                bw_layout.addWidget(bw_label_p)
+                bw_layout.addWidget(bw_p)
+                bw_layout.addWidget(bw_label_cx)
+                bw_layout.addWidget(bw_cx)
+                bw_layout.addWidget(bw_label_cy)
+                bw_layout.addWidget(bw_cy)
+                bw_container = QWidget()
+                bw_container.setLayout(bw_layout)
+                bw_container.setContentsMargins(24, 0, 0, 0)  # Indent
+                bw_container.hide()
+                param_widget = bw_container
+                self.param_widgets[name] = (bw_p, bw_cx, bw_cy)
             elif name == "Multiple Peak Detection":
                 # Parameters for multiple peak detection
                 mpd_layout = QVBoxLayout()
@@ -339,16 +346,14 @@ class ProcessingOptionsDialog(QDialog):
         elif name == "Gaussian Smoothing 2D":
             return GaussianSmoothing2D()
         elif name == "Butterworth Filter":
-            if name in self.param_widgets:
-                bw_cutoff, bw_order = self.param_widgets[name]
-                try:
-                    cutoff = float(bw_cutoff.text()) / 100.0  # convert % to fraction
-                    order = int(bw_order.text())
-                except ValueError:
-                    cutoff, order = 0.15, 4
-            else:
-                cutoff, order = 0.15, 4
-            return ButterworthFilter(cutoff=cutoff, p=order)
+            bw_p, bw_cx, bw_cy = self.param_widgets[name]
+            try:
+                p = int(bw_p.text())
+                cx = float(bw_cx.text())
+                cy = float(bw_cy.text())
+            except ValueError:
+                p, cx, cy = 4, 2.5, 37500.0
+            return ButterworthFilter(p=p, cx=cx, cy=cy)
         elif name == "Baseline Correction":
             return BaselineCorrection()
         elif name == "Normalize":
