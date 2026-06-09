@@ -255,12 +255,36 @@ class ColorPlotPage(QWizardPage):
         self.spin_cv_ref.setEnabled(False)
         self.spin_cv_ref.valueChanged.connect(self._redraw_cv)
 
+        # Colorbar upper-limit control. 0.0 nA stays pinned at the same point of the
+        # colormap (the 3:2 / 0.6 logic); raising this just stretches the color range.
+        self.chk_color_limit = QCheckBox("Manual color limit")
+        self.chk_color_limit.setStyleSheet("color: white;")
+        self.chk_color_limit.setToolTip(
+            "Set the upper end of the colorbar (nA). The lower end is fixed at "
+            "-2/3 of the top (e.g. top 1.0 -> bottom -0.67, top 14 -> bottom -9.33), "
+            "which keeps 0.0 nA at the same color and makes reduction (negative) "
+            "peaks stand out. Applies to both the on-screen plot and the export.")
+        self.chk_color_limit.toggled.connect(self._on_color_limit_changed)
+
+        self.spin_color_limit = QDoubleSpinBox()
+        self.spin_color_limit.setRange(0.05, 100.0)
+        self.spin_color_limit.setSingleStep(0.1)
+        self.spin_color_limit.setValue(1.0)
+        self.spin_color_limit.setDecimals(2)
+        self.spin_color_limit.setSuffix(" nA")
+        self.spin_color_limit.setEnabled(False)
+        self.spin_color_limit.valueChanged.connect(self._on_color_limit_changed)
+
         left.addWidget(_sec("Visualization"))
         left.addWidget(self.chk_show_cv)
         cv_ref_row = QHBoxLayout()
         cv_ref_row.addWidget(self.chk_cv_ref)
         cv_ref_row.addWidget(self.spin_cv_ref)
         left.addLayout(cv_ref_row)
+        color_limit_row = QHBoxLayout()
+        color_limit_row.addWidget(self.chk_color_limit)
+        color_limit_row.addWidget(self.spin_color_limit)
+        left.addLayout(color_limit_row)
 
         self.left_layout = left
 
@@ -453,7 +477,8 @@ class ColorPlotPage(QWizardPage):
             metadata = sph_file.get_metadata()
             peak_pos = QSettings("HashemiLab", "NeuroStemVolt").value("peak_position")
 
-            self.main_plot.plot_color(processed_data=processed_data, peak_pos=peak_pos)
+            self.main_plot.plot_color(processed_data=processed_data, peak_pos=peak_pos,
+                                      vmax=self._current_vmax())
 
             self.it_plot.plot_IT(processed_data=processed_data, metadata=metadata, peak_position=peak_pos,
                                  temp_peak_detection=self.temp_peak)
@@ -989,6 +1014,33 @@ class ColorPlotPage(QWizardPage):
             self._peak_lines_it.append(ln)
         self.it_plot.fig.canvas.draw_idle()
 
+    def _current_vmax(self):
+        """Manual upper color limit (nA) to pass to get_norm, or None for auto.
+
+        The spin box sets the top of the colorbar directly; the lower limit is then
+        fixed at -(2/3) of the top, so 0.0 nA stays at a constant ~0.4 up the colorbar.
+        """
+        if self.chk_color_limit.isChecked():
+            return self.spin_color_limit.value()
+        return None
+
+    def _on_color_limit_changed(self, *args):
+        """Persist the color-limit setting (so the export matches) and redraw."""
+        manual = self.chk_color_limit.isChecked()
+        self.spin_color_limit.setEnabled(manual)
+        qs = QSettings("HashemiLab", "NeuroStemVolt")
+        qs.setValue("color_vmax_manual", manual)
+        qs.setValue("color_vmax", self._current_vmax() if manual else "")
+        # Redraw the current file's color plot with the new limit, if one is loaded.
+        try:
+            exp = self.wizard().group_analysis.get_single_experiments(self.current_rep_index)
+            actual = self.file_index_mapping[self.current_file_index] if (
+                self.file_index_mapping and self.current_file_index < len(self.file_index_mapping)
+            ) else self.current_file_index
+            self._refresh_plots_for_file(exp.get_spheroid_file(actual))
+        except Exception:
+            pass  # no data loaded yet
+
     def _redraw_all_peak_overlays(self, file_obj):
         self._draw_peak_overlays_color(file_obj)
         self._draw_peak_overlays_it(file_obj)
@@ -998,7 +1050,8 @@ class ColorPlotPage(QWizardPage):
             processed = file_obj.get_processed_data()
             metadata = file_obj.get_metadata() or {}
             peak_pos = QSettings("HashemiLab", "NeuroStemVolt").value("peak_position")
-            self.main_plot.plot_color(processed_data=processed, peak_pos=peak_pos)
+            self.main_plot.plot_color(processed_data=processed, peak_pos=peak_pos,
+                                      vmax=self._current_vmax())
             self.it_plot.plot_IT(processed_data=processed, metadata=metadata,
                                  peak_position=peak_pos, temp_peak_detection=self.temp_peak)
             if self.chk_show_cv.isChecked():
@@ -1056,22 +1109,30 @@ class ColorPlotPage(QWizardPage):
         output_folder_path = QSettings("HashemiLab", "NeuroStemVolt").value("output_folder")
         OutputManager.save_all_ITs(group_analysis, output_folder_path)
 
+    def _current_spheroid_file(self):
+        """Return the spheroid file currently shown, resolving the display index
+        through file_index_mapping so exports match what's on screen."""
+        exp = self.wizard().group_analysis.get_single_experiments(self.current_rep_index)
+        actual = self.file_index_mapping[self.current_file_index] if (
+            self.file_index_mapping and self.current_file_index < len(self.file_index_mapping)
+        ) else self.current_file_index
+        return exp.get_spheroid_file(actual)
+
     def save_IT_ColorPlot_Plots(self):
         """
         Saves the color plot and I-T profile visualizations for the current file.
         """
-        exp = self.wizard().group_analysis.get_single_experiments(self.current_rep_index)
-        sph_file = exp.get_spheroid_file(self.current_file_index)
+        sph_file = self._current_spheroid_file()
         output_folder_path = QSettings("HashemiLab", "NeuroStemVolt").value("output_folder")
-        sph_file.visualize_color_plot_data(title_suffix = "", save_path=output_folder_path)
+        sph_file.visualize_color_plot_data(title_suffix="", save_path=output_folder_path,
+                                           vmax=self._current_vmax())
         sph_file.visualize_IT_profile(QSettings("HashemiLab", "NeuroStemVolt").value("output_folder"))
 
     def save_processed_data_IT(self):
         """
         Saves the processed I-T data array (not a figure) for the current file.
         """
-        exp = self.wizard().group_analysis.get_single_experiments(self.current_rep_index)
-        sph_file = exp.get_spheroid_file(self.current_file_index)
+        sph_file = self._current_spheroid_file()
         output_folder_path = QSettings("HashemiLab", "NeuroStemVolt").value("output_folder")
         OutputManager.save_IT_profile(sph_file, output_folder_path)
 
@@ -1389,7 +1450,25 @@ class ColorPlotPage(QWizardPage):
             output_folder_path = QSettings("HashemiLab", "NeuroStemVolt").value("output_folder")
             output_folder_cv = os.path.join(output_folder_path, "CV_plots")
             os.makedirs(output_folder_cv, exist_ok=True)
+
+            # Render into a fresh, larger off-screen figure rather than dumping the
+            # small on-screen canvas, so the exported plot is high-resolution and
+            # the labels/annotations aren't cramped.
+            ref_voltage = self.spin_cv_ref.value() if self.chk_cv_ref.isChecked() else None
+            export_canvas = PlotCanvas(parent=None, width=8, height=6, dpi=150)
+            export_canvas.plot_cv(
+                processed_data=sph_file.get_processed_data(),
+                metadata=sph_file.get_metadata(),
+                title_suffix=f"File {self.current_file_index + 1}",
+                ref_voltage=ref_voltage,
+            )
+
             save_path = os.path.join(output_folder_cv, f"{base_name}_CV.png")
-            self.cv_plot.fig.savefig(save_path, dpi=150, bbox_inches='tight')
+            export_canvas.fig.savefig(save_path, dpi=150, bbox_inches='tight')
+            # Also export an SVG (vector) version for editing individual elements
+            export_canvas.fig.savefig(os.path.join(output_folder_cv, f"{base_name}_CV.svg"),
+                                      bbox_inches='tight')
+            QMessageBox.information(self, "CV Plot Exported",
+                                    f"CV plot saved to:\n{output_folder_cv}")
         except Exception as e:
             QMessageBox.warning(self, "Export Failed", f"Could not save CV plot:\n{e}")

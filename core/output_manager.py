@@ -628,7 +628,17 @@ class OutputManager:
         output_folder = os.path.join(output_path, "plots")
         os.makedirs(output_folder, exist_ok=True)
         save_path = os.path.join(output_folder, "color_plot.png")
-        spheroid_file.visualize_color_plot_data(save_path=save_path)
+        # Honor the manual upper colorbar limit set in the UI, if any, so bulk
+        # exports match the on-screen / per-file exports.
+        from PyQt5.QtCore import QSettings
+        qs = QSettings("HashemiLab", "NeuroStemVolt")
+        vmax = None
+        if qs.value("color_vmax_manual", False, type=bool):
+            try:
+                vmax = float(qs.value("color_vmax")) or None
+            except (TypeError, ValueError):
+                vmax = None
+        spheroid_file.visualize_color_plot_data(save_path=save_path, vmax=vmax)
 
     ### Methods for group_analysis
     @staticmethod
