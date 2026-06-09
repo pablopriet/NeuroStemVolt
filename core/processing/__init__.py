@@ -10,6 +10,7 @@ from .exponentialdecay import ExponentialFitting
 from .normalize import Normalize
 from .invert import InvertData
 from .stim_artifact_removal import StimArtifactRemoval
+from .drift_correction import DriftCorrection
 
 __all__ = [
     "RawMean",
@@ -23,5 +24,6 @@ __all__ = [
     "ExponentialFitting",
     "Normalize",
     "InvertData",
-    "StimArtifactRemoval"
+    "StimArtifactRemoval",
+    "DriftCorrection",
 ]

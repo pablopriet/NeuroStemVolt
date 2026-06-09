@@ -104,12 +104,10 @@ class PlotCanvas(FigureCanvas):
             None
         """
         self.fig.clear()
-        self.axes.clear()
+        self.axes = self.fig.add_subplot(111)
 
         settings = QSettings("HashemiLab", "NeuroStemVolt")
         freq = settings.value("acquisition_frequency", 10, type=int)
-
-        self.axes = self.fig.add_subplot(111)
         profile = processed_data[:, peak_position]
         n = profile.shape[0]
         t = np.arange(n) / freq  # in seconds
@@ -119,8 +117,6 @@ class PlotCanvas(FigureCanvas):
 
         # Plot peak markers if metadata is provided
         if metadata and 'peak_amplitude_positions' in metadata:
-            print("IN PLOT CANVAS")
-            print(metadata)
             peak_indices = metadata['peak_amplitude_positions']
             peak_values = metadata.get('peak_amplitude_values', None)
 
@@ -265,7 +261,8 @@ class PlotCanvas(FigureCanvas):
         time_points, mean_amplitudes, all_amplitudes, files_before_treatment = group_analysis.amplitudes_over_time_all_experiments()
         
         if time_points is None:
-            self.axes.clear()
+            self.fig.clear()
+            self.axes = self.fig.add_subplot(111)
             self.axes.set_title("No data to plot")
             self.draw()
             progress.close()
@@ -275,7 +272,8 @@ class PlotCanvas(FigureCanvas):
         std_amplitudes = np.nanstd(all_amplitudes, axis=0)
 
         # Clear and plot
-        self.axes.clear()
+        self.fig.clear()
+        self.axes = self.fig.add_subplot(111)
         self.axes.plot(time_points, mean_amplitudes, label='Mean Amplitude', color='purple')
         self.axes.fill_between(time_points, mean_amplitudes - std_amplitudes, mean_amplitudes + std_amplitudes,
                             color='purple', alpha=0.2, label='SD')
@@ -323,13 +321,15 @@ class PlotCanvas(FigureCanvas):
                 "Dimension Mismatch",
                 f"Error: {str(e)}\n\nPlease ensure all replicates have the same number of time points."
             )
-            self.axes.clear()
+            self.fig.clear()
+            self.axes = self.fig.add_subplot(111)
             self.axes.set_title("Dimension mismatch error")
             self.draw()
             progress.close()
             return
         if result is None:
-            self.axes.clear()
+            self.fig.clear()
+            self.axes = self.fig.add_subplot(111)
             self.axes.set_title("No data to fit")
             self.draw()
             progress.close()
@@ -369,7 +369,8 @@ class PlotCanvas(FigureCanvas):
         upper_ci = y_fit + ci
 
         # Plot on the embedded axes
-        self.axes.clear()
+        self.fig.clear()
+        self.axes = self.fig.add_subplot(111)
 
         # a) each replicate in light gray
         for row in cropped_ITs:
@@ -436,7 +437,8 @@ class PlotCanvas(FigureCanvas):
             n_files
         )
 
-        self.axes.clear()
+        self.fig.clear()
+        self.axes = self.fig.add_subplot(111)
         self.axes.errorbar(time_points, tau_list, yerr=tau_err_list, fmt='o-', capsize=4, color='C1', label='Tau (decay constant)')
         self.axes.set_xlabel("Time (minutes)")
         self.axes.set_ylabel("Tau (decay constant)")
@@ -470,7 +472,8 @@ class PlotCanvas(FigureCanvas):
 
         time_points, mean_amplitudes, all_amplitudes, files_before_treatment = group_analysis.amplitudes_over_time_all_experiments()
         if time_points is None:
-            self.axes.clear()
+            self.fig.clear()
+            self.axes = self.fig.add_subplot(111)
             self.axes.set_title("No data to plot")
             self.draw()
             progress.close()
@@ -479,7 +482,8 @@ class PlotCanvas(FigureCanvas):
         all_amplitudes = np.array(all_amplitudes, dtype=float)
         treatment_time = files_before_treatment * (time_points[1] - time_points[0])
 
-        self.axes.clear()
+        self.fig.clear()
+        self.axes = self.fig.add_subplot(111)
         for i, amplitudes in enumerate(all_amplitudes):
             self.axes.plot(time_points, amplitudes, label=f'Experiment {i+1}', alpha=0.7)
         if files_before_treatment > 0:
@@ -519,7 +523,8 @@ class PlotCanvas(FigureCanvas):
 
             experiments = group_analysis.get_experiments()
             if not experiments:
-                self.axes.clear()
+                self.fig.clear()
+                self.axes = self.fig.add_subplot(111)
                 self.axes.set_title("No experiments to analyze")
                 self.draw()
                 return
@@ -543,9 +548,6 @@ class PlotCanvas(FigureCanvas):
                 for j, spheroid_file in enumerate(exp.files):
                     meta = spheroid_file.get_metadata()
                     peak_positions = meta.get('peak_amplitude_positions', [])
-                    print("_______________________")
-                    print(peak_positions)
-                    print("_______________________")
 
                     # Handle both single value and list/array cases
                     if not isinstance(peak_positions, (list, np.ndarray)):
@@ -553,7 +555,6 @@ class PlotCanvas(FigureCanvas):
 
                     num_peaks = len(peak_positions)
                     frequency = num_peaks / (file_length_sec / 60)  # peaks per minute
-                    print(frequency)
                     exp_frequencies.append(frequency)
 
                 all_frequencies.append(exp_frequencies)
@@ -564,7 +565,8 @@ class PlotCanvas(FigureCanvas):
             std_frequencies = np.nanstd(all_frequencies, axis=0)
 
             # Clear and plot
-            self.axes.clear()
+            self.fig.clear()
+            self.axes = self.fig.add_subplot(111)
 
             # Plot mean frequency with standard deviation
             self.axes.plot(time_points, mean_frequencies, 'o-', color='#2E8B57',
@@ -594,7 +596,8 @@ class PlotCanvas(FigureCanvas):
             self.draw()
 
         except Exception as e:
-            self.axes.clear()
+            self.fig.clear()
+            self.axes = self.fig.add_subplot(111)
             self.axes.text(0.5, 0.5, f"Error plotting frequency data: {str(e)}",
                           ha='center', va='center', transform=self.axes.transAxes)
             self.draw()
@@ -624,7 +627,8 @@ class PlotCanvas(FigureCanvas):
 
             experiments = group_analysis.get_experiments()
             if not experiments:
-                self.axes.clear()
+                self.fig.clear()
+                self.axes = self.fig.add_subplot(111)
                 self.axes.set_title("No experiments to analyze")
                 self.draw()
                 return
@@ -665,7 +669,8 @@ class PlotCanvas(FigureCanvas):
             std_amplitudes = np.nanstd(all_mean_amplitudes, axis=0)
 
             # Clear and plot
-            self.axes.clear()
+            self.fig.clear()
+            self.axes = self.fig.add_subplot(111)
 
             # Plot mean amplitude with standard deviation
             self.axes.plot(time_points, mean_amplitudes, 'o-', color='#8B008B',
@@ -695,7 +700,8 @@ class PlotCanvas(FigureCanvas):
             self.draw()
 
         except Exception as e:
-            self.axes.clear()
+            self.fig.clear()
+            self.axes = self.fig.add_subplot(111)
             self.axes.text(0.5, 0.5, f"Error plotting amplitude data: {str(e)}",
                           ha='center', va='center', transform=self.axes.transAxes)
             self.draw()
@@ -768,6 +774,7 @@ class PlotCanvas(FigureCanvas):
             self.fig.clear()
             ax1 = self.fig.add_subplot(111)
             ax2 = ax1.twinx()
+            self.axes = ax1  # keep self.axes in sync so subsequent methods clear correctly
 
             ax1.plot(time_points, mean_amp, 'o-', color='#8B008B', linewidth=2, markersize=6, label='Mean Amplitude')
             ax1.fill_between(time_points, mean_amp - std_amp, mean_amp + std_amp, color='#8B008B', alpha=0.2)
@@ -792,8 +799,8 @@ class PlotCanvas(FigureCanvas):
 
         except Exception as e:
             self.fig.clear()
-            ax = self.fig.add_subplot(111)
-            ax.text(0.5, 0.5, f"Error: {str(e)}", ha='center', va='center', transform=ax.transAxes)
+            self.axes = self.fig.add_subplot(111)
+            self.axes.text(0.5, 0.5, f"Error: {str(e)}", ha='center', va='center', transform=self.axes.transAxes)
             self.draw()
         finally:
             progress.close()

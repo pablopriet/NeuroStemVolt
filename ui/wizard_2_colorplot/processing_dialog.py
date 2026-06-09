@@ -7,12 +7,13 @@ import json
 from ui.utils.styles import apply_custom_styles
 from ui.utils.ui_helpers import make_labeled_field_with_help
 from core.processing import BackgroundSubtraction, SavitzkyGolayFilter, RollingMean, GaussianSmoothing2D, \
-    ButterworthFilter, BaselineCorrection, Normalize, FindAmplitude, ExponentialFitting, StimArtifactRemoval, InvertData
+    ButterworthFilter, BaselineCorrection, Normalize, FindAmplitude, ExponentialFitting, StimArtifactRemoval, InvertData, DriftCorrection
 
 from core.processing.spontaneous_peak_detector import FindAmplitudeMultiple
 
 class ProcessingOptionsDialog(QDialog):
     apply_requested = pyqtSignal()   # emitted when Apply is clicked (dialog stays open)
+    revert_requested = pyqtSignal()  # emitted when Reverse Changes is clicked
     """
     Dialog for configuring and selecting signal processing options.
 
@@ -40,6 +41,7 @@ class ProcessingOptionsDialog(QDialog):
             ("Baseline Correction", True),
             ("Artifact Removal", True),
             ("Invert Data", False),
+            # ("Drift Correction", False),
             ("Find Amplitude", True),
             #("Multiple Peak Detection", False),  # New option
         ]
@@ -62,11 +64,17 @@ class ProcessingOptionsDialog(QDialog):
             "Baseline Correction": "Removes baseline drift from the signal.",
             "Artifact Removal": "Automatically detects and removes stimulation artifacts using scan-to-scan jump detection. Safe to apply to all file types — if no artifact is found the data is returned unchanged.",
             "Invert Data": "Inverts the sign of the signal. Use this if your data is recorded with reversed polarity.",
+            "Drift Correction": "Fits a linear trend to the baseline file amplitudes (files before treatment) and subtracts the extrapolated drift from all subsequent files. Requires at least 2 baseline files. Must run after peak detection.",
             #"Multiple Peak Detection": "Detects multiple spontaneous peaks throughout the signal using adaptive validation windows. Useful for analyzing spontaneous activity patterns.",
         }
 
+        file_type = QSettings("HashemiLab", "NeuroStemVolt").value("file_type", "None", type=str)
+
         for name, default_checked in self.processor_options:
             if name == "Find Amplitude":
+                continue
+            # Baseline Correction is not meaningful for Multi-Peak files
+            if name == "Baseline Correction" and file_type == "Multi-Peak":
                 continue
 
             # Create a vertical layout for each filter option
@@ -162,6 +170,36 @@ class ProcessingOptionsDialog(QDialog):
                 rm_container.hide()
                 param_widget = rm_container
                 self.param_widgets[name] = rm_window
+            elif name == "Artifact Removal":
+                ar_layout = QHBoxLayout()
+                ar_label_t = QLabel("Threshold:")
+                ar_label_t.setStyleSheet("font-size: 11px; color: #555; margin-left: 16px;")
+                ar_threshold = QLineEdit("8")
+                ar_label_p = QLabel("Pad:")
+                ar_label_p.setStyleSheet("font-size: 11px; color: #555;")
+                ar_pad = QLineEdit("2")
+                ar_label_m = QLabel("Max Scans (blank=auto):")
+                ar_label_m.setStyleSheet("font-size: 11px; color: #555;")
+                ar_max = QLineEdit("")
+                if "Artifact Removal" in saved_params:
+                    saved_ar = saved_params["Artifact Removal"]
+                    if isinstance(saved_ar, list) and len(saved_ar) == 3:
+                        ar_threshold.setText(saved_ar[0])
+                        ar_pad.setText(saved_ar[1])
+                        ar_max.setText(saved_ar[2])
+                ar_layout.addWidget(ar_label_t)
+                ar_layout.addWidget(ar_threshold)
+                ar_layout.addWidget(ar_label_p)
+                ar_layout.addWidget(ar_pad)
+                ar_layout.addWidget(ar_label_m)
+                ar_layout.addWidget(ar_max)
+                ar_container = QWidget()
+                ar_container.setLayout(ar_layout)
+                ar_container.setContentsMargins(24, 0, 0, 0)
+                ar_container.hide()
+                param_widget = ar_container
+                self.param_widgets[name] = (ar_threshold, ar_pad, ar_max)
+
             elif name == "Multiple Peak Detection":
                 # Parameters for multiple peak detection
                 mpd_layout = QVBoxLayout()
@@ -267,13 +305,69 @@ class ProcessingOptionsDialog(QDialog):
                 )
             sync_single_peak_detection(mpd_cb.isChecked())  # Initial state
             mpd_cb.toggled.connect(sync_single_peak_detection)
-        
-        # Dialog buttons — OK / Apply / Cancel
+
+        # ── Peak detection parameters (always visible) ────────────────────────
+        fa_saved = saved_params.get("Find Amplitude", None)
+        fa_params_layout = QHBoxLayout()
+        fa_params_layout.setContentsMargins(8, 2, 0, 0)
+        fa_params_layout.setSpacing(6)
+
+        if file_type == "Multi-Peak":
+            fa_pct_lbl  = QLabel("Prominence (%):")
+            fa_pct_lbl.setStyleSheet("font-size: 11px; color: #555;")
+            fa_pct      = QLineEdit("5")
+            fa_pct.setFixedWidth(45)
+            fa_max_lbl  = QLabel("Max Peaks:")
+            fa_max_lbl.setStyleSheet("font-size: 11px; color: #555;")
+            fa_max      = QLineEdit("10")
+            fa_max.setFixedWidth(40)
+            fa_dist_lbl = QLabel("Min Distance (s):")
+            fa_dist_lbl.setStyleSheet("font-size: 11px; color: #555;")
+            fa_dist     = QLineEdit("0.5")
+            fa_dist.setFixedWidth(45)
+            if isinstance(fa_saved, list) and len(fa_saved) >= 3:
+                fa_pct.setText(fa_saved[0])
+                fa_max.setText(fa_saved[1])
+                fa_dist.setText(fa_saved[2])
+            fa_params_layout.addWidget(fa_pct_lbl)
+            fa_params_layout.addWidget(fa_pct)
+            fa_params_layout.addWidget(fa_max_lbl)
+            fa_params_layout.addWidget(fa_max)
+            fa_params_layout.addWidget(fa_dist_lbl)
+            fa_params_layout.addWidget(fa_dist)
+            fa_params_layout.addStretch()
+            self.param_widgets["Find Amplitude"] = (fa_pct, fa_max, fa_dist)
+        else:
+            fa_pct_lbl    = QLabel("Prominence (%):")
+            fa_pct_lbl.setStyleSheet("font-size: 11px; color: #555;")
+            fa_pct        = QLineEdit("10")
+            fa_pct.setFixedWidth(45)
+            fa_height_lbl = QLabel("Min Height (nA):")
+            fa_height_lbl.setStyleSheet("font-size: 11px; color: #555;")
+            fa_height     = QLineEdit("0.03")
+            fa_height.setFixedWidth(55)
+            if isinstance(fa_saved, list) and len(fa_saved) >= 2:
+                fa_pct.setText(fa_saved[0])
+                fa_height.setText(fa_saved[1])
+            fa_params_layout.addWidget(fa_pct_lbl)
+            fa_params_layout.addWidget(fa_pct)
+            fa_params_layout.addWidget(fa_height_lbl)
+            fa_params_layout.addWidget(fa_height)
+            fa_params_layout.addStretch()
+            self.param_widgets["Find Amplitude"] = (fa_pct, fa_height)
+
+        fa_params_container = QWidget()
+        fa_params_container.setLayout(fa_params_layout)
+        layout.addWidget(fa_params_container)
+
+        # Dialog buttons — OK / Apply / Reverse Changes / Cancel
         buttons = QDialogButtonBox(
             QDialogButtonBox.Ok | QDialogButtonBox.Apply | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         buttons.button(QDialogButtonBox.Apply).clicked.connect(self._on_apply)
+        revert_btn = buttons.addButton("Reverse Changes", QDialogButtonBox.ResetRole)
+        revert_btn.clicked.connect(self._on_revert)
         layout.addWidget(buttons)
 
         self.setLayout(layout)
@@ -282,6 +376,10 @@ class ProcessingOptionsDialog(QDialog):
         """Save current settings and emit apply_requested (dialog stays open)."""
         self._save_settings()
         self.apply_requested.emit()
+
+    def _on_revert(self):
+        """Emit revert_requested so the parent can roll back all processing."""
+        self.revert_requested.emit()
 
     def _save_settings(self):
         """Persist the current processor selection and parameters to QSettings."""
@@ -354,18 +452,61 @@ class ProcessingOptionsDialog(QDialog):
         elif name == "Normalize":
             return Normalize(peak_position)
         elif name == "Artifact Removal":
+            if name in self.param_widgets:
+                ar_threshold, ar_pad, ar_max = self.param_widgets[name]
+                try:
+                    threshold = float(ar_threshold.text())
+                except ValueError:
+                    threshold = 8
+                try:
+                    pad = int(ar_pad.text())
+                except ValueError:
+                    pad = 2
+                max_scans = None
+                if ar_max.text().strip():
+                    try:
+                        max_scans = int(ar_max.text())
+                    except ValueError:
+                        max_scans = None
+                return StimArtifactRemoval(threshold=threshold, pad=pad, max_artifact_scans=max_scans)
             return StimArtifactRemoval()
         elif name == "Invert Data":
             return InvertData()
-        elif name == "Find Amplitude":
-            # Check file type to determine which amplitude finder to use
+        elif name == "Drift Correction":
             settings = QSettings("HashemiLab", "NeuroStemVolt")
+            files_before_treatment = settings.value("files_before_treatment", 0, type=int)
+            return DriftCorrection(files_before_treatment=files_before_treatment)
+        elif name == "Find Amplitude":
+            settings  = QSettings("HashemiLab", "NeuroStemVolt")
             file_type = settings.value("file_type", "None", type=str)
+            fa_params = self.param_widgets.get("Find Amplitude")
 
             if file_type == "Multi-Peak":
-                return FindAmplitudeMultiple(peak_position)
+                prominence_fraction = 0.05
+                max_peaks  = 10
+                min_dist   = 0.5
+                if isinstance(fa_params, tuple) and len(fa_params) >= 3:
+                    try: prominence_fraction = float(fa_params[0].text()) / 100.0
+                    except ValueError: pass
+                    try: max_peaks = int(fa_params[1].text())
+                    except ValueError: pass
+                    try: min_dist = float(fa_params[2].text())
+                    except ValueError: pass
+                return FindAmplitudeMultiple(peak_position,
+                                            prominence_fraction=prominence_fraction,
+                                            max_peaks=max_peaks,
+                                            min_peak_distance_sec=min_dist)
             else:
-                return FindAmplitude(peak_position)
+                prominence_fraction = 0.10
+                min_height_na = 0.03
+                if isinstance(fa_params, tuple) and len(fa_params) >= 2:
+                    try: prominence_fraction = float(fa_params[0].text()) / 100.0
+                    except ValueError: pass
+                    try: min_height_na = float(fa_params[1].text())
+                    except ValueError: pass
+                return FindAmplitude(peak_position,
+                                     prominence_fraction=prominence_fraction,
+                                     min_height_na=min_height_na)
         elif name == "Multiple Peak Detection":
             params = self.param_widgets[name]
             try:

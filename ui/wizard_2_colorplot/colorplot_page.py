@@ -1,5 +1,7 @@
 from PyQt5.QtWidgets import (
-    QApplication, QComboBox, QWizardPage, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QDialog, QProgressDialog, QSlider, QToolTip, QCheckBox, QMessageBox, QDoubleSpinBox
+    QApplication, QComboBox, QWizardPage, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
+    QDialog, QProgressDialog, QSlider, QToolTip, QCheckBox, QMessageBox, QDoubleSpinBox,
+    QTextEdit, QDialogButtonBox, QFileDialog,
 )
 from PyQt5.QtCore import QSettings, Qt, QEvent
 
@@ -16,7 +18,9 @@ from core.processing import *
 # Import both amplitude processors at module level
 from core.processing.find_amplitude import FindAmplitude
 from core.processing.spontaneous_peak_detector import FindAmplitudeMultiple
+from core.processing.drift_correction import DriftCorrection
 
+import json
 import numpy as np
 import os
 import re
@@ -45,6 +49,7 @@ class ColorPlotPage(QWizardPage):
         self.selected_processors = []
         self.file_index_mapping = []  # Add this to track sorted file indices
         self.temp_peak = None
+        self._last_processing_warnings = []
 
         # Left controls
         self.btn_revert = QPushButton("Reverse Changes")
@@ -98,8 +103,25 @@ class ColorPlotPage(QWizardPage):
         self.btn_export_cv = QPushButton("Export CV Plot")
         apply_custom_styles(self.btn_export_cv)
         self.btn_export_cv.clicked.connect(self.save_cv_plot)
+
+        self.btn_export_all_cv = QPushButton("Export All CVs")
+        apply_custom_styles(self.btn_export_all_cv)
+        self.btn_export_all_cv.setToolTip("Export CV curve for every file as a CSV")
+        self.btn_export_all_cv.clicked.connect(self.save_all_cv_csv)
+
+        self.btn_session_export = QPushButton("Export Session")
+        apply_custom_styles(self.btn_session_export)
+        self.btn_session_export.setToolTip("Save peaks and filter settings to a JSON file")
+        self.btn_session_export.clicked.connect(self.export_session)
+
+        self.btn_session_import = QPushButton("Import Session")
+        apply_custom_styles(self.btn_session_import)
+        self.btn_session_import.setToolTip("Restore peaks and filter settings from a JSON file")
+        self.btn_session_import.clicked.connect(self.import_session)
+
         for b in (self.btn_prev, self.btn_next, self.btn_eval, self.btn_filter,
-          self.btn_save, self.btn_export, self.btn_export_all, self.btn_export_cv):
+          self.btn_save, self.btn_export, self.btn_export_all, self.btn_export_cv,
+          self.btn_export_all_cv, self.btn_session_export, self.btn_session_import):
             b.setAutoDefault(False)
             b.setDefault(False)
 
@@ -145,6 +167,16 @@ class ColorPlotPage(QWizardPage):
         self.lbl_filters.setStyleSheet("color: #aaaaaa; font-size: 9pt; font-style: italic; padding: 2px 0px;")
         self.lbl_filters.setWordWrap(True)
 
+        # Peak detection report button — hidden until warnings exist
+        self.btn_report = QPushButton("⚠ Peak Report")
+        self.btn_report.setStyleSheet(
+            "background-color: #e67e22; color: white; font-weight: bold;"
+            " border-radius: 10px; padding: 4px 8px; font-size: 9pt;")
+        self.btn_report.setAutoDefault(False)
+        self.btn_report.setDefault(False)
+        self.btn_report.hide()
+        self.btn_report.clicked.connect(self._show_peak_report)
+
         def _sec(text):
             lbl = QLabel(text)
             lbl.setStyleSheet(
@@ -179,6 +211,12 @@ class ColorPlotPage(QWizardPage):
         norm_row.addWidget(self.btn_revert)
         left.addLayout(norm_row)
         left.addWidget(self.lbl_filters)
+        left.addWidget(self.btn_report)
+        left.addWidget(_sec("Peak Editing"))
+        peak_edit_row = QHBoxLayout()
+        peak_edit_row.addWidget(self.btn_peak_click)
+        peak_edit_row.addWidget(self.btn_edit_peaks)
+        left.addLayout(peak_edit_row)
 
         # ── Export ───────────────────────────────────
         left.addWidget(_sec("Export"))
@@ -187,7 +225,14 @@ class ColorPlotPage(QWizardPage):
         export_row.addWidget(self.btn_export)
         export_row.addWidget(self.btn_export_all)
         left.addLayout(export_row)
-        left.addWidget(self.btn_export_cv)
+        cv_export_row = QHBoxLayout()
+        cv_export_row.addWidget(self.btn_export_cv)
+        cv_export_row.addWidget(self.btn_export_all_cv)
+        left.addLayout(cv_export_row)
+        session_row = QHBoxLayout()
+        session_row.addWidget(self.btn_session_export)
+        session_row.addWidget(self.btn_session_import)
+        left.addLayout(session_row)
 
         left.addStretch()
 
@@ -216,13 +261,6 @@ class ColorPlotPage(QWizardPage):
         cv_ref_row.addWidget(self.chk_cv_ref)
         cv_ref_row.addWidget(self.spin_cv_ref)
         left.addLayout(cv_ref_row)
-
-        # ── Peak Editing ─────────────────────────────
-        left.addWidget(_sec("Peak Editing"))
-        peak_edit_row = QHBoxLayout()
-        peak_edit_row.addWidget(self.btn_peak_click)
-        peak_edit_row.addWidget(self.btn_edit_peaks)
-        left.addLayout(peak_edit_row)
 
         self.left_layout = left
 
@@ -471,15 +509,13 @@ class ColorPlotPage(QWizardPage):
         progress.show()
         QApplication.processEvents()
 
-        # Choose the appropriate amplitude finder based on file type
-        if file_type == "Multi-Peak":
-            mandatory = FindAmplitudeMultiple(peak_pos)
-        else:
-            mandatory = FindAmplitude(peak_pos)
+        # Choose the appropriate amplitude finder (uses dialog params from QSettings)
+        mandatory = self._make_peak_detector(peak_pos)
 
-        # Keep all user processors EXCEPT any existing amplitude finders
         user_processors = self.selected_processors or []
-        processors = [p for p in user_processors if not isinstance(p, (FindAmplitude, FindAmplitudeMultiple))]
+        drift_processors = [p for p in user_processors if isinstance(p, DriftCorrection)]
+        processors = [p for p in user_processors
+                      if not isinstance(p, (FindAmplitude, FindAmplitudeMultiple, DriftCorrection))]
 
         # Insert a peak finder BEFORE Normalize so it has a reference amplitude for scaling
         has_normalize = any(isinstance(p, Normalize) for p in processors)
@@ -487,16 +523,13 @@ class ColorPlotPage(QWizardPage):
             reordered = []
             for p in processors:
                 if isinstance(p, Normalize):
-                    if file_type == "Multi-Peak":
-                        reordered.append(FindAmplitudeMultiple(peak_pos))
-                    else:
-                        reordered.append(FindAmplitude(peak_pos))
+                    reordered.append(self._make_peak_detector(peak_pos))
                 reordered.append(p)
             processors = reordered
 
-        # Add the mandatory amplitude finder at the end (runs on normalized data)
+        # Order: other filters → DriftCorrection → FindAmplitude
+        processors.extend(drift_processors)
         processors.append(mandatory)
-        print(processors)
 
         group_analysis.set_processing_options_exp(processors)
         for exp in group_analysis.get_experiments():
@@ -512,6 +545,47 @@ class ColorPlotPage(QWizardPage):
         progress.close()
 
 
+    def _make_peak_detector(self, peak_pos):
+        """
+        Instantiate the appropriate peak detector using parameters saved by the
+        processing dialog (stored in QSettings under 'processing_params').
+        Falls back to class defaults if no saved params exist.
+        """
+        import json
+        settings  = QSettings("HashemiLab", "NeuroStemVolt")
+        file_type = settings.value("file_type", "None", type=str)
+
+        saved_raw   = settings.value("processing_params", type=str)
+        saved_params = json.loads(saved_raw) if saved_raw else {}
+        fa_params   = saved_params.get("Find Amplitude", None)
+
+        if file_type == "Multi-Peak":
+            prominence_fraction = 0.05
+            max_peaks  = 10
+            min_dist   = 0.5
+            if isinstance(fa_params, list) and len(fa_params) >= 3:
+                try: prominence_fraction = float(fa_params[0]) / 100.0
+                except ValueError: pass
+                try: max_peaks = int(fa_params[1])
+                except ValueError: pass
+                try: min_dist = float(fa_params[2])
+                except ValueError: pass
+            return FindAmplitudeMultiple(peak_pos,
+                                         prominence_fraction=prominence_fraction,
+                                         max_peaks=max_peaks,
+                                         min_peak_distance_sec=min_dist)
+        else:
+            prominence_fraction = 0.10
+            min_height_na = 0.03
+            if isinstance(fa_params, list) and len(fa_params) >= 2:
+                try: prominence_fraction = float(fa_params[0]) / 100.0
+                except ValueError: pass
+                try: min_height_na = float(fa_params[1])
+                except ValueError: pass
+            return FindAmplitude(peak_pos,
+                                  prominence_fraction=prominence_fraction,
+                                  min_height_na=min_height_na)
+
     def revert_processing(self):
         group_analysis = self.wizard().group_analysis
         for exp in group_analysis.get_experiments():
@@ -526,6 +600,10 @@ class ColorPlotPage(QWizardPage):
         apply_custom_styles(self.btn_normalize)
         self.lbl_filters.setText("Active: None")
         self.btn_eval.setText("Evaluate")
+        # Clear peak report
+        self._last_processing_warnings = []
+        self.btn_report.hide()
+        self.btn_report.setText("⚠ Peak Report")
 
     def _build_processors_from_dialog(self, dlg):
         """Instantiate processors from dialog selections, preserving normalize button state."""
@@ -542,41 +620,112 @@ class ColorPlotPage(QWizardPage):
         self.selected_processors = processors
 
     def show_processing_options(self):
-        """Opens the filter options dialog. Apply runs immediately; OK just closes."""
+        """Opens the filter options dialog. Apply runs filters only; OK just closes."""
         dlg = ProcessingOptionsDialog(self)
 
         def _on_apply():
             self._build_processors_from_dialog(dlg)
-            self.run_processing()
+            self._run_filters_only()
             self.btn_eval.setText("Find Peaks")
 
         dlg.apply_requested.connect(_on_apply)
+        dlg.revert_requested.connect(self.revert_processing)
 
         if dlg.exec_() == QDialog.Accepted:
             # OK was clicked — update processor list (no auto-run)
             self._build_processors_from_dialog(dlg)
 
+    def _run_filters_only(self):
+        """Run selected filter processors without peak detection or drift correction."""
+        group_analysis = self.wizard().group_analysis
+        peak_pos = QSettings("HashemiLab", "NeuroStemVolt").value("peak_position", type=int)
+        file_type = QSettings("HashemiLab", "NeuroStemVolt").value("file_type", "None", type=str)
+
+        progress = QProgressDialog("Applying filters…", None, 0, 0, self)
+        progress.setWindowModality(Qt.ApplicationModal)
+        progress.setMinimumDuration(0)
+        progress.show()
+        QApplication.processEvents()
+
+        # Exclude peak detectors only — drift correction is a data filter and runs here
+        user_processors = self.selected_processors or []
+        drift_processors = [p for p in user_processors if isinstance(p, DriftCorrection)]
+        processors = [p for p in user_processors
+                      if not isinstance(p, (FindAmplitude, FindAmplitudeMultiple, DriftCorrection))]
+
+        # Normalize needs a FindAmplitude pass before it even in filter-only mode
+        has_normalize = any(isinstance(p, Normalize) for p in processors)
+        if has_normalize:
+            reordered = []
+            for p in processors:
+                if isinstance(p, Normalize):
+                    reordered.append(self._make_peak_detector(peak_pos))
+                reordered.append(p)
+            processors = reordered
+
+        # DriftCorrection is a data filter — runs last among filters
+        processors.extend(drift_processors)
+
+        group_analysis.set_processing_options_exp(processors)
+        for exp in group_analysis.get_experiments():
+            exp.run()
+
+        self._show_processing_warnings(group_analysis)
+        self.update_file_display()
+        self._update_filters_label()
+        # Peaks are no longer valid after re-filtering — disable Next
+        self.completeChanged.emit()
+        self._set_peak_controls_enabled(False)
+        progress.close()
+
     def _show_processing_warnings(self, group_analysis):
-        """Check for processing warnings and display them in a message box."""
+        """Collect warnings from all files and update the Peak Report button."""
         all_warnings = []
         for exp in group_analysis.get_experiments():
             for sf in exp.files:
                 metadata = sf.get_metadata() or {}
                 warnings = metadata.get('processing_warnings', [])
-                all_warnings.extend(warnings)
-                # Clear warnings after collecting
+                if warnings:
+                    fname = os.path.basename(sf.get_filepath())
+                    for w in warnings:
+                        all_warnings.append(f"[{fname}]\n{w}")
                 if 'processing_warnings' in metadata:
                     del metadata['processing_warnings']
-        
+
+        self._last_processing_warnings = all_warnings
+
         if all_warnings:
-            # Remove duplicates while preserving order
-            unique_warnings = list(dict.fromkeys(all_warnings))
-            warning_text = "\n\n".join(unique_warnings)
-            QMessageBox.warning(
-                self,
-                "Processing Warnings",
-                f"The following issues were encountered during processing:\n\n{warning_text}"
-            )
+            n = len(all_warnings)
+            self.btn_report.setText(f"⚠ Peak Report ({n})")
+            self.btn_report.show()
+        else:
+            self.btn_report.hide()
+            self.btn_report.setText("⚠ Peak Report")
+
+    def _show_peak_report(self):
+        """Open a scrollable dialog showing the last peak detection report."""
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Peak Detection Report")
+        dlg.resize(520, 400)
+
+        text = QTextEdit()
+        text.setReadOnly(True)
+        text.setStyleSheet("font-family: monospace; font-size: 10pt;")
+
+        if self._last_processing_warnings:
+            text.setPlainText("\n\n".join(self._last_processing_warnings))
+        else:
+            text.setPlainText("No issues detected.")
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        buttons.rejected.connect(dlg.reject)
+
+        layout = QVBoxLayout(dlg)
+        layout.addWidget(QLabel("Issues encountered during the last processing run:"))
+        layout.addWidget(text)
+        layout.addWidget(buttons)
+
+        dlg.exec_()
 
     def _missing_peaks(self):
         """Return a list of (rep_index, file_index) that do not have peak metadata."""
@@ -747,12 +896,10 @@ class ColorPlotPage(QWizardPage):
             fs = 1.0
         fs = max(fs, 1.0)
 
-        # Convert x to sample index
-        if is_it_axis:
-            x_sec = max(0.0, float(ev.xdata))
-            idx = int(round(x_sec * fs))
-        else:
-            idx = int(round(ev.xdata))
+        # Convert x to sample index — both the colour plot and the IT plot
+        # use seconds on their x-axis, so always convert seconds → samples.
+        x_sec = max(0.0, float(ev.xdata))
+        idx = int(round(x_sec * fs))
 
         # Clamp to data length
         total_len = None
@@ -860,6 +1007,8 @@ class ColorPlotPage(QWizardPage):
                                      title_suffix=f"File {self.current_file_index + 1}",
                                      ref_voltage=ref_voltage)
             self._redraw_all_peak_overlays(file_obj)
+            # Re-evaluate Next button — manual peak changes count toward completion
+            self.completeChanged.emit()
         except Exception as e:
             print(f"ERROR: _refresh_plots_for_file failed: {e}")
 
@@ -957,6 +1106,271 @@ class ColorPlotPage(QWizardPage):
         except Exception:
             pass  # no data loaded yet
 
+    def save_all_cv_csv(self):
+        """
+        Export the CV curve (current vs voltage at the peak time point) for every
+        file in every replicate as a single multi-indexed CSV file.
+
+        Rows  = voltage steps (V)
+        Columns = MultiIndex (Replicate, Filename)
+
+        Files with no peak detected use the middle time point as fallback.
+        Files with no processed data are filled with NaN.
+        """
+        import pandas as pd
+        from core.spheroid_file import Waveforms
+
+        output_folder = QSettings("HashemiLab", "NeuroStemVolt").value("output_folder")
+        if not output_folder or not os.path.isdir(output_folder):
+            QMessageBox.warning(self, "No Output Folder",
+                                "Please set a valid output folder in Experiment Settings.")
+            return
+
+        group_analysis = self.wizard().group_analysis
+        experiments    = group_analysis.get_experiments()
+        if not experiments:
+            return
+
+        # Discover voltage axis from the first file that has processed data
+        voltage    = None
+        n_voltages = None
+        for exp in experiments:
+            for sf in exp.files:
+                data = sf.get_processed_data()
+                if data is not None:
+                    n_voltages = data.shape[1]
+                    try:
+                        wf      = Waveforms(-0.5, [-0.7, 1.1], -0.5, 600, n_voltages)
+                        voltage = wf.voltage_waveform()
+                    except Exception:
+                        voltage = np.linspace(-0.5, 1.1, n_voltages)
+                    break
+            if voltage is not None:
+                break
+
+        if voltage is None:
+            QMessageBox.warning(self, "No Processed Data",
+                                "No processed data found. Run Evaluate first.")
+            return
+
+        columns_tuples = []
+        cv_columns     = []
+
+        for exp_idx, exp in enumerate(experiments):
+            rep_name = f"Rep{exp_idx + 1}"
+            for sf in exp.files:
+                fname = os.path.basename(sf.get_filepath())
+                columns_tuples.append((rep_name, fname))
+
+                data = sf.get_processed_data()
+                if data is None:
+                    cv_columns.append(np.full(len(voltage), np.nan))
+                    continue
+
+                md       = sf.get_metadata() or {}
+                peak_pos = md.get("peak_amplitude_positions")
+
+                if peak_pos is None:
+                    time_point = data.shape[0] // 2
+                elif isinstance(peak_pos, list):
+                    active     = int(md.get("peak_amplitude_active_index", 0))
+                    active     = max(0, min(active, len(peak_pos) - 1))
+                    time_point = int(peak_pos[active])
+                else:
+                    try:
+                        time_point = int(peak_pos)
+                    except (TypeError, ValueError):
+                        time_point = data.shape[0] // 2
+
+                time_point = max(0, min(time_point, data.shape[0] - 1))
+                cv_columns.append(data[time_point, :])
+
+        columns = pd.MultiIndex.from_tuples(columns_tuples, names=["Replicate", "File"])
+        df      = pd.DataFrame(
+            np.column_stack(cv_columns) if cv_columns else np.empty((len(voltage), 0)),
+            columns=columns,
+        )
+        df.index      = voltage
+        df.index.name = "Voltage (V)"
+
+        out_dir  = os.path.join(output_folder, "all_replicates_CVs")
+        os.makedirs(out_dir, exist_ok=True)
+        out_path = os.path.join(out_dir, "All_CVs_all_replicates.csv")
+
+        try:
+            df.to_csv(out_path)
+            QMessageBox.information(self, "CV Export Complete",
+                                    f"All CVs exported to:\n{out_path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Export Failed",
+                                 f"Could not write CSV:\n{e}")
+
+    def export_session(self):
+        """
+        Export peak selections and active filter settings to a JSON file.
+
+        Saves:
+          - peaks: per-file peak positions, active index and values (keyed by filename)
+          - filters/pipeline: which processors were selected
+          - filters/params: processor parameters
+          - normalize_active: whether the Normalize toggle was on
+        """
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Session", "", "NeuroStemVolt Session (*.nsv);;JSON Files (*.json)")
+        if not path:
+            return
+
+        settings = QSettings("HashemiLab", "NeuroStemVolt")
+
+        # ── Peak metadata ────────────────────────────────────────────────────
+        peaks_data = {}
+        group_analysis = self.wizard().group_analysis
+        for exp in group_analysis.get_experiments():
+            for sf in exp.files:
+                md = sf.get_metadata() or {}
+                positions = md.get("peak_amplitude_positions")
+                if positions is None:
+                    continue
+                fname = os.path.basename(sf.get_filepath())
+                # Normalise to list so JSON serialises cleanly
+                if isinstance(positions, (list,)):
+                    pos_list = [int(p) for p in positions]
+                else:
+                    try:
+                        pos_list = [int(positions)]
+                    except (TypeError, ValueError):
+                        continue
+
+                values = md.get("peak_amplitude_values")
+                if isinstance(values, list):
+                    val_list = [float(v) for v in values]
+                elif values is not None:
+                    try:
+                        val_list = [float(values)]
+                    except (TypeError, ValueError):
+                        val_list = []
+                else:
+                    val_list = []
+
+                active = int(md.get("peak_amplitude_active_index", 0))
+                peaks_data[fname] = {
+                    "positions":    pos_list,
+                    "active_index": active,
+                    "values":       val_list,
+                }
+
+        # ── Filter settings ──────────────────────────────────────────────────
+        pipeline_raw = settings.value("processing_pipeline", type=str)
+        params_raw   = settings.value("processing_params",   type=str)
+        filters = {
+            "pipeline":        json.loads(pipeline_raw) if pipeline_raw else [],
+            "params":          json.loads(params_raw)   if params_raw   else {},
+            "normalize_active": self.btn_normalize.isChecked(),
+        }
+
+        session = {"version": 1, "filters": filters, "peaks": peaks_data}
+
+        try:
+            with open(path, "w") as f:
+                json.dump(session, f, indent=2)
+            QMessageBox.information(
+                self, "Session Exported",
+                f"Session saved to:\n{path}\n\n"
+                f"{len(peaks_data)} file(s) with peak data exported.")
+        except Exception as e:
+            QMessageBox.critical(self, "Export Failed", f"Could not write session file:\n{e}")
+
+    def import_session(self):
+        """
+        Import peak selections and filter settings from a previously exported session file.
+
+        - Peak metadata is restored to each matching file (matched by filename).
+        - Filter pipeline and params are written back to QSettings and
+          ``self.selected_processors`` is rebuilt so clicking Evaluate re-applies
+          the same pipeline.
+        - The display is refreshed and completeChanged is emitted so the Next
+          button updates immediately.
+        """
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import Session", "", "NeuroStemVolt Session (*.nsv);;JSON Files (*.json)")
+        if not path:
+            return
+
+        try:
+            with open(path, "r") as f:
+                session = json.load(f)
+        except Exception as e:
+            QMessageBox.critical(self, "Import Failed", f"Could not read session file:\n{e}")
+            return
+
+        if session.get("version") != 1:
+            QMessageBox.warning(self, "Import Warning",
+                                "Session file version is unrecognised — attempting import anyway.")
+
+        # ── Restore filter settings ──────────────────────────────────────────
+        filters = session.get("filters", {})
+        settings = QSettings("HashemiLab", "NeuroStemVolt")
+
+        if "pipeline" in filters:
+            settings.setValue("processing_pipeline", json.dumps(filters["pipeline"]))
+        if "params" in filters:
+            settings.setValue("processing_params", json.dumps(filters["params"]))
+
+        # Rebuild selected_processors from the restored QSettings
+        dlg = ProcessingOptionsDialog(self)
+        self._build_processors_from_dialog(dlg)
+        self._update_filters_label()
+
+        normalize_active = filters.get("normalize_active", False)
+        self.btn_normalize.setChecked(normalize_active)
+        if normalize_active:
+            self.btn_normalize.setText("✓ Normalize")
+            self.btn_normalize.setStyleSheet(
+                "background-color: #27ae60; color: white; font-weight: bold;"
+                " border-radius: 12px; padding: 6px;")
+        else:
+            self.btn_normalize.setText("Normalize")
+            apply_custom_styles(self.btn_normalize)
+
+        # ── Restore peak metadata ────────────────────────────────────────────
+        peaks_data = session.get("peaks", {})
+        group_analysis = self.wizard().group_analysis
+        matched = 0
+        skipped = 0
+
+        for exp in group_analysis.get_experiments():
+            for sf in exp.files:
+                fname = os.path.basename(sf.get_filepath())
+                if fname not in peaks_data:
+                    skipped += 1
+                    continue
+                entry    = peaks_data[fname]
+                pos_list = entry.get("positions", [])
+                active   = int(entry.get("active_index", 0))
+                val_list = entry.get("values", [])
+
+                md = sf.get_metadata()  # always returns the live dict
+
+                # Write peak metadata back
+                if len(pos_list) == 1:
+                    md["peak_amplitude_positions"] = pos_list[0]
+                    md["peak_amplitude_values"]    = val_list[0] if val_list else None
+                else:
+                    md["peak_amplitude_positions"] = pos_list
+                    md["peak_amplitude_values"]    = val_list
+                md["peak_amplitude_active_index"] = active
+                matched += 1
+
+        self.update_file_display()
+        self.completeChanged.emit()
+        self._set_peak_controls_enabled(self.isComplete())
+        self.btn_eval.setText("Find Peaks")
+
+        QMessageBox.information(
+            self, "Session Imported",
+            f"Peaks restored for {matched} file(s).\n"
+            f"{skipped} file(s) had no saved peaks.\n\n"
+            f"Filter settings have been restored. Re-apply settings in Filter Options.")
     def save_cv_plot(self):
         """
         Saves the current CV plot as a PNG to the output folder.
