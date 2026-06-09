@@ -161,10 +161,13 @@ class ProcessingOptionsDialog(QDialog):
                 bw_label_cy.setStyleSheet("font-size: 11px; color: #555;")
                 bw_cy = QLineEdit("37500.0")
                 if "Butterworth Filter" in saved_params:
-                    p, cx, cy = saved_params["Butterworth Filter"]
-                    bw_p.setText(p)
-                    bw_cx.setText(cx)
-                    bw_cy.setText(cy)
+                    saved_bw = saved_params["Butterworth Filter"]
+                    if isinstance(saved_bw, list) and len(saved_bw) >= 1:
+                        bw_p.setText(saved_bw[0])
+                    if isinstance(saved_bw, list) and len(saved_bw) >= 2:
+                        bw_cx.setText(saved_bw[1])
+                    if isinstance(saved_bw, list) and len(saved_bw) >= 3:
+                        bw_cy.setText(saved_bw[2])
                 bw_layout.addWidget(bw_label_p)
                 bw_layout.addWidget(bw_p)
                 bw_layout.addWidget(bw_label_cx)
