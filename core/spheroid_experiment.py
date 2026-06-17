@@ -193,8 +193,11 @@ class SpheroidExperiment:
         Returns:
             None
         """
+        # Always reset to raw data before running so processors don't stack
+        for spheroid_file in self.files:
+            spheroid_file.processed_data = spheroid_file.raw_data
+
         pipeline = PipelineManager(self.processors)
-        # Add stimulation parameters to the context
         context = {
             "peak_position": self.peak_position,
             "stim_start": self.stim_params.get("start", 0),

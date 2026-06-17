@@ -537,12 +537,12 @@ class ColorPlotPage(QWizardPage):
         # Choose the appropriate amplitude finder (uses dialog params from QSettings)
         mandatory = self._make_peak_detector(peak_pos)
 
+        # Strip any stray peak detectors — mandatory is appended at the end
         user_processors = self.selected_processors or []
-        drift_processors = [p for p in user_processors if isinstance(p, DriftCorrection)]
         processors = [p for p in user_processors
-                      if not isinstance(p, (FindAmplitude, FindAmplitudeMultiple, DriftCorrection))]
+                      if not isinstance(p, (FindAmplitude, FindAmplitudeMultiple))]
 
-        # Insert a peak finder BEFORE Normalize so it has a reference amplitude for scaling
+        # Normalize needs a FindAmplitude pass for its scale factor
         has_normalize = any(isinstance(p, Normalize) for p in processors)
         if has_normalize:
             reordered = []
@@ -552,8 +552,7 @@ class ColorPlotPage(QWizardPage):
                 reordered.append(p)
             processors = reordered
 
-        # Order: other filters → DriftCorrection → FindAmplitude
-        processors.extend(drift_processors)
+        # FindAmplitude always runs last
         processors.append(mandatory)
 
         group_analysis.set_processing_options_exp(processors)
@@ -661,10 +660,9 @@ class ColorPlotPage(QWizardPage):
             self._build_processors_from_dialog(dlg)
 
     def _run_filters_only(self):
-        """Run selected filter processors without peak detection or drift correction."""
+        """Run selected filter processors without peak detection, preserving edited peaks."""
         group_analysis = self.wizard().group_analysis
         peak_pos = QSettings("HashemiLab", "NeuroStemVolt").value("peak_position", type=int)
-        file_type = QSettings("HashemiLab", "NeuroStemVolt").value("file_type", "None", type=str)
 
         progress = QProgressDialog("Applying filters…", None, 0, 0, self)
         progress.setWindowModality(Qt.ApplicationModal)
@@ -672,13 +670,22 @@ class ColorPlotPage(QWizardPage):
         progress.show()
         QApplication.processEvents()
 
-        # Exclude peak detectors only — drift correction is a data filter and runs here
-        user_processors = self.selected_processors or []
-        drift_processors = [p for p in user_processors if isinstance(p, DriftCorrection)]
-        processors = [p for p in user_processors
-                      if not isinstance(p, (FindAmplitude, FindAmplitudeMultiple, DriftCorrection))]
+        # Save peak positions before filtering so we can restore them after
+        saved_peaks = {}
+        for exp in group_analysis.get_experiments():
+            for i in range(exp.get_file_count()):
+                sf = exp.get_spheroid_file(i)
+                md = sf.get_metadata() or {}
+                pos = md.get("peak_amplitude_positions")
+                active = md.get("active_peak_index") or 0
+                saved_peaks[(id(exp), i)] = (pos, active)
 
-        # Normalize needs a FindAmplitude pass before it even in filter-only mode
+        # Exclude peak detectors — all other processors (including drift) run here
+        user_processors = self.selected_processors or []
+        processors = [p for p in user_processors
+                      if not isinstance(p, (FindAmplitude, FindAmplitudeMultiple))]
+
+        # Normalize needs a FindAmplitude pass for its scale factor
         has_normalize = any(isinstance(p, Normalize) for p in processors)
         if has_normalize:
             reordered = []
@@ -688,19 +695,28 @@ class ColorPlotPage(QWizardPage):
                 reordered.append(p)
             processors = reordered
 
-        # DriftCorrection is a data filter — runs last among filters
-        processors.extend(drift_processors)
-
         group_analysis.set_processing_options_exp(processors)
         for exp in group_analysis.get_experiments():
             exp.run()
 
+        # Restore peak positions — recompute values from the newly filtered data
+        for exp in group_analysis.get_experiments():
+            for i in range(exp.get_file_count()):
+                sf = exp.get_spheroid_file(i)
+                pos, active = saved_peaks.get((id(exp), i), (None, 0))
+                if pos is not None:
+                    if isinstance(pos, (int, float)):
+                        peaks = [int(pos)]
+                    else:
+                        peaks = [int(p) for p in list(pos) if p is not None]
+                    if peaks:
+                        meta_set_peaks_and_active(sf, peaks, active or 0)
+
         self._show_processing_warnings(group_analysis)
         self.update_file_display()
         self._update_filters_label()
-        # Peaks are no longer valid after re-filtering — disable Next
         self.completeChanged.emit()
-        self._set_peak_controls_enabled(False)
+        self._set_peak_controls_enabled(self.isComplete())
         progress.close()
 
     def _show_processing_warnings(self, group_analysis):
@@ -833,7 +849,7 @@ class ColorPlotPage(QWizardPage):
             self.cbo_rep.setCurrentIndex(idx + 1)
 
     def _toggle_normalize(self, checked: bool):
-        """Toggle normalization in the processing pipeline and immediately re-run."""
+        """Toggle normalization and re-filter, preserving edited peaks."""
         if checked:
             self.btn_normalize.setText("✓ Normalize")
             self.btn_normalize.setStyleSheet(
@@ -846,7 +862,7 @@ class ColorPlotPage(QWizardPage):
             apply_custom_styles(self.btn_normalize)
             self.selected_processors = [p for p in self.selected_processors
                                         if not isinstance(p, Normalize)]
-        self.run_processing()
+        self._run_filters_only()
 
     def _update_filters_label(self):
         """Update the 'Active filters' label to reflect current selected_processors."""
