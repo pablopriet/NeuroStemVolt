@@ -71,14 +71,13 @@ class IntroPage(QWizardPage):
         v.addWidget(self.btn_load)
         label_loaded = QLabel("Loaded Replicates:")
         label_loaded.setStyleSheet("""
-            color: black;
             font-family: Helvetica, Arial;
             font-weight: bold;
         """)
         footer = QLabel("© 2025 Hashemi Lab · NeuroStemVolt · v1.0.0")
         footer.setAlignment(Qt.AlignCenter)
         footer.setStyleSheet("""
-            color: gray;
+            color: palette(windowtext);
             font-family: Helvetica, Arial;
             font-size: 10pt;
             margin-top: 12px;

@@ -33,8 +33,8 @@ class ResultsPage(QWizardPage):
         def _sec(text):
             lbl = QLabel(text)
             lbl.setStyleSheet(
-                "font-weight: bold; color: #cccccc; font-size: 9pt;"
-                " padding-top: 6px; border-top: 1px solid #555555;")
+                "font-weight: bold; font-size: 9pt;"
+                " padding-top: 6px; border-top: 1px solid palette(mid);")
             return lbl
 
         # ── Analysis buttons ─────────────────────────────────────────
@@ -108,7 +108,7 @@ class ResultsPage(QWizardPage):
         # ── Right panel (plot) ───────────────────────────────────────
         self.placeholder = QLabel("Select an analysis option to show plot")
         self.placeholder.setAlignment(Qt.AlignCenter)
-        self.placeholder.setStyleSheet("color: #888888; font-size: 11pt;")
+        self.placeholder.setStyleSheet("color: palette(windowtext); font-size: 11pt;")
         self.result_plot = PlotCanvas(self, width=6, height=5)
         self.result_plot.hide()
 
@@ -126,7 +126,7 @@ class ResultsPage(QWizardPage):
 
         footer = QLabel("© 2025 Hashemi Lab · NeuroStemVolt · v1.0.0")
         footer.setAlignment(Qt.AlignCenter)
-        footer.setStyleSheet("color: gray; font-size: 10pt;")
+        footer.setStyleSheet("color: palette(windowtext); font-size: 10pt;")
         main_layout.addWidget(footer)
 
         self.setLayout(main_layout)

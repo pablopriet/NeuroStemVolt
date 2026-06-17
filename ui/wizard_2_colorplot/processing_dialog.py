@@ -96,7 +96,7 @@ class ProcessingOptionsDialog(QDialog):
             if name == "Background Subtraction":
                 region_layout = QHBoxLayout()
                 region_label = QLabel("Region (start, end) in seconds:")
-                region_label.setStyleSheet("font-size: 11px; color: #555; margin-left: 16px;")
+                region_label.setStyleSheet("font-size: 11px; color: palette(windowtext); margin-left: 16px;")
                 region_start = QLineEdit("0")
                 region_end = QLineEdit("10")
                 if "Background Subtraction" in saved_params:
@@ -115,10 +115,10 @@ class ProcessingOptionsDialog(QDialog):
             elif name == "Savitzky-Golay Filter":
                 sg_layout = QHBoxLayout()
                 sg_label_w = QLabel("Window:")
-                sg_label_w.setStyleSheet("font-size: 11px; color: #555; margin-left: 16px;")
+                sg_label_w.setStyleSheet("font-size: 11px; color: palette(windowtext); margin-left: 16px;")
                 sg_window = QLineEdit("5")
                 sg_label_o = QLabel("Order:")
-                sg_label_o.setStyleSheet("font-size: 11px; color: #555;")
+                sg_label_o.setStyleSheet("font-size: 11px; color: palette(windowtext);")
                 sg_order = QLineEdit("2")
                 if "Savitzky-Golay Filter" in saved_params:
                     w, p = saved_params["Savitzky-Golay Filter"]
@@ -137,7 +137,7 @@ class ProcessingOptionsDialog(QDialog):
             elif name == "Rolling Mean":
                 rm_layout = QHBoxLayout()
                 rm_label = QLabel("Window Size:")
-                rm_label.setStyleSheet("font-size: 11px; color: #555; margin-left: 16px;")
+                rm_label.setStyleSheet("font-size: 11px; color: palette(windowtext); margin-left: 16px;")
                 rm_window = QLineEdit("5")
                 if "Rolling Mean" in saved_params:
                     rm_window.setText(saved_params["Rolling Mean"])
@@ -152,13 +152,13 @@ class ProcessingOptionsDialog(QDialog):
             elif name == "Butterworth Filter":
                 bw_layout = QHBoxLayout()
                 bw_label_p = QLabel("Order (p):")
-                bw_label_p.setStyleSheet("font-size: 11px; color: #555; margin-left: 16px;")
+                bw_label_p.setStyleSheet("font-size: 11px; color: palette(windowtext); margin-left: 16px;")
                 bw_p = QLineEdit("4")
                 bw_label_cx = QLabel("cx:")
-                bw_label_cx.setStyleSheet("font-size: 11px; color: #555;")
+                bw_label_cx.setStyleSheet("font-size: 11px; color: palette(windowtext);")
                 bw_cx = QLineEdit("2.5")
                 bw_label_cy = QLabel("cy:")
-                bw_label_cy.setStyleSheet("font-size: 11px; color: #555;")
+                bw_label_cy.setStyleSheet("font-size: 11px; color: palette(windowtext);")
                 bw_cy = QLineEdit("37500.0")
                 if "Butterworth Filter" in saved_params:
                     saved_bw = saved_params["Butterworth Filter"]
@@ -183,13 +183,13 @@ class ProcessingOptionsDialog(QDialog):
             elif name == "Artifact Removal":
                 ar_layout = QHBoxLayout()
                 ar_label_t = QLabel("Threshold:")
-                ar_label_t.setStyleSheet("font-size: 11px; color: #555; margin-left: 16px;")
+                ar_label_t.setStyleSheet("font-size: 11px; color: palette(windowtext); margin-left: 16px;")
                 ar_threshold = QLineEdit("8")
                 ar_label_p = QLabel("Pad:")
-                ar_label_p.setStyleSheet("font-size: 11px; color: #555;")
+                ar_label_p.setStyleSheet("font-size: 11px; color: palette(windowtext);")
                 ar_pad = QLineEdit("2")
                 ar_label_m = QLabel("Max Scans (blank=auto):")
-                ar_label_m.setStyleSheet("font-size: 11px; color: #555;")
+                ar_label_m.setStyleSheet("font-size: 11px; color: palette(windowtext);")
                 ar_max = QLineEdit("")
                 if "Artifact Removal" in saved_params:
                     saved_ar = saved_params["Artifact Removal"]
@@ -217,7 +217,7 @@ class ProcessingOptionsDialog(QDialog):
                 # Max peaks
                 max_peaks_layout = QHBoxLayout()
                 max_peaks_label = QLabel("Max Peaks:")
-                max_peaks_label.setStyleSheet("font-size: 11px; color: #555; margin-left: 16px;")
+                max_peaks_label.setStyleSheet("font-size: 11px; color: palette(windowtext); margin-left: 16px;")
                 max_peaks_edit = QLineEdit("10")
                 max_peaks_layout.addWidget(max_peaks_label)
                 max_peaks_layout.addWidget(max_peaks_edit)
@@ -225,7 +225,7 @@ class ProcessingOptionsDialog(QDialog):
                 # Min prominence
                 prominence_layout = QHBoxLayout()
                 prominence_label = QLabel("Min Prominence:")
-                prominence_label.setStyleSheet("font-size: 11px; color: #555; margin-left: 16px;")
+                prominence_label.setStyleSheet("font-size: 11px; color: palette(windowtext); margin-left: 16px;")
                 prominence_edit = QLineEdit("0.5")
                 prominence_layout.addWidget(prominence_label)
                 prominence_layout.addWidget(prominence_edit)
@@ -233,7 +233,7 @@ class ProcessingOptionsDialog(QDialog):
                 # Rise window
                 rise_layout = QHBoxLayout()
                 rise_label = QLabel("Rise Window (sec):")
-                rise_label.setStyleSheet("font-size: 11px; color: #555; margin-left: 16px;")
+                rise_label.setStyleSheet("font-size: 11px; color: palette(windowtext); margin-left: 16px;")
                 rise_edit = QLineEdit("3.0")
                 rise_layout.addWidget(rise_label)
                 rise_layout.addWidget(rise_edit)
@@ -241,7 +241,7 @@ class ProcessingOptionsDialog(QDialog):
                 # Decay window
                 decay_layout = QHBoxLayout()
                 decay_label = QLabel("Decay Window (sec):")
-                decay_label.setStyleSheet("font-size: 11px; color: #555; margin-left: 16px;")
+                decay_label.setStyleSheet("font-size: 11px; color: palette(windowtext); margin-left: 16px;")
                 decay_edit = QLineEdit("10.0")
                 decay_layout.addWidget(decay_label)
                 decay_layout.addWidget(decay_edit)
@@ -324,15 +324,15 @@ class ProcessingOptionsDialog(QDialog):
 
         if file_type == "Multi-Peak":
             fa_pct_lbl  = QLabel("Prominence (%):")
-            fa_pct_lbl.setStyleSheet("font-size: 11px; color: #555;")
+            fa_pct_lbl.setStyleSheet("font-size: 11px; color: palette(windowtext);")
             fa_pct      = QLineEdit("5")
             fa_pct.setFixedWidth(45)
             fa_max_lbl  = QLabel("Max Peaks:")
-            fa_max_lbl.setStyleSheet("font-size: 11px; color: #555;")
+            fa_max_lbl.setStyleSheet("font-size: 11px; color: palette(windowtext);")
             fa_max      = QLineEdit("10")
             fa_max.setFixedWidth(40)
             fa_dist_lbl = QLabel("Min Distance (s):")
-            fa_dist_lbl.setStyleSheet("font-size: 11px; color: #555;")
+            fa_dist_lbl.setStyleSheet("font-size: 11px; color: palette(windowtext);")
             fa_dist     = QLineEdit("0.5")
             fa_dist.setFixedWidth(45)
             if isinstance(fa_saved, list) and len(fa_saved) >= 3:
@@ -349,11 +349,11 @@ class ProcessingOptionsDialog(QDialog):
             self.param_widgets["Find Amplitude"] = (fa_pct, fa_max, fa_dist)
         else:
             fa_pct_lbl    = QLabel("Prominence (%):")
-            fa_pct_lbl.setStyleSheet("font-size: 11px; color: #555;")
+            fa_pct_lbl.setStyleSheet("font-size: 11px; color: palette(windowtext);")
             fa_pct        = QLineEdit("10")
             fa_pct.setFixedWidth(45)
             fa_height_lbl = QLabel("Min Height (nA):")
-            fa_height_lbl.setStyleSheet("font-size: 11px; color: #555;")
+            fa_height_lbl.setStyleSheet("font-size: 11px; color: palette(windowtext);")
             fa_height     = QLineEdit("0.03")
             fa_height.setFixedWidth(55)
             if isinstance(fa_saved, list) and len(fa_saved) >= 2:

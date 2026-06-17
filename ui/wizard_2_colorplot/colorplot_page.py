@@ -164,7 +164,7 @@ class ColorPlotPage(QWizardPage):
 
         # Active filters info label
         self.lbl_filters = QLabel("Active: None")
-        self.lbl_filters.setStyleSheet("color: #aaaaaa; font-size: 9pt; font-style: italic; padding: 2px 0px;")
+        self.lbl_filters.setStyleSheet("color: palette(windowtext); font-size: 9pt; font-style: italic; padding: 2px 0px;")
         self.lbl_filters.setWordWrap(True)
 
         # Peak detection report button — hidden until warnings exist
@@ -180,8 +180,8 @@ class ColorPlotPage(QWizardPage):
         def _sec(text):
             lbl = QLabel(text)
             lbl.setStyleSheet(
-                "font-weight: bold; color: #cccccc; font-size: 9pt;"
-                " padding-top: 6px; border-top: 1px solid #555555;")
+                "font-weight: bold; font-size: 9pt;"
+                " padding-top: 6px; border-top: 1px solid palette(mid);")
             return lbl
 
         left = QVBoxLayout()
@@ -238,11 +238,9 @@ class ColorPlotPage(QWizardPage):
 
         # ── Visualization ────────────────────────────
         self.chk_show_cv = QCheckBox("Show CV Plot")
-        self.chk_show_cv.setStyleSheet("color: white;")
         self.chk_show_cv.toggled.connect(self._on_show_cv_toggled)
 
         self.chk_cv_ref = QCheckBox("Ref line")
-        self.chk_cv_ref.setStyleSheet("color: white;")
         self.chk_cv_ref.setEnabled(False)
         self.chk_cv_ref.toggled.connect(self._redraw_cv)
 
@@ -258,7 +256,6 @@ class ColorPlotPage(QWizardPage):
         # Colorbar upper-limit control. 0.0 nA stays pinned at the same point of the
         # colormap (the 3:2 / 0.6 logic); raising this just stretches the color range.
         self.chk_color_limit = QCheckBox("Manual color limit")
-        self.chk_color_limit.setStyleSheet("color: white;")
         self.chk_color_limit.setToolTip(
             "Set the upper end of the colorbar (nA). The lower end is fixed at "
             "-2/3 of the top (e.g. top 1.0 -> bottom -0.67, top 14 -> bottom -9.33), "
@@ -316,7 +313,7 @@ class ColorPlotPage(QWizardPage):
         footer = QLabel("© 2025 Hashemi Lab · NeuroStemVolt · v1.0.0")
         footer.setAlignment(Qt.AlignCenter)
         footer.setStyleSheet("""
-            color: gray;
+            color: palette(windowtext);
             font-family: Helvetica, Arial;
             font-size: 10pt;
             margin-top: 12px;
