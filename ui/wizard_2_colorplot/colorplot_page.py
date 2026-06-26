@@ -1279,42 +1279,35 @@ class ColorPlotPage(QWizardPage):
             QMessageBox.critical(self, "Export Failed",
                                  f"Could not write CSV:\n{e}")
 
-    def export_session(self):
-        """
-        Export peak selections and active filter settings to a JSON file.
+    def _build_session_dict(self):
+        """Build a version-2 session dict covering all replicates.
 
-        Saves:
-          - peaks: per-file peak positions, active index and values (keyed by filename)
-          - filters/pipeline: which processors were selected
-          - filters/params: processor parameters
-          - normalize_active: whether the Normalize toggle was on
+        Version 2 nests peaks under replicate name so files with identical
+        names in different replicates are kept separate.
         """
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Export Session", "", "NeuroStemVolt Session (*.nsv);;JSON Files (*.json)")
-        if not path:
-            return
-
         settings = QSettings("HashemiLab", "NeuroStemVolt")
-
-        # ── Peak metadata ────────────────────────────────────────────────────
-        peaks_data = {}
         group_analysis = self.wizard().group_analysis
-        for exp in group_analysis.get_experiments():
+        display_names = getattr(self.wizard(), "display_names_list", [])
+
+        replicates_data = {}
+        for exp_idx, exp in enumerate(group_analysis.get_experiments()):
+            rep_name = (display_names[exp_idx]
+                        if exp_idx < len(display_names)
+                        else f"Rep{exp_idx + 1}")
+            rep_peaks = {}
             for sf in exp.files:
                 md = sf.get_metadata() or {}
                 positions = md.get("peak_amplitude_positions")
                 if positions is None:
                     continue
                 fname = os.path.basename(sf.get_filepath())
-                # Normalise to list so JSON serialises cleanly
-                if isinstance(positions, (list,)):
+                if isinstance(positions, list):
                     pos_list = [int(p) for p in positions]
                 else:
                     try:
                         pos_list = [int(positions)]
                     except (TypeError, ValueError):
                         continue
-
                 values = md.get("peak_amplitude_values")
                 if isinstance(values, list):
                     val_list = [float(v) for v in values]
@@ -1325,15 +1318,15 @@ class ColorPlotPage(QWizardPage):
                         val_list = []
                 else:
                     val_list = []
-
-                active = int(md.get("peak_amplitude_active_index", 0))
-                peaks_data[fname] = {
+                active = int(md.get("active_peak_index", 0))
+                rep_peaks[fname] = {
                     "positions":    pos_list,
                     "active_index": active,
                     "values":       val_list,
                 }
+            if rep_peaks:
+                replicates_data[rep_name] = rep_peaks
 
-        # ── Filter settings ──────────────────────────────────────────────────
         pipeline_raw = settings.value("processing_pipeline", type=str)
         params_raw   = settings.value("processing_params",   type=str)
         filters = {
@@ -1342,15 +1335,35 @@ class ColorPlotPage(QWizardPage):
             "normalize_active": self.btn_normalize.isChecked(),
         }
 
-        session = {"version": 1, "filters": filters, "peaks": peaks_data}
+        return {"version": 2, "filters": filters, "replicates": replicates_data}
 
+    def export_session_to_path(self, path):
+        """Save the current session (all replicates) to *path*. Returns True on success."""
+        session = self._build_session_dict()
+        try:
+            with open(path, "w") as f:
+                json.dump(session, f, indent=2)
+            return True
+        except Exception as e:
+            print(f"Session auto-export failed: {e}")
+            return False
+
+    def export_session(self):
+        """Prompt the user for a path and save the full session (all replicates)."""
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Session", "", "NeuroStemVolt Session (*.nsv);;JSON Files (*.json)")
+        if not path:
+            return
+        session = self._build_session_dict()
+        n_files = sum(len(rep) for rep in session.get("replicates", {}).values())
+        n_reps  = len(session.get("replicates", {}))
         try:
             with open(path, "w") as f:
                 json.dump(session, f, indent=2)
             QMessageBox.information(
                 self, "Session Exported",
                 f"Session saved to:\n{path}\n\n"
-                f"{len(peaks_data)} file(s) with peak data exported.")
+                f"{n_files} file(s) with peak data exported across {n_reps} replicate(s).")
         except Exception as e:
             QMessageBox.critical(self, "Export Failed", f"Could not write session file:\n{e}")
 
@@ -1358,12 +1371,7 @@ class ColorPlotPage(QWizardPage):
         """
         Import peak selections and filter settings from a previously exported session file.
 
-        - Peak metadata is restored to each matching file (matched by filename).
-        - Filter pipeline and params are written back to QSettings and
-          ``self.selected_processors`` is rebuilt so clicking Evaluate re-applies
-          the same pipeline.
-        - The display is refreshed and completeChanged is emitted so the Next
-          button updates immediately.
+        Supports version 2 (replicate-aware, recommended) and version 1 (flat, legacy).
         """
         path, _ = QFileDialog.getOpenFileName(
             self, "Import Session", "", "NeuroStemVolt Session (*.nsv);;JSON Files (*.json)")
@@ -1377,7 +1385,8 @@ class ColorPlotPage(QWizardPage):
             QMessageBox.critical(self, "Import Failed", f"Could not read session file:\n{e}")
             return
 
-        if session.get("version") != 1:
+        version = session.get("version", 1)
+        if version not in (1, 2):
             QMessageBox.warning(self, "Import Warning",
                                 "Session file version is unrecognised — attempting import anyway.")
 
@@ -1390,7 +1399,6 @@ class ColorPlotPage(QWizardPage):
         if "params" in filters:
             settings.setValue("processing_params", json.dumps(filters["params"]))
 
-        # Rebuild selected_processors from the restored QSettings
         dlg = ProcessingOptionsDialog(self)
         self._build_processors_from_dialog(dlg)
         self._update_filters_label()
@@ -1407,33 +1415,45 @@ class ColorPlotPage(QWizardPage):
             apply_custom_styles(self.btn_normalize)
 
         # ── Restore peak metadata ────────────────────────────────────────────
-        peaks_data = session.get("peaks", {})
         group_analysis = self.wizard().group_analysis
+        display_names  = getattr(self.wizard(), "display_names_list", [])
         matched = 0
         skipped = 0
 
-        for exp in group_analysis.get_experiments():
-            for sf in exp.files:
-                fname = os.path.basename(sf.get_filepath())
-                if fname not in peaks_data:
-                    skipped += 1
-                    continue
-                entry    = peaks_data[fname]
-                pos_list = entry.get("positions", [])
-                active   = int(entry.get("active_index", 0))
-                val_list = entry.get("values", [])
+        if version == 2:
+            replicates_data = session.get("replicates", {})
+            # Also build a flat fallback dict (filename → entry) for files whose
+            # replicate name no longer matches (e.g. session from a different run).
+            flat_fallback = {}
+            for rep_files in replicates_data.values():
+                for fname, entry in rep_files.items():
+                    flat_fallback.setdefault(fname, entry)
 
-                md = sf.get_metadata()  # always returns the live dict
-
-                # Write peak metadata back
-                if len(pos_list) == 1:
-                    md["peak_amplitude_positions"] = pos_list[0]
-                    md["peak_amplitude_values"]    = val_list[0] if val_list else None
-                else:
-                    md["peak_amplitude_positions"] = pos_list
-                    md["peak_amplitude_values"]    = val_list
-                md["peak_amplitude_active_index"] = active
-                matched += 1
+            for exp_idx, exp in enumerate(group_analysis.get_experiments()):
+                rep_name  = (display_names[exp_idx]
+                             if exp_idx < len(display_names)
+                             else f"Rep{exp_idx + 1}")
+                rep_files = replicates_data.get(rep_name, {})
+                for sf in exp.files:
+                    fname = os.path.basename(sf.get_filepath())
+                    entry = rep_files.get(fname) or flat_fallback.get(fname)
+                    if not entry:
+                        skipped += 1
+                        continue
+                    self._apply_session_entry(sf, entry)
+                    matched += 1
+        else:
+            # v1 legacy: flat dict keyed by filename
+            peaks_data = session.get("peaks", {})
+            for exp in group_analysis.get_experiments():
+                for sf in exp.files:
+                    fname = os.path.basename(sf.get_filepath())
+                    entry = peaks_data.get(fname)
+                    if not entry:
+                        skipped += 1
+                        continue
+                    self._apply_session_entry(sf, entry)
+                    matched += 1
 
         self.update_file_display()
         self.completeChanged.emit()
@@ -1445,6 +1465,21 @@ class ColorPlotPage(QWizardPage):
             f"Peaks restored for {matched} file(s).\n"
             f"{skipped} file(s) had no saved peaks.\n\n"
             f"Filter settings have been restored. Re-apply settings in Filter Options.")
+
+    @staticmethod
+    def _apply_session_entry(sf, entry):
+        """Write one session entry's peaks back into a SpheroidFile's metadata."""
+        pos_list = entry.get("positions", [])
+        active   = int(entry.get("active_index", 0))
+        val_list = entry.get("values", [])
+        md = sf.get_metadata()
+        if len(pos_list) == 1:
+            md["peak_amplitude_positions"] = pos_list[0]
+            md["peak_amplitude_values"]    = val_list[0] if val_list else None
+        else:
+            md["peak_amplitude_positions"] = pos_list
+            md["peak_amplitude_values"]    = val_list
+        md["active_peak_index"] = active
     def save_cv_plot(self):
         """
         Saves the current CV plot as a PNG to the output folder.

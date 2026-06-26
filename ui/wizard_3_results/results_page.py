@@ -190,6 +190,12 @@ class ResultsPage(QWizardPage):
 
             # Always generate experiment log for reproducibility
             OutputManager.save_experiment_log(ga, output_folder, qsettings=settings)
+
+            # Auto-save peak session so the analysis can be reopened later
+            colorplot_page = self.wizard().page(1)
+            if hasattr(colorplot_page, "export_session_to_path"):
+                session_path = os.path.join(output_folder, "peak_session.nsv")
+                colorplot_page.export_session_to_path(session_path)
         except Exception as e:
             QMessageBox.critical(
                 self, "Export Failed",
