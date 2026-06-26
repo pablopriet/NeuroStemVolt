@@ -63,6 +63,28 @@ def apply_custom_styles(widget):
                     color: white;
                 }
             """)
+        elif "settings" in label or "config" in label:
+            widget.setStyleSheet("""
+                QPushButton {
+                    background-color: #607D8B;
+                    color: white;
+                    font-family: Arial, sans-serif;
+                    font-weight: bold;
+                    border-radius: 10px;
+                    padding: 6px 12px;
+                    border: none;
+                }
+                QPushButton:hover {
+                    background-color: #546E7A;
+                }
+                QPushButton:pressed {
+                    background-color: #455A64;
+                }
+                QPushButton:disabled {
+                    background-color: #B0BEC5;
+                    color: white;
+                }
+            """)
         else:
             # General buttons (green)
             widget.setStyleSheet("""

@@ -67,14 +67,15 @@ class IntroPage(QWizardPage):
         
         # Layout
         v = QVBoxLayout()
-        v.addWidget(self.btn_new)
+        v.addWidget(self.btn_exp_settings)
         v.addWidget(self.btn_load)
+        v.addWidget(self.btn_new)
         label_loaded = QLabel("Loaded Replicates:")
         label_loaded.setStyleSheet("""
             font-family: Helvetica, Arial;
             font-weight: bold;
         """)
-        footer = QLabel("© 2025 Hashemi Lab · NeuroStemVolt · v1.0.0")
+        footer = QLabel("© 2026 Hashemi Lab · NeuroStemVolt · v1.1.0")
         footer.setAlignment(Qt.AlignCenter)
         footer.setStyleSheet("""
             color: palette(windowtext);
@@ -84,7 +85,6 @@ class IntroPage(QWizardPage):
         """)
         v.addWidget(label_loaded)
         v.addWidget(self.list_widget)
-        v.addWidget(self.btn_exp_settings)
         v.addWidget(footer)
         self.setLayout(v)
 

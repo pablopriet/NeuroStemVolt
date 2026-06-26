@@ -310,7 +310,7 @@ class ColorPlotPage(QWizardPage):
         main_layout.addLayout(content_layout)
 
         # Footer
-        footer = QLabel("© 2025 Hashemi Lab · NeuroStemVolt · v1.0.0")
+        footer = QLabel("© 2026 Hashemi Lab · NeuroStemVolt · v1.1.0")
         footer.setAlignment(Qt.AlignCenter)
         footer.setStyleSheet("""
             color: palette(windowtext);

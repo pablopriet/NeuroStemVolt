@@ -124,7 +124,7 @@ class ResultsPage(QWizardPage):
         main_layout = QVBoxLayout(self)
         main_layout.addLayout(content, stretch=1)
 
-        footer = QLabel("© 2025 Hashemi Lab · NeuroStemVolt · v1.0.0")
+        footer = QLabel("© 2026 Hashemi Lab · NeuroStemVolt · v1.1.0")
         footer.setAlignment(Qt.AlignCenter)
         footer.setStyleSheet("color: palette(windowtext); font-size: 10pt;")
         main_layout.addWidget(footer)
