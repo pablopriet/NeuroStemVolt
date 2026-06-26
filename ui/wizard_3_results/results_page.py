@@ -179,6 +179,7 @@ class ResultsPage(QWizardPage):
             OutputManager.save_all_peak_amplitudes(ga, output_folder)
             OutputManager.save_all_reuptake_curves(ga, output_folder)
             OutputManager.save_all_exponential_fitting_params(ga, output_folder)
+            OutputManager.save_all_exponential_fitting_params_global(ga, output_folder)
             OutputManager.save_all_AUC(ga, output_folder)
 
             # Export spontaneous peak metrics if applicable
