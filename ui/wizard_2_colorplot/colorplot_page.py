@@ -659,7 +659,6 @@ class ColorPlotPage(QWizardPage):
     def _run_filters_only(self):
         """Run selected filter processors without peak detection, preserving edited peaks."""
         group_analysis = self.wizard().group_analysis
-        peak_pos = QSettings("HashemiLab", "NeuroStemVolt").value("peak_position", type=int)
 
         progress = QProgressDialog("Applying filters…", None, 0, 0, self)
         progress.setWindowModality(Qt.ApplicationModal)
@@ -682,19 +681,20 @@ class ColorPlotPage(QWizardPage):
         processors = [p for p in user_processors
                       if not isinstance(p, (FindAmplitude, FindAmplitudeMultiple))]
 
-        # Normalize needs a FindAmplitude pass for its scale factor
         has_normalize = any(isinstance(p, Normalize) for p in processors)
-        if has_normalize:
-            reordered = []
-            for p in processors:
-                if isinstance(p, Normalize):
-                    reordered.append(self._make_peak_detector(peak_pos))
-                reordered.append(p)
-            processors = reordered
 
         group_analysis.set_processing_options_exp(processors)
         for exp in group_analysis.get_experiments():
-            exp.run()
+            # When Normalize is active, seed the pipeline context with the first
+            # file's already-known peak amplitude so Normalize uses it directly
+            # instead of re-running auto peak detection.
+            initial_ctx = {}
+            if has_normalize and exp.files:
+                first_md = exp.files[0].get_metadata() or {}
+                peak_val = first_md.get("peak_amplitude_values")
+                if peak_val is not None:
+                    initial_ctx["peak_amplitude_values"] = peak_val
+            exp.run(initial_context=initial_ctx or None)
 
         # Restore peak positions — recompute values from the newly filtered data
         for exp in group_analysis.get_experiments():

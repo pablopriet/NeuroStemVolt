@@ -186,7 +186,7 @@ class SpheroidExperiment:
         """Return the list of configured processing steps."""
         return self.processors
 
-    def run(self):
+    def run(self, initial_context=None):
         """
         Run the entire processing pipeline across all files.
 
@@ -205,6 +205,8 @@ class SpheroidExperiment:
             "stim_frequency": self.stim_params.get("frequency", 0),
             "acquisition_frequency": self.acquisition_frequency,
         }
+        if initial_context:
+            context.update(initial_context)
         for spheroid_file in self.files:
             pipeline.run(spheroid_file, context=context)
 
