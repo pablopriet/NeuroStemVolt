@@ -186,6 +186,9 @@ class ResultsPage(QWizardPage):
             file_type = settings.value("file_type", "None", type=str)
             if file_type == "Multi-Peak":
                 OutputManager.save_spontaneous_peak_metrics(ga, output_folder)
+
+            # Always generate experiment log for reproducibility
+            OutputManager.save_experiment_log(ga, output_folder, qsettings=settings)
         except Exception as e:
             QMessageBox.critical(
                 self, "Export Failed",

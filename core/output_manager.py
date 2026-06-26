@@ -4,6 +4,8 @@ import os
 import pandas as pd
 import numpy as np
 from scipy.stats import sem
+from datetime import datetime
+import json
 
 class OutputManager:
     @staticmethod
@@ -766,7 +768,273 @@ class OutputManager:
         os.makedirs(output_folder, exist_ok=True)
         save_path = os.path.join(output_folder, "plot_first_stim_amplitudes.png")
         group_analysis.plot_first_stim_amplitudes(save_path=save_path)
-        
+
+    @staticmethod
+    def save_experiment_log(group_experiments: GroupAnalysis, output_folder_path, qsettings=None):
+        """
+        Generate and save a comprehensive log file documenting all experiment metadata,
+        settings, processing steps, and data provenance.
+
+        Args:
+            group_experiments (GroupAnalysis): Group containing all experiment replicates.
+            output_folder_path (str): Directory where the log will be saved.
+            qsettings (QSettings, optional): Qt settings object containing user configuration.
+
+        Returns:
+            str: Path to the saved log file, or None if no experiments exist.
+        """
+        from PyQt5.QtCore import QSettings
+
+        experiments = group_experiments.get_experiments()
+        if not experiments:
+            return None
+
+        if qsettings is None:
+            qsettings = QSettings("HashemiLab", "NeuroStemVolt")
+
+        log_folder = os.path.join(output_folder_path, "experiment_logs")
+        os.makedirs(log_folder, exist_ok=True)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_path = os.path.join(log_folder, f"experiment_log_{timestamp}.txt")
+
+        with open(log_path, 'w', encoding='utf-8') as f:
+            f.write("=" * 80 + "\n")
+            f.write("NEUROSTEMVOLT EXPERIMENT LOG\n")
+            f.write("=" * 80 + "\n")
+            f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Output Folder: {output_folder_path}\n")
+            f.write("=" * 80 + "\n\n")
+
+            # ===== EXPERIMENT CONFIGURATION =====
+            f.write("=" * 80 + "\n")
+            f.write("EXPERIMENT CONFIGURATION\n")
+            f.write("=" * 80 + "\n\n")
+
+            file_type = qsettings.value("file_type", "Unknown", type=str)
+            acquisition_freq = qsettings.value("acquisition_frequency", "Not set", type=str)
+            file_length = qsettings.value("file_length", "Not set", type=str)
+            peak_position = qsettings.value("peak_position", "Not set", type=str)
+            waveform = qsettings.value("waveform", "Not set", type=str)
+            treatment = qsettings.value("treatment", "Not set", type=str)
+            time_between_files = qsettings.value("time_between_files", "Not set", type=str)
+            files_before_treatment = qsettings.value("files_before_treatment", "Not set", type=str)
+
+            f.write(f"File Type: {file_type}\n")
+            f.write(f"Waveform: {waveform}\n")
+            f.write(f"Treatment: {treatment}\n")
+            f.write(f"Acquisition Frequency: {acquisition_freq} Hz\n")
+            f.write(f"File Length: {file_length} seconds\n")
+            f.write(f"Peak Position (voltage index): {peak_position}\n")
+            f.write(f"Time Between Files: {time_between_files} minutes\n")
+            f.write(f"Files Before Treatment: {files_before_treatment}\n\n")
+
+            # Stimulation parameters
+            if file_type != "Spontaneous":
+                f.write("-" * 80 + "\n")
+                f.write("STIMULATION PARAMETERS\n")
+                f.write("-" * 80 + "\n")
+                try:
+                    stim_params_str = qsettings.value("stim_params", "{}")
+                    stim_params = json.loads(stim_params_str) if stim_params_str else {}
+                    if stim_params:
+                        f.write(f"Stimulation Start: {stim_params.get('start', 'N/A')} seconds\n")
+                        f.write(f"Stimulation Duration: {stim_params.get('duration', 'N/A')} seconds\n")
+                        f.write(f"Stimulation Frequency: {stim_params.get('frequency', 'N/A')} Hz\n")
+                        f.write(f"Stimulation Amplitude: {stim_params.get('amplitude', 'N/A')} V\n")
+                        f.write(f"Number of Pulses: {stim_params.get('pulses', 'N/A')}\n")
+                    else:
+                        f.write("No stimulation parameters configured.\n")
+                except Exception as e:
+                    f.write(f"Error reading stimulation parameters: {e}\n")
+                f.write("\n")
+
+            # Calibration settings
+            f.write("-" * 80 + "\n")
+            f.write("CALIBRATION SETTINGS\n")
+            f.write("-" * 80 + "\n")
+            calibration_enabled = qsettings.value("calibration_enabled", False, type=bool)
+            unit = "nM" if calibration_enabled else "nA"
+            f.write(f"Calibration Enabled: {calibration_enabled}\n")
+            if calibration_enabled:
+                slope = qsettings.value("calibration_slope", 1.0, type=float)
+                intercept = qsettings.value("calibration_intercept", 0.0, type=float)
+                f.write(f"Slope: {slope}\n")
+                f.write(f"Y-intercept: {intercept}\n")
+                f.write(f"Conversion Formula: Concentration = (Current - {intercept}) / {slope}\n")
+                f.write(f"Data is in concentration units ({unit}).\n")
+            else:
+                f.write(f"Data is in raw current units ({unit}).\n")
+            f.write("\n")
+
+            # ===== PROCESSING PIPELINE =====
+            f.write("=" * 80 + "\n")
+            f.write("PROCESSING PIPELINE\n")
+            f.write("=" * 80 + "\n\n")
+
+            try:
+                pipeline_str = qsettings.value("processing_pipeline", "[]")
+                pipeline = json.loads(pipeline_str) if pipeline_str else []
+                params_str = qsettings.value("processing_params", "{}")
+                params = json.loads(params_str) if params_str else {}
+
+                if pipeline:
+                    f.write("Applied Processing Steps (in order):\n\n")
+                    for idx, step in enumerate(pipeline, 1):
+                        f.write(f"{idx}. {step}\n")
+                        if step in params:
+                            param_info = params[step]
+                            if isinstance(param_info, dict):
+                                if step == "Artifact Removal":
+                                    f.write(f"   - Threshold (MAD multiplier): {param_info.get('threshold', 'N/A')}\n")
+                                    f.write(f"   - Pad (extra scans per edge): {param_info.get('pad', 'N/A')}\n")
+                                    max_scans = param_info.get('max_artifact_scans', '0')
+                                    max_scans_label = "auto (2 × acquisition frequency)" if str(max_scans) == "0" else max_scans
+                                    f.write(f"   - Max Artifact Scans: {max_scans_label}\n")
+                                elif step == "Multiple Peak Detection":
+                                    f.write(f"   - Max Peaks: {param_info.get('max_peaks', 'N/A')}\n")
+                                    f.write(f"   - Min Prominence: {param_info.get('min_prominence', 'N/A')}\n")
+                                    f.write(f"   - CV Peak: {param_info.get('cv_peak', 'N/A')}\n")
+                                    f.write(f"   - Peak Height Threshold: {param_info.get('peak_height_threshold', 'N/A')}\n")
+                                else:
+                                    for key, value in param_info.items():
+                                        f.write(f"   - {key}: {value}\n")
+                            elif isinstance(param_info, (list, tuple)):
+                                if step == "Background Subtraction":
+                                    f.write(f"   - Region: start={param_info[0]}s, end={param_info[1]}s\n")
+                                elif step == "Savitzky-Golay Filter":
+                                    f.write(f"   - Window: {param_info[0]}, Order: {param_info[1]}\n")
+                                elif step == "Butterworth Filter":
+                                    f.write(f"   - Order (p): {param_info[0]}\n")
+                                    f.write(f"   - Cutoff cx: {param_info[1]} Hz\n")
+                                    f.write(f"   - Cutoff cy: {param_info[2]} Hz\n")
+                                else:
+                                    f.write(f"   - Parameters: {', '.join(str(p) for p in param_info)}\n")
+                            else:
+                                f.write(f"   - Parameter: {param_info}\n")
+                        f.write("\n")
+                else:
+                    f.write("No processing steps configured.\n")
+            except Exception as e:
+                f.write(f"Error reading processing pipeline: {e}\n")
+            f.write("\n")
+
+            # ===== SUMMARY =====
+            f.write("=" * 80 + "\n")
+            f.write("SUMMARY\n")
+            f.write("=" * 80 + "\n\n")
+
+            try:
+                total_files = sum(exp.get_file_count() for exp in experiments)
+                f.write(f"Total Files Processed: {total_files}\n")
+                folders = set()
+                for exp in experiments:
+                    for file_idx in range(exp.get_file_count()):
+                        try:
+                            filepath = exp.get_spheroid_file(file_idx).get_filepath()
+                            folders.add(os.path.dirname(filepath))
+                        except Exception:
+                            pass
+                f.write(f"Source Folders: {len(folders)}\n")
+                for folder in sorted(folders):
+                    f.write(f"  - {folder}\n")
+            except Exception as e:
+                f.write(f"Error computing summary: {e}\n")
+            f.write("\n")
+
+            # ===== REPLICATE DATA =====
+            f.write("=" * 80 + "\n")
+            f.write("REPLICATE DATA\n")
+            f.write("=" * 80 + "\n\n")
+            f.write(f"Total Number of Replicates: {len(experiments)}\n\n")
+
+            for exp_idx, exp in enumerate(experiments, 1):
+                f.write("-" * 80 + "\n")
+                f.write(f"REPLICATE {exp_idx}\n")
+                f.write("-" * 80 + "\n")
+                try:
+                    f.write(f"Treatment: {getattr(exp, 'treatment', 'N/A')}\n")
+                    f.write(f"Waveform: {getattr(exp, 'waveform', 'N/A')}\n")
+                    f.write(f"Number of Files (Timepoints): {exp.get_file_count()}\n")
+                    f.write(f"File Length: {exp.get_file_length()} seconds\n")
+                    f.write(f"Acquisition Frequency: {exp.get_acquisition_frequency()} Hz\n")
+                    f.write(f"Time Between Files: {exp.get_time_between_files()} minutes\n")
+                    f.write(f"Files Before Treatment: {exp.get_number_of_files_before_treatment()}\n")
+                except Exception as e:
+                    f.write(f"Error retrieving experiment info: {e}\n")
+                f.write("\n")
+
+                f.write("Data Files:\n")
+                try:
+                    for file_idx in range(exp.get_file_count()):
+                        sf = exp.get_spheroid_file(file_idx)
+                        filepath = sf.get_filepath()
+                        filename = os.path.basename(filepath)
+                        time_min = file_idx * exp.get_time_between_files()
+                        baseline_marker = " [BASELINE]" if file_idx < exp.get_number_of_files_before_treatment() else ""
+                        f.write(f"  {file_idx + 1}. {filename} (t={time_min} min){baseline_marker}\n")
+                        f.write(f"     Path: {filepath}\n")
+                        try:
+                            meta = sf.get_metadata()
+                            if meta:
+                                # Manual peak edit flag
+                                if meta.get('peak_manually_edited', False):
+                                    f.write(f"     ** PEAK MANUALLY EDITED — results may differ from automated detection **\n")
+
+                                # Peak amplitude
+                                if 'peak_amplitude_values' in meta and meta['peak_amplitude_values'] is not None:
+                                    amp_val = meta['peak_amplitude_values']
+                                    if isinstance(amp_val, (list, np.ndarray)):
+                                        if len(amp_val) > 0:
+                                            if file_type == "Spontaneous":
+                                                f.write(f"     Peaks Detected: {len(amp_val)}\n")
+                                                f.write(f"     Mean Amplitude: {np.mean(amp_val):.4f} {unit}\n")
+                                            else:
+                                                f.write(f"     Peak Amplitude: {amp_val[0]:.4f} {unit}\n")
+                                    else:
+                                        f.write(f"     Peak Amplitude: {amp_val:.4f} {unit}\n")
+
+                                # Peak position
+                                if 'peak_amplitude_positions' in meta and meta['peak_amplitude_positions'] is not None:
+                                    pos_val = meta['peak_amplitude_positions']
+                                    acq_freq = exp.get_acquisition_frequency() or 1
+                                    if isinstance(pos_val, (list, np.ndarray)) and len(pos_val) > 0:
+                                        if file_type != "Spontaneous":
+                                            f.write(f"     Peak Position: {pos_val[0]} samples ({pos_val[0] / acq_freq:.2f} s)\n")
+                                    elif not isinstance(pos_val, (list, np.ndarray)):
+                                        f.write(f"     Peak Position: {pos_val} samples ({pos_val / acq_freq:.2f} s)\n")
+
+                                # Exponential fitting
+                                if file_type != "Spontaneous" and 'exponential fitting parameters' in meta:
+                                    fit_params = meta['exponential fitting parameters']
+                                    if fit_params and isinstance(fit_params, dict):
+                                        f.write(f"     Exponential Fit:\n")
+                                        f.write(f"       - Amplitude (A): {fit_params.get('A', 'N/A'):.4f}\n")
+                                        f.write(f"       - Tau (τ): {fit_params.get('tau', 'N/A'):.4f}\n")
+                                        f.write(f"       - Constant (C): {fit_params.get('C', 'N/A'):.4f}\n")
+                                        f.write(f"       - Half-life (t½): {fit_params.get('t_half', 'N/A'):.4f}\n")
+
+                                # Baseline
+                                if 'baseline' in meta and meta['baseline'] is not None:
+                                    baseline = meta['baseline']
+                                    if isinstance(baseline, (list, np.ndarray)) and len(baseline) > 0:
+                                        f.write(f"     Baseline: {baseline[0]:.4f} {unit}\n")
+                                    elif not isinstance(baseline, (list, np.ndarray)):
+                                        f.write(f"     Baseline: {baseline:.4f} {unit}\n")
+                        except Exception as e:
+                            f.write(f"     Error reading metadata: {e}\n")
+                        f.write("\n")
+                except Exception as e:
+                    f.write(f"Error listing files: {e}\n")
+                f.write("\n")
+
+            f.write("=" * 80 + "\n")
+            f.write("END OF LOG\n")
+            f.write("=" * 80 + "\n")
+
+        print(f"Experiment log saved to: {log_path}")
+        return log_path
+
 
 if __name__ == "__main__":
     # Example usage
