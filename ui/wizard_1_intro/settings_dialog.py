@@ -44,7 +44,7 @@ class ExperimentSettingsDialog(QDialog):
         form = QFormLayout()
         vbox.addLayout(form)
 
-        self.cb_waveform    = QComboBox();  self.cb_waveform.addItems(["5HT","HA"])
+        self.cb_waveform    = QComboBox();  self.cb_waveform.addItems(["5HT","HA","Non-specific"])
         self.cb_waveform.setCurrentText(defaults["waveform"]);                     form.addRow("Waveform:", self.cb_waveform)
 
         self.cb_file_type = QComboBox(); self.cb_file_type.addItems(["Single Peak","Multi-Peak"])

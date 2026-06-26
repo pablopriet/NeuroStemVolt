@@ -840,14 +840,18 @@ class PlotCanvas(FigureCanvas):
         try:
             if waveform_type == "5HT":
                 wf = Waveforms(0.2, [1.0, -0.1], 0.2, 1000, processed_data.shape[1])
+                voltage = wf.voltage_waveform()
             elif waveform_type == "DA":
                 wf = Waveforms(-0.4, [1.3, -0.4], -0.4, 400, processed_data.shape[1])
-            else:
+                voltage = wf.voltage_waveform()
+            elif waveform_type == "HA":
                 wf = Waveforms(-0.5, [-0.7, 1.1], -0.5, 600, processed_data.shape[1])
-            voltage = wf.voltage_waveform()
+                voltage = wf.voltage_waveform()
+            else:
+                # Non-specific: use scan index as x-axis
+                voltage = np.arange(processed_data.shape[1])
         except:
-            # Fallback: create a simple linear voltage sweep if Waveforms fails
-            voltage = np.linspace(-0.1, 1.0, processed_data.shape[1])
+            voltage = np.arange(processed_data.shape[1])
 
         # Get peak time points from metadata
         peak_time_points = []
@@ -962,14 +966,18 @@ class PlotCanvas(FigureCanvas):
         try:
             if waveform_type == "5HT":
                 wf = Waveforms(0.2, [1.0, -0.1], 0.2, 1000, processed_data.shape[1])
+                voltage = wf.voltage_waveform()
             elif waveform_type == "DA":
                 wf = Waveforms(-0.4, [1.3, -0.4], -0.4, 400, processed_data.shape[1])
-            else:
+                voltage = wf.voltage_waveform()
+            elif waveform_type == "HA":
                 wf = Waveforms(-0.5, [-0.7, 1.1], -0.5, 600, processed_data.shape[1])
-            voltage = wf.voltage_waveform()
+                voltage = wf.voltage_waveform()
+            else:
+                # Non-specific: use scan index as x-axis
+                voltage = np.arange(processed_data.shape[1])
         except:
-            # Fallback: create a simple linear voltage sweep if Waveforms fails
-            voltage = np.linspace(-0.1, 1.0, processed_data.shape[1])
+            voltage = np.arange(processed_data.shape[1])
 
         # Extract current values for the requested CV (time point)
         if time_point >= processed_data.shape[0]:
@@ -993,7 +1001,8 @@ class PlotCanvas(FigureCanvas):
                                      edgecolor='#888888', alpha=0.9),
                            arrowprops=dict(arrowstyle='->', color='red'))
 
-        self.axes.set_xlabel("Voltage (V)")
+        x_label = "Scan Index" if waveform_type == "Non-specific" else "Voltage (V)"
+        self.axes.set_xlabel(x_label)
         self.axes.set_ylabel("Current (nA)")
 
         # Convert time_point to seconds for display
