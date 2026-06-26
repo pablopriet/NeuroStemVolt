@@ -927,7 +927,7 @@ class ColorPlotPage(QWizardPage):
         is_it_axis = (it_ax is not None and ev.inaxes is it_ax)
 
         # Sampling frequency for IT seconds→samples conversion
-        fs = md.get('acquisition_frequency', 1)
+        fs = QSettings("HashemiLab", "NeuroStemVolt").value("acquisition_frequency", "None", type=str)
         try:
             fs = float(fs)
         except Exception:
