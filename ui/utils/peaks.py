@@ -20,10 +20,12 @@ def meta_get_peaks_and_active(metadata: dict):
     return peaks, active
 
 
-def meta_set_peaks_and_active(file_obj, peaks, active_idx):
+def meta_set_peaks_and_active(file_obj, peaks, active_idx, manually_edited=False):
     """
     Save peaks and active index AND compute `peak_amplitude_values` from processed data.
     Also keeps convenience fields consistent (primary_* and num_peaks_detected).
+    Pass manually_edited=True when the user has adjusted the peak by hand, so the
+    experiment log can flag this file for reproducibility auditing.
     """
     # normalise & de-duplicate peaks, preserving order
     try:
@@ -61,6 +63,12 @@ def meta_set_peaks_and_active(file_obj, peaks, active_idx):
         md["peak_amplitude_positions"] = peaks
         md["peak_amplitude_values"] = values
     md["active_peak_index"] = active_idx
+
+    # preserve or set the manual-edit flag — once set, it is never cleared automatically
+    if manually_edited:
+        md["peak_manually_edited"] = True
+    elif "peak_manually_edited" not in md:
+        md["peak_manually_edited"] = False
 
     # keep convenience fields aligned to active peak
     if peaks:

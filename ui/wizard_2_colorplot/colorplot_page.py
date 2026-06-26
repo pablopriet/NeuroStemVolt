@@ -973,13 +973,13 @@ class ColorPlotPage(QWizardPage):
                         uniq.append(p)
                         seen.add(p)
                 active = uniq.index(idx)
-            meta_set_peaks_and_active(file_obj, uniq, active)
+            meta_set_peaks_and_active(file_obj, uniq, active, manually_edited=True)
         elif ev.button == 3:  # right remove nearest
             if peaks:
                 nearest = min(range(len(peaks)), key=lambda i: abs(peaks[i] - idx))
                 del peaks[nearest]
                 active = 0 if not peaks else max(0, min(active, len(peaks) - 1))
-                meta_set_peaks_and_active(file_obj, peaks, active)
+                meta_set_peaks_and_active(file_obj, peaks, active, manually_edited=True)
 
         self._refresh_plots_for_file(file_obj)
 
@@ -1097,14 +1097,14 @@ class ColorPlotPage(QWizardPage):
         dlg = PeakEditorDialog(peaks, active_idx=active, max_index=max_index, canvases=canvases,
                                file_type=file_type, acq_freq=acq_freq, parent=self)
         def _on_peaks_changed(new_peaks, new_active):
-            meta_set_peaks_and_active(file_obj, new_peaks, new_active)
+            meta_set_peaks_and_active(file_obj, new_peaks, new_active, manually_edited=True)
             self._refresh_plots_for_file(file_obj)
         try: dlg.peaks_changed.connect(_on_peaks_changed)
         except Exception: pass
         if dlg.exec_() == QDialog.Accepted:
             try:
                 new_peaks, new_active = dlg.result()
-                meta_set_peaks_and_active(file_obj, new_peaks, new_active)
+                meta_set_peaks_and_active(file_obj, new_peaks, new_active, manually_edited=True)
             except Exception: pass
             self._refresh_plots_for_file(file_obj)
 
