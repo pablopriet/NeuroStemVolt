@@ -201,7 +201,7 @@ class StimParamsDialog(QDialog):
         self.params = ["start", "frequency", "amplitude", "pulses"]
         defaults = defaults or {"start": 5.0, "frequency": 20, "amplitude": 0.5, "pulses": 50}
         help_texts = {
-            "start": "Start time of stimulation in minutes.",
+            "start": "Start time of stimulation in seconds.",
             "pulses": "Total number of stimulation pulses.",
             "frequency": "Frequency of stimulation pulses in Hz.",
             "amplitude": "Amplitude of stimulation current in uA.",
