@@ -240,9 +240,10 @@ class ColorPlotPage(QWizardPage):
         self.chk_show_cv = QCheckBox("Show CV Plot")
         self.chk_show_cv.toggled.connect(self._on_show_cv_toggled)
 
-        self.chk_cv_ref = QCheckBox("Ref line")
+        self.chk_cv_ref = QCheckBox("CV reference line")
         self.chk_cv_ref.setEnabled(False)
         self.chk_cv_ref.toggled.connect(self._redraw_cv)
+        self.chk_cv_ref.toggled.connect(self._redraw_color_with_overlays)
 
         self.spin_cv_ref = QDoubleSpinBox()
         self.spin_cv_ref.setRange(-1.5, 2.0)
@@ -252,6 +253,29 @@ class ColorPlotPage(QWizardPage):
         self.spin_cv_ref.setSuffix(" V")
         self.spin_cv_ref.setEnabled(False)
         self.spin_cv_ref.valueChanged.connect(self._redraw_cv)
+        self.spin_cv_ref.valueChanged.connect(self._redraw_color_with_overlays)
+
+        # Stim reference on IT plot
+        self.chk_stim_ref = QCheckBox("Stim reference on IT")
+        self.chk_stim_ref.toggled.connect(self._on_stim_ref_changed)
+
+        self.spin_stim_start = QDoubleSpinBox()
+        self.spin_stim_start.setRange(0, 3600)
+        self.spin_stim_start.setSingleStep(0.5)
+        self.spin_stim_start.setValue(0.0)
+        self.spin_stim_start.setDecimals(1)
+        self.spin_stim_start.setSuffix(" s")
+        self.spin_stim_start.setEnabled(False)
+        self.spin_stim_start.valueChanged.connect(self._on_stim_ref_changed)
+
+        self.spin_stim_dur = QDoubleSpinBox()
+        self.spin_stim_dur.setRange(0, 600)
+        self.spin_stim_dur.setSingleStep(0.5)
+        self.spin_stim_dur.setValue(0.0)
+        self.spin_stim_dur.setDecimals(1)
+        self.spin_stim_dur.setSuffix(" s")
+        self.spin_stim_dur.setEnabled(False)
+        self.spin_stim_dur.valueChanged.connect(self._on_stim_ref_changed)
 
         # Colorbar upper-limit control. 0.0 nA stays pinned at the same point of the
         # colormap (the 3:2 / 0.6 logic); raising this just stretches the color range.
@@ -282,6 +306,17 @@ class ColorPlotPage(QWizardPage):
         color_limit_row.addWidget(self.chk_color_limit)
         color_limit_row.addWidget(self.spin_color_limit)
         left.addLayout(color_limit_row)
+        left.addWidget(self.chk_stim_ref)
+        stim_ref_row = QHBoxLayout()
+        stim_lbl_start = QLabel("Start:")
+        stim_lbl_start.setStyleSheet("font-size: 9pt;")
+        stim_ref_row.addWidget(stim_lbl_start)
+        stim_ref_row.addWidget(self.spin_stim_start)
+        stim_lbl_dur = QLabel("Dur:")
+        stim_lbl_dur.setStyleSheet("font-size: 9pt;")
+        stim_ref_row.addWidget(stim_lbl_dur)
+        stim_ref_row.addWidget(self.spin_stim_dur)
+        left.addLayout(stim_ref_row)
 
         self.left_layout = left
 
@@ -477,10 +512,13 @@ class ColorPlotPage(QWizardPage):
             self.main_plot.plot_color(processed_data=processed_data, peak_pos=peak_pos,
                                       vmax=self._current_vmax())
 
+            stim_start, stim_dur = self._stim_ref_params()
             self.it_plot.plot_IT(processed_data=processed_data, metadata=metadata, peak_position=peak_pos,
-                                 temp_peak_detection=self.temp_peak)
+                                 temp_peak_detection=self.temp_peak,
+                                 stim_start_sec=stim_start, stim_duration_sec=stim_dur)
 
             self._redraw_all_peak_overlays(sph_file)
+            self._draw_cv_ref_on_color(sph_file)
 
             if self.chk_show_cv.isChecked():
                 ref_voltage = self.spin_cv_ref.value() if self.chk_cv_ref.isChecked() else None
@@ -608,6 +646,13 @@ class ColorPlotPage(QWizardPage):
                                   min_height_na=min_height_na)
 
     def revert_processing(self):
+        reply = QMessageBox.question(
+            self, "Reverse Changes",
+            "Are you sure you want to reverse all processing changes?\nAll filter and peak results will be cleared.",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+        )
+        if reply != QMessageBox.Yes:
+            return
         group_analysis = self.wizard().group_analysis
         for exp in group_analysis.get_experiments():
             exp.revert_processing()
@@ -1054,6 +1099,72 @@ class ColorPlotPage(QWizardPage):
         except Exception:
             pass  # no data loaded yet
 
+    def _stim_ref_params(self):
+        """Return (stim_start_sec, stim_duration_sec) or (None, None) if disabled."""
+        if not self.chk_stim_ref.isChecked():
+            return None, None
+        return self.spin_stim_start.value(), self.spin_stim_dur.value()
+
+    def _on_stim_ref_changed(self, *_):
+        """Enable/disable stim spinboxes and trigger a redraw of the IT plot."""
+        enabled = self.chk_stim_ref.isChecked()
+        self.spin_stim_start.setEnabled(enabled)
+        self.spin_stim_dur.setEnabled(enabled)
+        try:
+            exp = self.wizard().group_analysis.get_single_experiments(self.current_rep_index)
+            actual = (self.file_index_mapping[self.current_file_index]
+                      if self.file_index_mapping and self.current_file_index < len(self.file_index_mapping)
+                      else self.current_file_index)
+            self._refresh_plots_for_file(exp.get_spheroid_file(actual))
+        except Exception:
+            pass
+
+    def _redraw_color_with_overlays(self, *_):
+        """Redraw color plot and all overlays (used when CV ref line setting changes)."""
+        try:
+            exp = self.wizard().group_analysis.get_single_experiments(self.current_rep_index)
+            actual = (self.file_index_mapping[self.current_file_index]
+                      if self.file_index_mapping and self.current_file_index < len(self.file_index_mapping)
+                      else self.current_file_index)
+            sf = exp.get_spheroid_file(actual)
+            peak_pos = QSettings("HashemiLab", "NeuroStemVolt").value("peak_position")
+            self.main_plot.plot_color(processed_data=sf.get_processed_data(),
+                                      peak_pos=peak_pos, vmax=self._current_vmax())
+            self._draw_peak_overlays_color(sf)
+            self._draw_cv_ref_on_color(sf)
+        except Exception:
+            pass
+
+    def _draw_cv_ref_on_color(self, file_obj):
+        """Draw a horizontal line on the color plot at the CV reference voltage step."""
+        if not self.chk_cv_ref.isChecked():
+            return
+        if not self.main_plot.fig.axes:
+            return
+        try:
+            data = file_obj.get_processed_data()
+            if data is None:
+                return
+            from core.spheroid_file import Waveforms
+            waveform_type = QSettings("HashemiLab", "NeuroStemVolt").value("waveform", "5HT", type=str)
+            n_steps = data.shape[1]
+            if waveform_type == "5HT":
+                wf = Waveforms(0.2, [1.0, -0.1], 0.2, 1000, n_steps)
+            elif waveform_type == "HA":
+                wf = Waveforms(-0.5, [-0.7, 1.1], -0.5, 600, n_steps)
+            elif waveform_type == "DA":
+                wf = Waveforms(-0.4, [1.3, -0.4], -0.4, 400, n_steps)
+            else:
+                return
+            voltage = wf.voltage_waveform()
+            ref_v = self.spin_cv_ref.value()
+            step_idx = int(np.argmin(np.abs(voltage - ref_v)))
+            ax = self.main_plot.fig.axes[0]
+            ax.axhline(y=step_idx, color='#e74c3c', linestyle='--', linewidth=1.5, alpha=0.8)
+            self.main_plot.fig.canvas.draw_idle()
+        except Exception:
+            pass
+
     def _redraw_all_peak_overlays(self, file_obj):
         self._draw_peak_overlays_color(file_obj)
         self._draw_peak_overlays_it(file_obj)
@@ -1065,14 +1176,17 @@ class ColorPlotPage(QWizardPage):
             peak_pos = QSettings("HashemiLab", "NeuroStemVolt").value("peak_position")
             self.main_plot.plot_color(processed_data=processed, peak_pos=peak_pos,
                                       vmax=self._current_vmax())
+            stim_start, stim_dur = self._stim_ref_params()
             self.it_plot.plot_IT(processed_data=processed, metadata=metadata,
-                                 peak_position=peak_pos, temp_peak_detection=self.temp_peak)
+                                 peak_position=peak_pos, temp_peak_detection=self.temp_peak,
+                                 stim_start_sec=stim_start, stim_duration_sec=stim_dur)
             if self.chk_show_cv.isChecked():
                 ref_voltage = self.spin_cv_ref.value() if self.chk_cv_ref.isChecked() else None
                 self.cv_plot.plot_cv(processed_data=processed, metadata=metadata,
                                      title_suffix=f"File {self.current_file_index + 1}",
                                      ref_voltage=ref_voltage)
             self._redraw_all_peak_overlays(file_obj)
+            self._draw_cv_ref_on_color(file_obj)
             # Re-evaluate Next button — manual peak changes count toward completion
             self.completeChanged.emit()
         except Exception as e:

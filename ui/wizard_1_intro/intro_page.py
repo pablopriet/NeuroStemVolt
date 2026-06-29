@@ -1,6 +1,7 @@
 
 from PyQt5.QtWidgets import (
-    QWizardPage, QLabel, QPushButton, QVBoxLayout, QListWidget, QMessageBox, QFileDialog, QShortcut, QDialog
+    QWizardPage, QLabel, QPushButton, QVBoxLayout, QListWidget, QMessageBox, QFileDialog, QShortcut, QDialog,
+    QProgressDialog, QApplication
 )
 from PyQt5.QtCore import Qt
 from core.group_analysis import GroupAnalysis
@@ -115,6 +116,13 @@ class IntroPage(QWizardPage):
         Emits:
             completeChanged: Notifies the wizard to re-evaluate if the page is complete.
         """
+        reply = QMessageBox.question(
+            self, "Clear Replicates",
+            "Are you sure you want to clear all loaded replicates?\nThis cannot be undone.",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+        )
+        if reply != QMessageBox.Yes:
+            return
         self.group_analysis.clear_experiments()
         self.list_widget.clear()
 
@@ -181,8 +189,18 @@ class IntroPage(QWizardPage):
             self.number_of_files = len(paths)
 
         filtered = {k: v for k, v in settings.items() if k != "output_folder"}
-        exp = SpheroidExperiment(paths,**filtered)
-        
+
+        progress = QProgressDialog(
+            f"Loading replicate: {os.path.basename(folder)}…", None, 0, 0, self
+        )
+        progress.setWindowModality(Qt.ApplicationModal)
+        progress.setMinimumDuration(0)
+        progress.show()
+        QApplication.processEvents()
+
+        exp = SpheroidExperiment(paths, **filtered)
+        progress.close()
+
         self.group_analysis.add_experiment(exp)
         # store it and show it in the list
         self.display_names_list.append(f"{os.path.basename(folder)}")
