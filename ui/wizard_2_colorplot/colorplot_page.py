@@ -312,7 +312,7 @@ class ColorPlotPage(QWizardPage):
         stim_lbl_start.setStyleSheet("font-size: 9pt;")
         stim_ref_row.addWidget(stim_lbl_start)
         stim_ref_row.addWidget(self.spin_stim_start)
-        stim_lbl_dur = QLabel("Dur:")
+        stim_lbl_dur = QLabel("Duration:")
         stim_lbl_dur.setStyleSheet("font-size: 9pt;")
         stim_ref_row.addWidget(stim_lbl_dur)
         stim_ref_row.addWidget(self.spin_stim_dur)
