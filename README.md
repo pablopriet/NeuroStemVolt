@@ -21,25 +21,36 @@ Whether you're characterizing iPSC-derived neuronal systems or investigating neu
 ### **Data Pre-processing**
 - Interactive color plots and current-vs-time traces  
 - Multiple filtering options:
-  - Baseline correction 
-  - Background subtraction, 
-  - Rolling mean, 
-  - Butterworth filtering 
+  - Baseline correction
+  - Background subtraction
+  - Rolling mean
+  - Butterworth filtering
   - Savitzky-Golay
-  - Normalization.
+  - Normalization
 - Visualization of raw vs. filtered data
+- Non-specific waveform support
+
+### **Stimulation Analysis**
+- Stimulation time markers overlaid on current-vs-time traces
+- Configurable stimulation parameters (onset, duration, amplitude) loaded from experiment settings
+- Stimulation artifact removal with adjustable parameters
+- Per-replicate stimulation event annotation
 
 ### **Spontaneous Activity Detection**
 - Detection and quantification of spontaneous neurotransmitter release events  
-- Peak detection algorithms
+- Peak detection algorithms with configurable thresholds
+- **Manual peak editing** — add, remove, or adjust detected peaks via interactive editor
+- Metadata flagging to track which files have had peaks manually modified
 
 ### **Neuronal Excitability Analysis**
 - Analysis of stimulus-evoked release amplitudes  
 - Assessment of neuronal responsiveness
+- Exponential decay fitting **per replicate**, with pooled statistics across replicates
 
 ### **Transporter Kinetics Evaluation**
 - Quantification of reuptake kinetics  
 - Inference of neurotransmitter transporter activity
+- Global and per-replicate exponential fitting with pooled summary statistics
 
 ### **Drug Response Analysis**
 - Comparison of release amplitude and clearance rates  
@@ -47,6 +58,8 @@ Whether you're characterizing iPSC-derived neuronal systems or investigating neu
 
 ### **Export Tools**
 - Export processed and annotated results to `.csv` format  
+- **Session export** covers all replicates and all detected/edited peaks in one operation
+- Experiment log (notes, settings, metadata) included in CSV export
 - Ideal for downstream statistical analysis and sharing
 
 ### **Graphical User Interface (GUI)**
@@ -57,6 +70,27 @@ Whether you're characterizing iPSC-derived neuronal systems or investigating neu
   - Visualization  
   - Export  
 - Built-in support for batch processing
+- Progress and confirmation dialogs for long-running or destructive operations
+- Context-sensitive help dialogs throughout the interface
+- OS-adaptive text and UI styling
+
+---
+
+## **What's New in v1.1.0**
+
+- **Stimulation visualisation** — stimulation onset time is now drawn on every current-vs-time plot
+- **Stim params from settings** — the colorplot page reads stimulation parameters directly from experiment settings so they are consistent across the session
+- **Manual peak editor** — interactively click to add or remove peaks; edited files are flagged in metadata
+- **Exponential fitting per replicate** — fit and export reuptake curves individually, then combine into pooled statistics; global fitting is still available
+- **Full session export** — export all replicates and all peaks with a single button press; the results page exports everything too
+- **Experiment log in CSV** — session notes and settings are included in every CSV export
+- **Non-specific waveform option** — new waveform type for experiments that do not target a specific analyte
+- **Progress & confirmation dialogs** — clear visual feedback for processing steps and safety prompts before destructive actions (clear, revert)
+- **Improved help text** — stim artifact removal and stim start dialogs now show clearer instructions in correct units (seconds)
+- **File sorting fix** — file naming and sort order are now consistent across platforms
+- **Butterworth filter fix** — resolved edge-case bugs in filter coefficient calculation
+- **Acquisition frequency from QSettings** — frequency is now read from the global settings store instead of being hard-coded
+- **Updated branding** — new NeuroStemVolt v1.1.0 logo and icon
 
 ---
 
@@ -81,14 +115,13 @@ Whether you're characterizing iPSC-derived neuronal systems or investigating neu
 
 **CSV Exports:**
 - Filtered and processed current-vs-time traces for each replicate and timepoint
-- Detected peak events with timestamps and amplitudes
-- Reuptake curve parameters, including decay constants and fit statistics
+- Detected peak events with timestamps, amplitudes, and edit-status flags
+- Reuptake curve parameters: per-replicate fits, pooled statistics, decay constants
+- Experiment log and session metadata
 
 **Visualizations:**
 - Interactive color plots for each timepoint
-- Current-vs-time traces with event annotations
-- Summary plots for batch analysis and group
-
+- Current-vs-time traces with stimulation markers and event annotations
 ---
 
 ## Running NeuroStemVolt
@@ -97,31 +130,29 @@ You can either use the pre-built executables (no Python setup required) or run d
 
 ### Option 1: Pre-built Executables
 
-Pre-built executables are available for macOS and Unix-based systems.  
+Pre-built executables are available for Windows and macOS.  
 These versions run without requiring any Python installation or environment setup.
 
-You can download them here:  
-[**NeuroStemVolt v1.0.0 – Release Assets**](https://github.com/pablopriet/NeuroStemVolt/releases/tag/v1.0.0)
+Download the latest release here:  
+[**NeuroStemVolt v1.1.0 – Release Assets**](https://github.com/pablopriet/NeuroStemVolt/releases/tag/v1.1.0)
 
-### Included in the ZIP:
-- `.app` – macOS application bundle
-- Unix executable – for Linux or macOS terminal use
-- `.exe` – Windows executable
+### Included in the release:
+- `NeuroStemVolt-windows-v1.1.0.exe` — Windows executable
+- `NeuroStemVolt-mac-v1.1.0.zip` — macOS application bundle (`.app`)
 
 **Usage:**
-1. Download and unzip the file for your operating system.
-2. On macOS:
-   - Double-click the `.app` to launch the GUI.
-   - If you get a security warning, go to **System Preferences → Security & Privacy** and allow the app.
-3. On Unix/Linux:
-   - Open a terminal in the extracted folder.
-   - Run:  
-     ```bash
-     ./NeuroStemVolt
-     ```
-4. On Windows:
+1. Download the file for your operating system.
+2. On **Windows**:
    - Double-click the `.exe` to run the program.
-   - If you get a security prompt, click **More info → Run anyway**.
+   - If you see a SmartScreen prompt, click **More info → Run anyway**.
+3. On **macOS**:
+   - Unzip the downloaded file.
+   - Double-click `NeuroStemVolt.app` to launch.
+   - If you see a security warning, go to **System Settings → Privacy & Security** and click **Open Anyway**.
+   - If macOS says the app is "damaged", open Terminal and run:  
+     ```bash
+     xattr -cr /path/to/NeuroStemVolt.app
+     ```
 
 ### Option 2: Run from Source
 
@@ -137,22 +168,14 @@ cd NeuroStemVolt
 ```
 
 **2) Install dependencies**
-- **Option 1 (Recommended)**
 ```bash
 pip install -r requirements.txt
 ```
-- **Option 2** 
-```bash
-pip install numpy pandas matplotlib PyQt5 scipy
-```
-
 
 **3) Launch the app**
 ```bash
 python main.py
 ```
-
-This will start the NeuroStemVolt GUI using your local Python environment.
 
 ---
 
@@ -177,7 +200,15 @@ conda activate neurostemvolt
 python main.py
 ```
 
-This will start the NeuroStemVolt GUI in a fully managed conda environment.
+---
+
+## Building Executables
+
+If you want to build the app yourself (e.g. for a new release), see:
+
+[`build_guide/pyinstaller_guide.txt`](build_guide/pyinstaller_guide.txt)
+
+It contains step-by-step instructions and the exact PyInstaller commands for both Windows and macOS, along with troubleshooting tips and instructions for uploading to a GitHub release.
 
 ---
 
@@ -213,5 +244,3 @@ Minimal environment (see `environment.yml` or `requirements.txt`):
 
 Developed by **Pablo Prieto Roca** and Tomas Andriuskevicius @[Hashemi Lab](https://www.hashemilab.com/).  
 For questions or support, contact [pablo.prieto-roca23@imperial.ac.uk].
-
-
