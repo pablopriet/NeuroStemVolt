@@ -202,16 +202,6 @@ python main.py
 
 ---
 
-## Building Executables
-
-If you want to build the app yourself (e.g. for a new release), see:
-
-[`build_guide/pyinstaller_guide.txt`](build_guide/pyinstaller_guide.txt)
-
-It contains step-by-step instructions and the exact PyInstaller commands for both Windows and macOS, along with troubleshooting tips and instructions for uploading to a GitHub release.
-
----
-
 ## Contributing
 
 1. Fork the repository.
