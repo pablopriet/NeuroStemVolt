@@ -94,7 +94,8 @@ class PlotCanvas(FigureCanvas):
         self.fig.tight_layout()
         self.draw()
 
-    def plot_IT(self, processed_data, metadata=None, peak_position=None, temp_peak_detection=None):
+    def plot_IT(self, processed_data, metadata=None, peak_position=None, temp_peak_detection=None,
+               stim_start_sec=None, stim_duration_sec=None):
         """
         Plot the I-T (Current vs Time) trace, with optional peak annotations.
 
@@ -200,6 +201,16 @@ class PlotCanvas(FigureCanvas):
 
         self.axes.set_title(title, fontweight="bold")
         self.axes.grid(True, alpha=0.3)
+
+        # Stim reference overlay
+        if stim_start_sec is not None:
+            
+            self.axes.axvline(x=stim_start_sec, color='#c0392b', linestyle='--',
+                              linewidth=1.5, alpha=0.75, label=f'Stim start ({stim_start_sec:.1f}s)')
+            if stim_duration_sec is not None and stim_duration_sec > 0:
+                self.axes.axvspan(stim_start_sec, stim_start_sec + stim_duration_sec,
+                                  alpha=0.15, color='#e67e22',
+                                  label=f'Stim ({stim_duration_sec:.1f}s)')
 
         # Only show legend if there are items to show
         handles, labels = self.axes.get_legend_handles_labels()
