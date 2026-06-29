@@ -127,13 +127,12 @@ class ExperimentSettingsDialog(QDialog):
             None
         """
         # if they choose stimulation, pop the sub-dialog
-        # UNCOMMENT IF STIM PARAMS ARE NEEDED
-        # if self.cb_file_type.currentText() == "Stimulation":
-        #     dlg = StimParamsDialog(self, defaults=self.stim_params)
-        #     if dlg.exec_() == QDialog.Accepted:
-        #         self.stim_params = dlg.get_params()
-        #     else:
-        #         return  # abort if they cancelled stim-params
+        if self.cb_file_type.currentText() == "Single Peak":
+            dlg = StimParamsDialog(self, defaults=self.stim_params)
+            if dlg.exec_() == QDialog.Accepted:
+                self.stim_params = dlg.get_params()
+            else:
+                return  # abort if they cancelled stim-params
 
         # now persist *all* fields
         self.qsettings.setValue("file_type",             self.cb_file_type.currentText())

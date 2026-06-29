@@ -30,7 +30,7 @@ def main():
     
     # Load and scale the splash image
     base = os.path.dirname(__file__)
-    logo_path = os.path.join(base, 'ui/graphics/LogoNeuroStemVoltV1.0.0.png')
+    logo_path = os.path.join(base, 'ui/graphics/LogoNeuroStemVoltV1.1.0.png')
     
     # Check if file exists
     if not os.path.exists(logo_path):
