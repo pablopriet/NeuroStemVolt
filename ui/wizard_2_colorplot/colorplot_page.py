@@ -385,6 +385,9 @@ class ColorPlotPage(QWizardPage):
         next_btn.setAttribute(Qt.WA_AlwaysShowToolTips, True)  # show even if disabled
         next_btn.installEventFilter(self)
 
+        # Populate stim reference spinboxes from QSettings (set in Experiment Settings)
+        self._load_stim_params_from_settings()
+
         if not display_names_list:
             self.cbo_rep.setEnabled(False)
             self.cbo_file.clear()
@@ -1098,6 +1101,26 @@ class ColorPlotPage(QWizardPage):
             self._refresh_plots_for_file(exp.get_spheroid_file(actual))
         except Exception:
             pass  # no data loaded yet
+
+    def _load_stim_params_from_settings(self):
+        """Populate stim spinboxes from stim_params stored in QSettings."""
+        raw = QSettings("HashemiLab", "NeuroStemVolt").value("stim_params", "{}", type=str)
+        try:
+            params = json.loads(raw)
+        except Exception:
+            return
+        start = params.get("start")
+        duration = params.get("duration")
+        if start is not None:
+            try:
+                self.spin_stim_start.setValue(float(start))
+            except (TypeError, ValueError):
+                pass
+        if duration is not None:
+            try:
+                self.spin_stim_dur.setValue(float(duration))
+            except (TypeError, ValueError):
+                pass
 
     def _stim_ref_params(self):
         """Return (stim_start_sec, stim_duration_sec) or (None, None) if disabled."""
