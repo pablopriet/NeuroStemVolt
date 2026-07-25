@@ -180,6 +180,17 @@ class ResultsPage(QWizardPage):
             OutputManager.save_all_reuptake_curves(ga, output_folder)
             OutputManager.save_all_exponential_fitting_params(ga, output_folder)
             OutputManager.save_all_exponential_fitting_params_global(ga, output_folder)
+
+            # New replicate-fitting methods (joint / shared-k / two-stage). Each
+            # is guarded on its own so one method's failure cannot abort the rest.
+            for saver in (OutputManager.save_exp_fit_joint,
+                          OutputManager.save_exp_fit_shared_k,
+                          OutputManager.save_exp_fit_two_stage):
+                try:
+                    saver(ga, output_folder)
+                except Exception as ex:
+                    print(f"[export] {saver.__name__} failed: {ex}")
+
             OutputManager.save_all_AUC(ga, output_folder)
 
             # Export spontaneous peak metrics if applicable
