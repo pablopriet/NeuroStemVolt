@@ -4,6 +4,13 @@ from core.processing.normalize import Normalize
 import os
 import numpy as np
 
+LN2 = np.log(2)
+
+
+def _model_AkC(t, A, k, C):
+    # Re-zeroed at each replicate's own peak: A is the value AT the peak (t=0), NOT amplitude above baseline.
+    return (A - C) * np.exp(-k * t) + C
+
 class GroupAnalysis:
     """
     Initializes a GroupAnalysis instance with optional experiments.
@@ -577,7 +584,464 @@ class GroupAnalysis:
 
         # Pre-allocated_ITs_array is the matrix with all data properly aligned on their peaks
         return time_all, cropped_ITs, pre_allocated_ITs_array, t_half, (A_fit, k_fit, C_fit), (A_err, k_err, C_err), min_peak
-    
+
+    # ==================================================================
+    #  New replicate-fitting methods (added alongside Path A / legacy).
+    #  Shared model: y(t) = (A - C) exp(-k t) + C, t=0,1,... in samples,
+    #  re-zeroed at each replicate's OWN peak. k is fitted per timepoint
+    #  and is NEVER shared across timepoints (that is the drug effect).
+    # ==================================================================
+
+    def _gather_post_peak_traces(self, replicate_time_point):
+        """Collect each replicate's post-peak IT trace at one timepoint.
+
+        Every replicate is aligned on ITS OWN peak (``_resolve_peak_position``),
+        exactly as ``exponential_fitting_replicated`` does — NOT the legacy
+        global-peak crop. No common crop is applied here: each returned trace
+        keeps its full post-peak length. The joint method (which flattens into
+        one vector) applies its own common crop on top of this.
+
+        Args:
+            replicate_time_point (int): file index shared across replicates.
+
+        Returns:
+            tuple: (traces, peaks, n_timepoints) where ``traces`` is a list of
+            1-D float arrays (one per replicate, own post-peak length) and
+            ``peaks`` is the list of int peak positions. ``None`` if empty.
+        """
+        n_experiments = len(self.experiments)
+        if n_experiments == 0:
+            return None
+        n_timepoints = self.experiments[0].get_file_time_points()
+        traces = []
+        peaks = []
+        for i, experiment in enumerate(self.experiments):
+            file = experiment.get_spheroid_file(replicate_time_point)
+            IT_individual = file.get_processed_data_IT()
+            if IT_individual.shape[0] != n_timepoints:
+                raise ValueError(
+                    f"Replicate {i+1} has {IT_individual.shape[0]} time points, expected {n_timepoints}.\n"
+                    "All replicates must have the same number of time points."
+                )
+            metadata = file.get_metadata()
+            peak = int(self._resolve_peak_position(metadata))
+            peaks.append(peak)
+            traces.append(np.asarray(IT_individual[peak:], dtype=float))
+        return traces, peaks, n_timepoints
+
+    @staticmethod
+    def _tmultiplier(nu):
+        """Two-sided 97.5% Student-t multiplier for ``nu`` dof (t_{nu,0.975}).
+
+        Falls back to z=1.96 only when nu is non-finite/non-positive; for large
+        nu (thousands) t.ppf already returns ~1.96 on its own.
+        """
+        from scipy.stats import t as t_dist
+        if nu is None or not np.isfinite(nu) or nu <= 0:
+            return 1.96
+        return float(t_dist.ppf(0.975, nu))
+
+    @classmethod
+    def _tau_thalf_from_k(cls, k, se_k, nu):
+        """Derive tau and t_half (point estimate, SE, 95% CI) from a rate k.
+
+        All quantities are in SAMPLES (convert to seconds only at output time).
+        SEs use the delta method: SE(tau) = SE(k)/k^2 and
+        SE(t_half) = ln(2)*SE(k)/k^2. The 95% CI is built on k and its endpoints
+        are INVERTED (the low tau endpoint comes from the high k endpoint), which
+        is correct whether SE(k)/k is small (near-symmetric) or large
+        (asymmetric), so the endpoint-inversion form is always used.
+
+        A non-finite se_k (e.g. degenerate curvature in shared-k) is allowed: the
+        point estimates tau/t_half are still returned, with NaN SE and NaN CI.
+
+        Args:
+            k (float): decay rate in 1/samples. Must be finite and > 0.
+            se_k (float): standard error of k (>= 0), or non-finite if unknown.
+            nu (float): degrees of freedom for the Student-t multiplier.
+
+        Returns:
+            dict: keys ``tau``, ``t_half``, ``se_tau``, ``se_t_half``,
+            ``tau_ci`` (lo, hi), ``t_half_ci`` (lo, hi) and ``tmult`` — all in
+            samples except ``tmult``.
+
+        Raises:
+            ValueError: if k is non-finite or <= 0, or if se_k is finite and < 0.
+        """
+        if not np.isfinite(k) or k <= 0:
+            raise ValueError("k must be finite and greater than zero.")
+        if np.isfinite(se_k) and se_k < 0:
+            raise ValueError("se_k must be non-negative.")
+
+        tmult = cls._tmultiplier(nu)
+        tau = 1.0 / k
+        t_half = LN2 / k
+
+        if np.isfinite(se_k):
+            se_tau = se_k / k**2
+            se_t_half = LN2 * se_k / k**2
+            k_lo = k - tmult * se_k
+            k_hi = k + tmult * se_k
+            # Flip: smaller k -> larger tau, so the tau interval endpoints swap.
+            tau_ci_lo = (1.0 / k_hi) if k_hi > 0 else np.nan
+            tau_ci_hi = (1.0 / k_lo) if k_lo > 0 else np.inf
+            th_ci_lo = (LN2 / k_hi) if k_hi > 0 else np.nan
+            th_ci_hi = (LN2 / k_lo) if k_lo > 0 else np.inf
+        else:
+            # SE unknown -> report the point estimate with NaN SE/CI.
+            se_tau = se_t_half = np.nan
+            tau_ci_lo = tau_ci_hi = np.nan
+            th_ci_lo = th_ci_hi = np.nan
+
+        return {
+            "tau": tau, "t_half": t_half,
+            "se_tau": se_tau, "se_t_half": se_t_half,
+            "tau_ci": (tau_ci_lo, tau_ci_hi),
+            "t_half_ci": (th_ci_lo, th_ci_hi),
+            "tmult": tmult,
+        }
+
+    def exponential_fitting_joint(self, replicate_time_point=0):
+        """Method 1 — adjusted Path A: joint (A, k, C) fit on pooled replicates.
+
+        Same pooling as Path A (own-peak aligned, then flatten all replicates
+        into one vector with a tiled time axis), but A, k and C are fitted
+        SIMULTANEOUSLY with a single 3-parameter ``curve_fit`` on the
+        (A-C)exp(-kt)+C model — not three sequential one-parameter fits. SEs
+        come from the full 3x3 covariance diagonal.
+
+        Sharing within the timepoint: one A, one k, one C for all replicates.
+        Common crop length = ``n_timepoints - max_peak`` (the extra ``-min_peak``
+        subtraction in Path A is a bug that discards valid tail samples).
+        nu = N - 3 with N = n_reps * n_post (in the thousands, so z~1.96).
+        """
+        from scipy.optimize import curve_fit
+        gathered = self._gather_post_peak_traces(replicate_time_point)
+        if gathered is None:
+            return None
+        traces, peaks, n_timepoints = gathered
+        n_reps = len(traces)
+        max_peak = int(np.max(peaks))
+        n_post = n_timepoints - max_peak  # correct common length (no extra -min_peak)
+        if n_post < 4:
+            raise ValueError(f"Only {n_post} post-peak samples after alignment — too few to fit.")
+
+        cropped = np.vstack([tr[:n_post] for tr in traces])  # (n_reps, n_post)
+        y = cropped.flatten()
+        t = np.tile(np.arange(n_post, dtype=float), n_reps)
+
+        mean_trace = cropped.mean(axis=0)
+        A0 = float(mean_trace[:min(10, n_post)].mean())
+        C0 = float(np.median(mean_trace[-min(10, n_post):]))
+        k0 = 0.01
+
+        popt, pcov = curve_fit(_model_AkC, t, y, p0=[A0, k0, C0], maxfev=20000)
+        A_fit, k_fit, C_fit = (float(v) for v in popt)
+        perr = np.sqrt(np.diag(pcov))
+        se_k = float(perr[1])
+
+        N = n_reps * n_post
+        nu = N - 3
+        result = {
+            "method": "joint", "k": k_fit, "se_k": se_k,
+            "A": A_fit, "C": C_fit,
+            "A_se": float(perr[0]), "C_se": float(perr[2]),
+            "n_used": n_reps, "N": N, "nu": nu,
+            "n_post": n_post, "max_peak": max_peak, "pcov": pcov,
+        }
+        result.update(self._tau_thalf_from_k(k_fit, se_k, nu))
+        return result
+
+    @staticmethod
+    def _second_derivative(f, x, rel=1e-2):
+        """Curvature d2f/dx2 via a 5-point least-squares parabola around ``x``.
+
+        Fitting a parabola to a small symmetric stencil is more robust to the
+        tiny numerical noise of the per-replicate lstsq than a single 3-point
+        difference.
+        """
+        h = max(abs(x) * rel, 1e-8)
+        xs = x + h * np.array([-2.0, -1.0, 0.0, 1.0, 2.0])
+        ys = np.array([f(xi) for xi in xs])
+        coeffs = np.polyfit(xs - x, ys, 2)
+        return 2.0 * coeffs[0]
+
+    @staticmethod
+    def _profile_ci_k(sse_only, k_opt, thresh, k_lo_bound, k_hi_bound):
+        """Profile-likelihood CI on k: where profiled SSE crosses ``thresh``.
+
+        Returns (k_low, k_high); either may be NaN if SSE never crosses the
+        threshold within the search bounds (interval unbounded on that side).
+        """
+        from scipy.optimize import brentq
+        g = lambda k: sse_only(k) - thresh
+        try:
+            k_low = float(brentq(g, k_lo_bound, k_opt)) if g(k_lo_bound) > 0 else np.nan
+        except (ValueError, RuntimeError):
+            k_low = np.nan
+        try:
+            k_high = float(brentq(g, k_opt, k_hi_bound)) if g(k_hi_bound) > 0 else np.nan
+        except (ValueError, RuntimeError):
+            k_high = np.nan
+        return k_low, k_high
+
+    def exponential_fitting_shared_k(self, replicate_time_point=0, profile_ci=True):
+        """Method 2 — fixed-effects shared-k fit (one k, per-replicate A_i, C_i).
+
+        Within the timepoint every replicate shares a single k but keeps its own
+        A_i and C_i. Implemented by PROFILING, not a raw 2n+1-parameter optimiser:
+        for a trial k the model is LINEAR in (A_i, C_i), so with
+        X(k) = [exp(-k t), 1 - exp(-k t)] the per-replicate (A_i, C_i) are solved
+        in closed form by least squares, the SSE is summed across replicates, and
+        the 1-D profiled SSE is minimised over log k with ``minimize_scalar``.
+        This needs no A/C starting values and is faster and more robust than a
+        2n+1-param fit. Each replicate uses its OWN post-peak length (no common
+        crop — nothing is flattened into one vector).
+
+        SE(k) uses the curvature of the profiled SSE at the optimum:
+        se_k = sqrt(2*sigma2/d2), sigma2 = SSE/(N-p), p = 2n+1, N = total points.
+        (This equals pcov[0,0] of the full fit; building the 2n+1 Jacobian instead
+        would need an SVD pseudo-inverse because J^T J is near-singular here.)
+        nu = N - p. An optional asymmetric profile-likelihood CI on k is also
+        returned (preferred when the interval is wide).
+        """
+        from scipy.optimize import minimize_scalar
+        gathered = self._gather_post_peak_traces(replicate_time_point)
+        if gathered is None:
+            return None
+        traces, peaks, n_timepoints = gathered
+        n_reps = len(traces)
+        times = [np.arange(len(tr), dtype=float) for tr in traces]
+        N = int(sum(len(tr) for tr in traces))
+        p = 2 * n_reps + 1
+
+        def solve_linear(k):
+            """Closed-form (A_i, C_i) per replicate for a trial k; returns SSE too."""
+            sse = 0.0
+            A = np.empty(n_reps)
+            C = np.empty(n_reps)
+            for i, (y, t) in enumerate(zip(traces, times)):
+                E = np.exp(-k * t)
+                X = np.column_stack([E, 1.0 - E])   # coeffs are [A, C]
+                beta, _res, _rank, _sv = np.linalg.lstsq(X, y, rcond=None)
+                A[i], C[i] = beta
+                sse += float(np.sum((y - X @ beta) ** 2))
+            return sse, A, C
+
+        def sse_only(k):
+            return solve_linear(k)[0]
+
+        k_lo_bound, k_hi_bound = 1e-5, 5.0
+        res = minimize_scalar(
+            lambda lk: sse_only(np.exp(lk)),
+            bounds=(np.log(k_lo_bound), np.log(k_hi_bound)),
+            method="bounded", options={"xatol": 1e-10},
+        )
+        k_fit = float(np.exp(res.x))
+        sse_min, A_i, C_i = solve_linear(k_fit)
+
+        dof = max(N - p, 1)
+        sigma2 = sse_min / dof
+        d2 = self._second_derivative(sse_only, k_fit)
+        se_k = float(np.sqrt(2.0 * sigma2 / d2)) if (np.isfinite(d2) and d2 > 0) else np.nan
+        nu = N - p
+
+        result = {
+            "method": "shared_k", "k": k_fit, "se_k": se_k,
+            "A": A_i, "C": C_i,               # per-replicate arrays
+            "n_used": n_reps, "N": N, "nu": nu, "p": p, "sse": sse_min,
+        }
+        result.update(self._tau_thalf_from_k(k_fit, se_k, nu))
+
+        if profile_ci:
+            from scipy.stats import chi2
+            thresh = sse_min * (1.0 + chi2.ppf(0.95, 1) / dof)
+            k_low, k_high = self._profile_ci_k(sse_only, k_fit, thresh, k_lo_bound, k_hi_bound)
+            result["prof_k_ci"] = (k_low, k_high)
+            # invert endpoints for a tau interval (flip: low tau <- high k)
+            result["tau_prof_ci"] = (
+                (1.0 / k_high) if (np.isfinite(k_high) and k_high > 0) else np.nan,
+                (1.0 / k_low) if (np.isfinite(k_low) and k_low > 0) else np.inf,
+            )
+        return result
+
+    def exponential_fitting_two_stage(self, replicate_time_point=0,
+                                      outlier_mad=3.0, min_n_for_outlier=4, verbose=True):
+        """Method 3 — two-stage: fit each replicate, then combine tau_i (linear).
+
+        Each replicate is fitted INDEPENDENTLY with a joint 3-parameter
+        ``curve_fit`` (its own A_i, k_i, C_i) on its own post-peak trace;
+        tau_i = 1 / k_i. Two drop tiers, tracked separately:
+
+          Stage 1 — non-fit rejection (list ``rejected``):
+            no_convergence : curve_fit raised (RuntimeError / ValueError)
+            nonfinite_k    : fitted k not finite or <= 0
+            nonfinite_se   : SE(k) not finite
+          Stage 2 — MEDIAN/MAD outlier trim (list ``outliers``), ONE pass:
+            med = median(tau_i);  mad = 1.4826 * median(|tau_i - med|)
+            keep tau_i where |tau_i - med| <= outlier_mad * mad
+            Median/MAD (not mean/SD) is used deliberately: mean/SD is MASKED by
+            the very outliers being removed — several gross outliers inflate the
+            SD so they sit within k*SD of their own inflated mean. Skipped when
+            fewer than ``min_n_for_outlier`` fits survive stage 1 (too few to
+            judge) or when mad == 0.
+
+        The KEPT tau_i (n_used) are combined linearly:
+            tau_bar = mean(tau_i);  SD = std(ddof=1);  SE = SD / sqrt(n_used)
+            CI95    = tau_bar +/- t_{n_used-1, 0.975} * SE
+        """
+        from scipy.optimize import curve_fit
+        gathered = self._gather_post_peak_traces(replicate_time_point)
+        if gathered is None:
+            return None
+        traces, peaks, n_timepoints = gathered
+        n_reps = len(traces)
+
+        # ---- Stage 1: per-replicate fit; drop only genuine non-fits ----
+        tau_v, se_tau_v, k_v, A_v, C_v, idx_v = [], [], [], [], [], []
+        rejected = []   # (index, category, message)
+
+        def _reject(i, category, msg):
+            rejected.append((i, category, msg))
+            if verbose:
+                print(f"[two-stage] tp={replicate_time_point}: rejected replicate "
+                      f"{i+1} ({category}: {msg})")
+
+        for i, tr in enumerate(traces):
+            m = len(tr)
+            t = np.arange(m, dtype=float)
+            y = np.asarray(tr, dtype=float)
+            A0 = float(y[0])
+            C0 = float(np.median(y[-min(10, m):]))
+            # Only the fit call is guarded: catch non-convergence / bad-input from
+            # curve_fit itself, NOT a bug in our own validation below (which must
+            # surface). Hence (RuntimeError, ValueError), never bare Exception.
+            try:
+                popt, pcov = curve_fit(_model_AkC, t, y, p0=[A0, 0.01, C0], maxfev=20000)
+            except (RuntimeError, ValueError) as e:
+                _reject(i, "no_convergence", str(e))
+                continue
+
+            A, k, C = (float(v) for v in popt)
+            se_k = float(np.sqrt(np.diag(pcov))[1])
+            if not np.isfinite(k) or k <= 0:
+                _reject(i, "nonfinite_k", f"k={k}")
+                continue
+            if not np.isfinite(se_k):
+                _reject(i, "nonfinite_se", f"se_k={se_k}")
+                continue
+
+            tau_v.append(1.0 / k)
+            se_tau_v.append(se_k / k**2)   # delta method, per replicate
+            k_v.append(k)
+            A_v.append(A)
+            C_v.append(C)
+            idx_v.append(i)
+
+        tau_v = np.asarray(tau_v)
+        se_tau_v = np.asarray(se_tau_v)
+        n_valid = len(tau_v)
+
+        # ---- Stage 2: one-pass MEDIAN/MAD outlier trim on the surviving tau_i ----
+        # MAD, not mean/SD: mean/SD is masked by the very outliers we are removing.
+        outliers = []                      # (index, tau_samples)
+        keep = np.ones(n_valid, dtype=bool)
+        if n_valid >= min_n_for_outlier:
+            med = float(np.median(tau_v))
+            mad = 1.4826 * float(np.median(np.abs(tau_v - med)))
+            if np.isfinite(mad) and mad > 0:   # mad==0 -> no scale to judge; keep all
+                keep = np.abs(tau_v - med) <= outlier_mad * mad
+            for j in np.where(~keep)[0]:
+                gi = idx_v[j]
+                outliers.append((gi, float(tau_v[j])))
+                if verbose:
+                    print(f"[two-stage] tp={replicate_time_point}: outlier replicate "
+                          f"{gi+1} (tau={tau_v[j]:.1f} samples, > {outlier_mad} MAD from median)")
+
+        used_idx = [idx_v[j] for j in range(n_valid) if keep[j]]
+        tau_i = tau_v[keep]
+        se_tau_i = se_tau_v[keep]
+        k_i = np.asarray([k_v[j] for j in range(n_valid) if keep[j]])
+        A_i = np.asarray([A_v[j] for j in range(n_valid) if keep[j]])
+        C_i = np.asarray([C_v[j] for j in range(n_valid) if keep[j]])
+        n_used = len(tau_i)
+        n_outliers = len(outliers)
+
+        # ---- Combine linearly on the kept tau_i ----
+        if n_used >= 2:
+            tau_bar = float(np.mean(tau_i))
+            s = float(np.std(tau_i, ddof=1))
+            se_tau = s / np.sqrt(n_used)
+            nu = n_used - 1
+            tmult = self._tmultiplier(nu)
+            tau_ci = (tau_bar - tmult * se_tau, tau_bar + tmult * se_tau)
+            status = "ok"
+        elif n_used == 1:
+            tau_bar = float(tau_i[0])
+            s = se_tau = np.nan
+            nu = 0
+            tmult = np.nan
+            tau_ci = (np.nan, np.nan)
+            status = "low_n: n=1 (no interval)"
+        else:
+            tau_bar = s = se_tau = np.nan
+            nu = 0
+            tmult = np.nan
+            tau_ci = (np.nan, np.nan)
+            status = "no_valid_fits"
+
+        t_half_bar = LN2 * tau_bar
+        se_t_half = LN2 * se_tau
+        t_half_ci = (LN2 * tau_ci[0], LN2 * tau_ci[1])
+
+        return {
+            "method": "two_stage", "status": status,
+            "k": (1.0 / tau_bar) if (np.isfinite(tau_bar) and tau_bar != 0) else np.nan,
+            "tau": tau_bar, "se_tau": se_tau, "std_tau": s,   # std_tau = real std(kept tau_i)
+            "t_half": t_half_bar, "se_t_half": se_t_half,
+            "tau_ci": tau_ci, "t_half_ci": t_half_ci, "tmult": tmult,
+            "tau_i": tau_i, "se_tau_i": se_tau_i, "k_i": k_i,
+            "A": A_i, "C": C_i,
+            "used_idx": used_idx,
+            "rejected": rejected,                             # stage-1 non-fits
+            "outliers": outliers,                             # stage-2 SD outliers (idx, tau)
+            # back-compat alias: everything not used, with a reason
+            "dropped": [(i, f"{cat}: {msg}") for i, cat, msg in rejected]
+                       + [(i, f"outlier: tau={tau:.1f} samples") for i, tau in outliers],
+            "n_used": n_used, "n_valid": n_valid, "n_reps": n_reps,
+            "n_rejected": len(rejected), "n_outliers": n_outliers, "nu": nu,
+        }
+
+    def replicate_variance_diagnostic(self, replicate_time_point=0):
+        """Decompose tau spread into between- vs within-replicate parts.
+
+        Built from the KEPT two-stage per-replicate results at this timepoint
+        (consistent with the linear mean estimator), all in SAMPLES:
+            s           = std(tau_i, ddof=1)             # between + within
+            se_bar      = sqrt(mean(SE(tau_i)^2))        # within only
+            sigma_b_hat = sqrt(max(0, s^2 - se_bar^2))   # between only (clamped)
+        Rule of thumb for the caller: s ~ se_bar => the shared-k residual SE is
+        trustworthy; s >> se_bar => report the two-stage (between-replicate)
+        interval instead.
+
+        Caveat: SavGol/Butterworth filtering makes each fit's residuals
+        autocorrelated, which shrinks the individual SE(tau_i) and hence se_bar,
+        biasing this test toward "spread wins". When it is ambiguous, prefer the
+        two-stage interval.
+        """
+        ts = self.exponential_fitting_two_stage(replicate_time_point, verbose=False)
+        if ts is None:
+            return None
+        tau_i = np.asarray(ts["tau_i"], dtype=float)
+        se_tau_i = np.asarray(ts["se_tau_i"], dtype=float)
+        n_used = ts["n_used"]
+        if n_used < 2:
+            return {"s": np.nan, "se_bar": np.nan, "sigma_b_hat": np.nan, "n_used": n_used}
+        s = float(np.std(tau_i, ddof=1))
+        se_bar = float(np.sqrt(np.mean(se_tau_i ** 2)))
+        sigma_b_hat = float(np.sqrt(max(0.0, s**2 - se_bar**2)))
+        return {"s": s, "se_bar": se_bar, "sigma_b_hat": sigma_b_hat, "n_used": n_used}
+
     def get_tau_over_time(self):
         """Extract tau (decay time constant) at each replicate time point.
 
