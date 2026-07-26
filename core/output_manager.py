@@ -1,6 +1,7 @@
 from core.spheroid_experiment import SpheroidExperiment
 from core.group_analysis import GroupAnalysis
 import os
+import re
 import pandas as pd
 import numpy as np
 from scipy.stats import sem
@@ -8,6 +9,32 @@ from datetime import datetime
 import json
 
 class OutputManager:
+    @staticmethod
+    def _treatment_suffix():
+        """Filename suffix built from the treatment saved in QSettings.
+
+        Returns ``"_<treatment>"`` (path-safe) or ``""`` when no treatment is
+        configured — the settings default is the literal string "None", which
+        is treated as "not set" so filenames stay clean.
+        """
+        from PyQt5.QtCore import QSettings
+        treatment = QSettings("HashemiLab", "NeuroStemVolt").value("treatment", "", type=str)
+        treatment = (treatment or "").strip()
+        if not treatment or treatment.lower() == "none":
+            return ""
+        # collapse anything that is not filename-safe into single underscores
+        safe = re.sub(r"[^A-Za-z0-9._-]+", "_", treatment).strip("._-")
+        return f"_{safe}" if safe else ""
+
+    @staticmethod
+    def _with_treatment(filename):
+        """Insert the treatment suffix before the extension of ``filename``.
+
+        e.g. ``exp_fit_joint.csv`` -> ``exp_fit_joint_Sertraline.csv``.
+        """
+        base, ext = os.path.splitext(filename)
+        return f"{base}{OutputManager._treatment_suffix()}{ext}"
+
     @staticmethod
     def save_ITs(group_experiments : GroupAnalysis, output_folder_path):
         """
@@ -38,7 +65,7 @@ class OutputManager:
             df = pd.DataFrame(it_matrix).T
             df.columns = [f"File_{i}" for i in range(len(file_names))]
             df.columns = [file_name.split("/")[-1] for file_name in file_names]
-            output_csv = "All_ITs_experiment_n{0}.csv".format(i)
+            output_csv = OutputManager._with_treatment("All_ITs_experiment_n{0}.csv".format(i))
             output_IT_folder = os.path.join(output_folder_path,"replicate_ITs")
             if os.path.isdir(output_IT_folder) == False:
                 os.mkdir(output_IT_folder)
@@ -99,7 +126,8 @@ class OutputManager:
         # Save to CSV
         output_IT_folder = os.path.join(output_folder_path, "all_replicates_ITs")
         os.makedirs(output_IT_folder, exist_ok=True)
-        output_path = os.path.join(output_IT_folder, "All_ITs_all_replicates.csv")
+        output_path = os.path.join(output_IT_folder,
+                                   OutputManager._with_treatment("All_ITs_all_replicates.csv"))
         df.to_csv(output_path)
         print(f"Saved all ITs for all replicates to {output_path}")
 
@@ -109,8 +137,9 @@ class OutputManager:
         paired_folder = os.path.join(output_folder_path,
                                      "all_replicates_ITs_paired")
         os.makedirs(paired_folder, exist_ok=True)
-        paired_path = os.path.join(paired_folder,
-                                   "All_ITs_all_replicates_paired_by_file.csv")
+        paired_path = os.path.join(
+            paired_folder,
+            OutputManager._with_treatment("All_ITs_all_replicates_paired_by_file.csv"))
         df_paired.to_csv(paired_path)
         print(f"Saved paired ITs (same file side-by-side) to {paired_path}")
         
@@ -144,7 +173,7 @@ class OutputManager:
             df = pd.DataFrame(it_matrix).T
             df.columns = [f"File_{i}" for i in range(len(file_names))]
             df.columns = [file_name.split("/")[-1] for file_name in file_names]
-            output_csv = "Original_ITs_experiment_n{0}.csv".format(i)
+            output_csv = OutputManager._with_treatment("Original_ITs_experiment_n{0}.csv".format(i))
             output_IT_folder = os.path.join(output_folder_path,"original_ITs_per_replicate")
             if os.path.isdir(output_IT_folder) == False:
                 os.mkdir(output_IT_folder)
@@ -185,7 +214,8 @@ class OutputManager:
                     # Save only selected keys
                     records.append({k: meta.get(k, None) for k in keys})
                 df = pd.DataFrame(records)
-                output_csv = "Files_Amplitudes_experiment_n{0}.csv".format(i)
+                output_csv = OutputManager._with_treatment(
+                    "Files_Amplitudes_experiment_n{0}.csv".format(i))
                 output_IT_folder = os.path.join(output_folder_path,"amplitudes_files")
                 if os.path.isdir(output_IT_folder) == False:
                     os.mkdir(output_IT_folder)
@@ -277,13 +307,15 @@ class OutputManager:
             # Save detailed peak information for this experiment
             if detailed_records:
                 df_detailed = pd.DataFrame(detailed_records)
-                output_detailed = f"Experiment_{i+1}_Detailed_Peak_Data.csv"
+                output_detailed = OutputManager._with_treatment(
+                    f"Experiment_{i+1}_Detailed_Peak_Data.csv")
                 df_detailed.to_csv(os.path.join(spont_folder, output_detailed), index=False)
 
             # Save summary for this experiment
             if summary_records:
                 df_summary = pd.DataFrame(summary_records)
-                output_summary = f"Experiment_{i+1}_Summary_Peak_Data.csv"
+                output_summary = OutputManager._with_treatment(
+                    f"Experiment_{i+1}_Summary_Peak_Data.csv")
                 df_summary.to_csv(os.path.join(spont_folder, output_summary), index=False)
 
                 # Add to all experiments summary
@@ -294,7 +326,8 @@ class OutputManager:
         # Save combined summary for all experiments
         if all_summary_records:
             df_all = pd.DataFrame(all_summary_records)
-            output_all = "All_Experiments_Spontaneous_Peak_Summary.csv"
+            output_all = OutputManager._with_treatment(
+                "All_Experiments_Spontaneous_Peak_Summary.csv")
             df_all.to_csv(os.path.join(spont_folder, output_all), index=False)
 
         # Calculate group statistics and save them
@@ -317,7 +350,8 @@ class OutputManager:
             # Save timepoint statistics
             if timepoint_stats:
                 df_timepoints = pd.DataFrame(timepoint_stats)
-                output_timepoints = "Group_Statistics_By_Timepoint.csv"
+                output_timepoints = OutputManager._with_treatment(
+                    "Group_Statistics_By_Timepoint.csv")
                 df_timepoints.to_csv(os.path.join(spont_folder, output_timepoints), index=False)
 
         return spont_folder
@@ -376,7 +410,8 @@ class OutputManager:
         # Save to CSV
         output_folder = os.path.join(output_folder_path, "all_replicates_amplitudes")
         os.makedirs(output_folder, exist_ok=True)
-        output_path = os.path.join(output_folder, "All_amplitudes_all_replicates.csv")
+        output_path = os.path.join(output_folder,
+                                   OutputManager._with_treatment("All_amplitudes_all_replicates.csv"))
         df.to_csv(output_path, index=False)
         print(f"Saved all amplitudes for all replicates to {output_path}")
 
@@ -414,7 +449,8 @@ class OutputManager:
         # Save to CSV
         output_folder = os.path.join(output_folder_path, "all_replicates_AUC")
         os.makedirs(output_folder, exist_ok=True)
-        output_path = os.path.join(output_folder, "All_AUC_all_replicates.csv")
+        output_path = os.path.join(output_folder,
+                                   OutputManager._with_treatment("All_AUC_all_replicates.csv"))
         df_AUC.to_csv(output_path, index=False)
         print(f"Saved all amplitudes for all replicates to {output_path}")
 
@@ -430,7 +466,8 @@ class OutputManager:
         })
 
         # Save mean and SEM
-        mean_output_path = os.path.join(output_folder, "Mean_AUC_with_SEM.csv")
+        mean_output_path = os.path.join(output_folder,
+                                        OutputManager._with_treatment("Mean_AUC_with_SEM.csv"))
         df_mean_sem.to_csv(mean_output_path, index=False)
         print(f"Saved mean AUC with SEM to {mean_output_path}")
 
@@ -481,7 +518,8 @@ class OutputManager:
         # Save to CSV
         output_IT_folder = os.path.join(output_folder_path, "all_reuptakes")
         os.makedirs(output_IT_folder, exist_ok=True)
-        output_path = os.path.join(output_IT_folder, "All_reuptakes.csv")
+        output_path = os.path.join(output_IT_folder,
+                                   OutputManager._with_treatment("All_reuptakes.csv"))
         df.to_csv(output_path)
         print(f"Saved all reuptakes for all replicates to {output_path}")
 
@@ -491,8 +529,9 @@ class OutputManager:
         paired_folder = os.path.join(output_folder_path,
                                      "all_reuptakes_paired")
         os.makedirs(paired_folder, exist_ok=True)
-        paired_path = os.path.join(paired_folder,
-                                   "All_reuptakes_paired_by_file.csv")
+        paired_path = os.path.join(
+            paired_folder,
+            OutputManager._with_treatment("All_reuptakes_paired_by_file.csv"))
         df_paired.to_csv(paired_path)
         print(f"Saved paired ITs (same file side-by-side) to {paired_path}")
 
@@ -559,7 +598,9 @@ class OutputManager:
         # Save to CSV — folder name describes the method (per-replicate fit, then pool stats)
         output_folder = os.path.join(output_folder_path, "exp_fit_per_replicate_then_pooled_stats")
         os.makedirs(output_folder, exist_ok=True)
-        output_path = os.path.join(output_folder, "exp_fit_per_replicate_then_pooled_stats.csv")
+        output_path = os.path.join(
+            output_folder,
+            OutputManager._with_treatment("exp_fit_per_replicate_then_pooled_stats.csv"))
         df.to_csv(output_path, index=False)
         print(f"Saved per-replicate-then-pooled exp-fit params to {output_path}")
 
@@ -648,7 +689,9 @@ class OutputManager:
 
         output_folder = os.path.join(output_folder_path, "exp_fit_global_to_all_replicates")
         os.makedirs(output_folder, exist_ok=True)
-        output_path = os.path.join(output_folder, "exp_fit_global_to_all_replicates.csv")
+        output_path = os.path.join(
+            output_folder,
+            OutputManager._with_treatment("exp_fit_global_to_all_replicates.csv"))
         df.to_csv(output_path, index=False)
         print(f"Saved global (single-fit-to-all-replicates) exp-fit params to {output_path}")
 
@@ -770,7 +813,8 @@ class OutputManager:
 
         output_folder = os.path.join(output_folder_path, "exp_fit_joint")
         os.makedirs(output_folder, exist_ok=True)
-        output_path = os.path.join(output_folder, "exp_fit_joint.csv")
+        output_path = os.path.join(output_folder,
+                                   OutputManager._with_treatment("exp_fit_joint.csv"))
         df.to_csv(output_path, index=False)
         print(f"Saved joint (simultaneous A,k,C) exp-fit params to {output_path}")
 
@@ -816,11 +860,13 @@ class OutputManager:
 
         output_folder = os.path.join(output_folder_path, "exp_fit_shared_k")
         os.makedirs(output_folder, exist_ok=True)
-        output_path = os.path.join(output_folder, "exp_fit_shared_k.csv")
+        output_path = os.path.join(output_folder,
+                                   OutputManager._with_treatment("exp_fit_shared_k.csv"))
         pd.DataFrame(rows).to_csv(output_path, index=False)
         print(f"Saved shared-k (fixed-effects) exp-fit params to {output_path}")
         OutputManager._save_per_replicate_AC(
-            per_rep_rows, output_folder, "exp_fit_shared_k_per_replicate_AC.csv", "shared_k")
+            per_rep_rows, output_folder,
+            OutputManager._with_treatment("exp_fit_shared_k_per_replicate_AC.csv"), "shared_k")
 
     @staticmethod
     def save_exp_fit_two_stage(group_experiments: GroupAnalysis, output_folder_path):
@@ -887,11 +933,13 @@ class OutputManager:
 
         output_folder = os.path.join(output_folder_path, "exp_fit_two_stage")
         os.makedirs(output_folder, exist_ok=True)
-        output_path = os.path.join(output_folder, "exp_fit_two_stage.csv")
+        output_path = os.path.join(output_folder,
+                                   OutputManager._with_treatment("exp_fit_two_stage.csv"))
         pd.DataFrame(rows).to_csv(output_path, index=False)
         print(f"Saved two-stage (per-replicate, linear mean +/- t*SD/sqrt(n)) exp-fit params to {output_path}")
         OutputManager._save_per_replicate_AC(
-            per_rep_rows, output_folder, "exp_fit_two_stage_per_replicate_AC.csv", "two_stage")
+            per_rep_rows, output_folder,
+            OutputManager._with_treatment("exp_fit_two_stage_per_replicate_AC.csv"), "two_stage")
 
     ### Methods for spheroid_files
     @staticmethod
@@ -922,7 +970,7 @@ class OutputManager:
 
         base_name = os.path.splitext(os.path.basename(spheroid_file.get_filepath()))[0]  # Remove .txt
         df.columns = [base_name]
-        output_file_name = os.path.join(base_name + "_IT.csv")
+        output_file_name = OutputManager._with_treatment(base_name + "_IT.csv")
         
         # Save to CSV
         output_folder = os.path.join(output_path, "ITs")
