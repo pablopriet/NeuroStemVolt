@@ -712,7 +712,14 @@ class OutputManager:
 
     @staticmethod
     def save_exp_fit_joint(group_experiments: GroupAnalysis, output_folder_path):
-        """Method 1 (adjusted Path A): pooled simultaneous (A, k, C) fit per timepoint."""
+        """Method 1 (adjusted Path A): pooled simultaneous (A, k, C) fit per timepoint.
+
+        The pooled A and C are single shared values here (not per-replicate as in
+        methods 2 and 3), so they go in the main CSV instead of a separate
+        per-replicate file. A is the model value at t=0 and C the plateau, both
+        in the units of the signal (nA or nM); their CIs are the symmetric
+        ``estimate +/- t*SE`` using the same Student-t multiplier as tau.
+        """
         experiments = group_experiments.get_experiments()
         if len(experiments) == 0:      # guard BEFORE indexing experiments[0]
             return None
@@ -725,6 +732,20 @@ class OutputManager:
             try:
                 result = group_experiments.exponential_fitting_joint(replicate_time_point=t)
                 row = OutputManager._common_fit_row(time_points[t], result, freq)
+                # pooled amplitude/offset of the same 3-parameter fit (signal units)
+                A = result.get("A", np.nan)
+                A_se = result.get("A_se", np.nan)
+                tmult = result.get("tmult", 1.96)
+                row["A_fit"] = A
+                row["A_SE"] = A_se
+                row["A_CI95_lo"] = A - tmult * A_se
+                row["A_CI95_hi"] = A + tmult * A_se
+                C = result.get("C", np.nan)
+                C_se = result.get("C_se", np.nan)
+                row["C_fit"] = C
+                row["C_SE"] = C_se
+                row["C_CI95_lo"] = C - tmult * C_se
+                row["C_CI95_hi"] = C + tmult * C_se
                 row["status"] = "ok"
                 rows.append(row)
             except Exception as e:
@@ -733,6 +754,20 @@ class OutputManager:
                              "n_used": 0, "status": f"failed: {e}"})
 
         df = pd.DataFrame(rows)
+        # Fixed layout: one (value, SE, CI lo, CI hi) block per parameter in
+        # A, C, k, tau, t_half order, then status, with n_used last. reindex
+        # also keeps the header stable when a timepoint failed and only the
+        # error keys were written for it.
+        tail = ["status", "n_used"]
+        head = ["Time_min", "method",
+                "A_fit", "A_SE", "A_CI95_lo", "A_CI95_hi",
+                "C_fit", "C_SE", "C_CI95_lo", "C_CI95_hi",
+                "k_fit_persec", "k_SE_persec",
+                "tau_fit_s", "tau_SE_s", "tau_CI95_lo_s", "tau_CI95_hi_s",
+                "t_half_s", "t_half_SE_s", "t_half_CI95_lo_s", "t_half_CI95_hi_s"]
+        extras = [c for c in df.columns if c not in head + tail]
+        df = df.reindex(columns=head + extras + tail)
+
         output_folder = os.path.join(output_folder_path, "exp_fit_joint")
         os.makedirs(output_folder, exist_ok=True)
         output_path = os.path.join(output_folder, "exp_fit_joint.csv")
