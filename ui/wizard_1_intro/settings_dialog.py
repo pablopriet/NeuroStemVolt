@@ -65,27 +65,28 @@ class ExperimentSettingsDialog(QDialog):
         self.le_peak_pos = QLineEdit(str(defaults["peak_position"])) 
         form.addRow("Peak Position:", make_labeled_field_with_help(
             "Peak Position", self.le_peak_pos,
-            "Expected position of the signal peak on the voltage axis (e.g., 257 for 5HT). "
+            "Expected position of the signal peak on the voltage axis, given as a voltage step index. "
             "You may enter an approximate value and adjust it later after identifying the actual peak."
         ))
 
         self.le_treatment = QLineEdit(defaults["treatment"])
         form.addRow("Treatment:", make_labeled_field_with_help(
             "Treatment", self.le_treatment,
-            "Name of the treatment applied (e.g., Sertraline)."
+            "Name of the treatment applied. This name is appended to the exported file names."
         ))
 
         self.le_time_btw = QLineEdit(str(defaults["time_between_files"]))
         form.addRow("Time Between Files (minutes):", make_labeled_field_with_help(
             "Time Between Files (minutes)", self.le_time_btw,
-            "Interval (in minutes) between each stimulation or recording session (e.g., 10)."
+            "Interval (in minutes) between each stimulation or recording session."
         ))
 
         self.le_files_before = QLineEdit(str(defaults["files_before_treatment"])) 
         form.addRow("Files Before Treatment:", make_labeled_field_with_help(
             "Files Before Treatment", self.le_files_before,
-            "Number of recording files acquired before applying the treatment "
-            "(e.g., 3 untreated files, followed by treated ones)."
+            "Number of recording files acquired before the treatment was applied. "
+            "These baseline files are given negative times, so the first file recorded "
+            "after the treatment is time zero."
         ))
 
         # store loaded stim_params so get_settings() can return it if user doesn’t change it
@@ -204,7 +205,7 @@ class StimParamsDialog(QDialog):
             "start": "Start time of stimulation in seconds.",
             "pulses": "Total number of stimulation pulses.",
             "frequency": "Frequency of stimulation pulses in Hz.",
-            "amplitude": "Amplitude of stimulation current in uA.",
+            "amplitude": "Amplitude of stimulation current in µA.",
         }
 
         for p in self.params:
