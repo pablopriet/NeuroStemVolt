@@ -55,7 +55,7 @@ class ColorPlotPage(QWizardPage):
         self.btn_revert = QPushButton("Reverse Changes")
         apply_custom_styles(self.btn_revert)
         self.btn_revert.clicked.connect(self.revert_processing)
-        self.btn_eval = QPushButton("Evaluate")
+        self.btn_eval = QPushButton("Find Peaks")
         apply_custom_styles(self.btn_eval)
         self.btn_eval.clicked.connect(self.run_processing)
 
@@ -100,8 +100,9 @@ class ColorPlotPage(QWizardPage):
         self.btn_export_all = QPushButton("Export All ITs")
         apply_custom_styles(self.btn_export_all)
         self.btn_export_all.clicked.connect(self.save_all_ITs)
-        self.btn_export_cv = QPushButton("Export CV Plot")
+        self.btn_export_cv = QPushButton("Export Current CV")
         apply_custom_styles(self.btn_export_cv)
+        self.btn_export_cv.setToolTip("Export the CV plot for the file currently shown")
         self.btn_export_cv.clicked.connect(self.save_cv_plot)
 
         self.btn_export_all_cv = QPushButton("Export All CVs")
@@ -158,7 +159,7 @@ class ColorPlotPage(QWizardPage):
         self.btn_normalize = QPushButton("Normalize")
         apply_custom_styles(self.btn_normalize)
         self.btn_normalize.setCheckable(True)
-        self.btn_normalize.setToolTip("Toggle normalization and re-run")
+        self.btn_normalize.setToolTip("Toggle normalisation and re-run")
         self.btn_normalize.clicked.connect(self._toggle_normalize)
         self.btn_normalize.setAutoDefault(False); self.btn_normalize.setDefault(False)
 
@@ -622,20 +623,7 @@ class ColorPlotPage(QWizardPage):
         fa_params   = saved_params.get("Find Amplitude", None)
 
         if file_type == "Multi-Peak":
-            prominence_fraction = 0.05
-            max_peaks  = 10
-            min_dist   = 0.5
-            if isinstance(fa_params, list) and len(fa_params) >= 3:
-                try: prominence_fraction = float(fa_params[0]) / 100.0
-                except ValueError: pass
-                try: max_peaks = int(fa_params[1])
-                except ValueError: pass
-                try: min_dist = float(fa_params[2])
-                except ValueError: pass
-            return FindAmplitudeMultiple(peak_pos,
-                                         prominence_fraction=prominence_fraction,
-                                         max_peaks=max_peaks,
-                                         min_peak_distance_sec=min_dist)
+            return FindAmplitudeMultiple.from_params(peak_pos, fa_params)
         else:
             prominence_fraction = 0.10
             min_height_na = 0.03
@@ -668,7 +656,6 @@ class ColorPlotPage(QWizardPage):
         self.btn_normalize.setText("Normalize")
         apply_custom_styles(self.btn_normalize)
         self.lbl_filters.setText("Active: None")
-        self.btn_eval.setText("Evaluate")
         # Clear peak report
         self._last_processing_warnings = []
         self.btn_report.hide()
@@ -689,20 +676,21 @@ class ColorPlotPage(QWizardPage):
         self.selected_processors = processors
 
     def show_processing_options(self):
-        """Opens the filter options dialog. Apply runs filters only; OK just closes."""
+        """Opens the filter options dialog. Apply runs the filters and keeps the
+        dialog open; OK runs them too and then closes."""
         dlg = ProcessingOptionsDialog(self)
 
         def _on_apply():
             self._build_processors_from_dialog(dlg)
             self._run_filters_only()
-            self.btn_eval.setText("Find Peaks")
 
         dlg.apply_requested.connect(_on_apply)
         dlg.revert_requested.connect(self.revert_processing)
 
         if dlg.exec_() == QDialog.Accepted:
-            # OK was clicked — update processor list (no auto-run)
-            self._build_processors_from_dialog(dlg)
+            # OK closes the dialog AND applies the filters, so the user does not
+            # have to press Apply first to see their selection take effect.
+            _on_apply()
 
     def _run_filters_only(self):
         """Run selected filter processors without peak detection, preserving edited peaks."""
@@ -1168,18 +1156,11 @@ class ColorPlotPage(QWizardPage):
             data = file_obj.get_processed_data()
             if data is None:
                 return
-            from core.spheroid_file import Waveforms
+            from core.spheroid_file import voltage_axis_for_waveform
             waveform_type = QSettings("HashemiLab", "NeuroStemVolt").value("waveform", "5HT", type=str)
-            n_steps = data.shape[1]
-            if waveform_type == "5HT":
-                wf = Waveforms(0.2, [1.0, -0.1], 0.2, 1000, n_steps)
-            elif waveform_type == "HA":
-                wf = Waveforms(-0.5, [-0.7, 1.1], -0.5, 600, n_steps)
-            elif waveform_type == "DA":
-                wf = Waveforms(-0.4, [1.3, -0.4], -0.4, 400, n_steps)
-            else:
-                return
-            voltage = wf.voltage_waveform()
+            voltage = voltage_axis_for_waveform(waveform_type, data.shape[1])
+            if voltage is None:
+                return  # no defined voltage sweep, so no reference line to draw
             ref_v = self.spin_cv_ref.value()
             step_idx = int(np.argmin(np.abs(voltage - ref_v)))
             ax = self.main_plot.fig.axes[0]
@@ -1270,13 +1251,19 @@ class ColorPlotPage(QWizardPage):
 
     def save_IT_ColorPlot_Plots(self):
         """
-        Saves the color plot and I-T profile visualizations for the current file.
+        Saves the colour plot, I-T profile and CV visualisations for the current file.
         """
         sph_file = self._current_spheroid_file()
         output_folder_path = QSettings("HashemiLab", "NeuroStemVolt").value("output_folder")
         sph_file.visualize_color_plot_data(title_suffix="", save_path=output_folder_path,
                                            vmax=self._current_vmax())
-        sph_file.visualize_IT_profile(QSettings("HashemiLab", "NeuroStemVolt").value("output_folder"))
+        sph_file.visualize_IT_profile(output_folder_path)
+        # The CV belongs with the other "current file" plots. Guarded on its own so
+        # a CV failure cannot lose the colour plot and I-T that already succeeded.
+        try:
+            self._render_current_cv_plot()
+        except Exception as e:
+            print(f"[Save Current Plots] CV plot skipped: {e}")
 
     def save_processed_data_IT(self):
         """
@@ -1329,7 +1316,7 @@ class ColorPlotPage(QWizardPage):
         Files with no processed data are filled with NaN.
         """
         import pandas as pd
-        from core.spheroid_file import Waveforms
+        from core.spheroid_file import voltage_axis_for_waveform
 
         output_folder = QSettings("HashemiLab", "NeuroStemVolt").value("output_folder")
         if not output_folder or not os.path.isdir(output_folder):
@@ -1342,19 +1329,23 @@ class ColorPlotPage(QWizardPage):
         if not experiments:
             return
 
-        # Discover voltage axis from the first file that has processed data
+        # Discover the voltage axis from the first file that has processed data,
+        # using the waveform the experiment is actually configured with. This used
+        # to be hard-coded to the HA sweep, so 5HT/DA exports carried HA voltages.
+        waveform_type = QSettings("HashemiLab", "NeuroStemVolt").value("waveform", "5HT", type=str)
         voltage    = None
         n_voltages = None
+        index_axis = False   # True when the waveform has no defined voltage sweep
         for exp in experiments:
             for sf in exp.files:
                 data = sf.get_processed_data()
                 if data is not None:
                     n_voltages = data.shape[1]
-                    try:
-                        wf      = Waveforms(-0.5, [-0.7, 1.1], -0.5, 600, n_voltages)
-                        voltage = wf.voltage_waveform()
-                    except Exception:
-                        voltage = np.linspace(-0.5, 1.1, n_voltages)
+                    voltage = voltage_axis_for_waveform(waveform_type, n_voltages)
+                    if voltage is None:
+                        # "Non-specific" (or an unknown waveform): index the scan steps
+                        voltage = np.arange(n_voltages)
+                        index_axis = True
                     break
             if voltage is not None:
                 break
@@ -1402,11 +1393,12 @@ class ColorPlotPage(QWizardPage):
             columns=columns,
         )
         df.index      = voltage
-        df.index.name = "Voltage (V)"
+        df.index.name = "Scan Index" if index_axis else "Voltage (V)"
 
         out_dir  = os.path.join(output_folder, "all_replicates_CVs")
         os.makedirs(out_dir, exist_ok=True)
-        out_path = os.path.join(out_dir, "All_CVs_all_replicates.csv")
+        out_path = os.path.join(out_dir,
+                                OutputManager._with_treatment("All_CVs_all_replicates.csv"))
 
         try:
             df.to_csv(out_path)
@@ -1525,7 +1517,7 @@ class ColorPlotPage(QWizardPage):
         version = session.get("version", 1)
         if version not in (1, 2):
             QMessageBox.warning(self, "Import Warning",
-                                "Session file version is unrecognised — attempting import anyway.")
+                                "Session file version is unrecognised. Attempting import anyway.")
 
         # ── Restore filter settings ──────────────────────────────────────────
         filters = session.get("filters", {})
@@ -1595,7 +1587,8 @@ class ColorPlotPage(QWizardPage):
         self.update_file_display()
         self.completeChanged.emit()
         self._set_peak_controls_enabled(self.isComplete())
-        self.btn_eval.setText("Find Peaks")
+        # The button label stays "Evaluate" at all times so it does not appear to
+        # change function depending on whether filters have already been applied.
 
         QMessageBox.information(
             self, "Session Imported",
@@ -1617,42 +1610,45 @@ class ColorPlotPage(QWizardPage):
             md["peak_amplitude_positions"] = pos_list
             md["peak_amplitude_values"]    = val_list
         md["active_peak_index"] = active
+    def _render_current_cv_plot(self):
+        """Render the current file's CV to PNG + SVG under <output>/CV_plots.
+
+        Shared by 'Export Current CV' and 'Save Current Plots'. Renders into a
+        fresh off-screen figure rather than dumping the small on-screen canvas,
+        so the export is high-resolution and the labels aren't cramped. This
+        means it works whether or not the CV plot is currently shown in the UI.
+
+        Returns:
+            str: the folder the CV plot was written to.
+        """
+        sph_file = self._current_spheroid_file()
+        base_name = os.path.splitext(os.path.basename(sph_file.get_filepath()))[0]
+        output_folder_path = QSettings("HashemiLab", "NeuroStemVolt").value("output_folder")
+        output_folder_cv = os.path.join(output_folder_path, "CV_plots")
+        os.makedirs(output_folder_cv, exist_ok=True)
+
+        ref_voltage = self.spin_cv_ref.value() if self.chk_cv_ref.isChecked() else None
+        export_canvas = PlotCanvas(parent=None, width=8, height=6, dpi=150)
+        export_canvas.plot_cv(
+            processed_data=sph_file.get_processed_data(),
+            metadata=sph_file.get_metadata(),
+            title_suffix=f"File {self.current_file_index + 1}",
+            ref_voltage=ref_voltage,
+        )
+
+        save_path = os.path.join(output_folder_cv, f"{base_name}_CV.png")
+        export_canvas.fig.savefig(save_path, dpi=150, bbox_inches='tight')
+        # Also export an SVG (vector) version for editing individual elements
+        export_canvas.fig.savefig(os.path.join(output_folder_cv, f"{base_name}_CV.svg"),
+                                  bbox_inches='tight')
+        return output_folder_cv
+
     def save_cv_plot(self):
         """
         Saves the current CV plot as a PNG to the output folder.
         """
-        if not self.chk_show_cv.isChecked() or self.cv_plot is None:
-            QMessageBox.warning(self, "CV Plot Not Visible",
-                                "Enable the CV plot using 'Show CV Plot' before exporting.")
-            return
         try:
-            exp = self.wizard().group_analysis.get_single_experiments(self.current_rep_index)
-            actual = self.file_index_mapping[self.current_file_index] if (
-                self.file_index_mapping and self.current_file_index < len(self.file_index_mapping)
-            ) else self.current_file_index
-            sph_file = exp.get_spheroid_file(actual)
-            base_name = os.path.splitext(os.path.basename(sph_file.get_filepath()))[0]
-            output_folder_path = QSettings("HashemiLab", "NeuroStemVolt").value("output_folder")
-            output_folder_cv = os.path.join(output_folder_path, "CV_plots")
-            os.makedirs(output_folder_cv, exist_ok=True)
-
-            # Render into a fresh, larger off-screen figure rather than dumping the
-            # small on-screen canvas, so the exported plot is high-resolution and
-            # the labels/annotations aren't cramped.
-            ref_voltage = self.spin_cv_ref.value() if self.chk_cv_ref.isChecked() else None
-            export_canvas = PlotCanvas(parent=None, width=8, height=6, dpi=150)
-            export_canvas.plot_cv(
-                processed_data=sph_file.get_processed_data(),
-                metadata=sph_file.get_metadata(),
-                title_suffix=f"File {self.current_file_index + 1}",
-                ref_voltage=ref_voltage,
-            )
-
-            save_path = os.path.join(output_folder_cv, f"{base_name}_CV.png")
-            export_canvas.fig.savefig(save_path, dpi=150, bbox_inches='tight')
-            # Also export an SVG (vector) version for editing individual elements
-            export_canvas.fig.savefig(os.path.join(output_folder_cv, f"{base_name}_CV.svg"),
-                                      bbox_inches='tight')
+            output_folder_cv = self._render_current_cv_plot()
             QMessageBox.information(self, "CV Plot Exported",
                                     f"CV plot saved to:\n{output_folder_cv}")
         except Exception as e:
