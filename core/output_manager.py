@@ -1118,18 +1118,72 @@ class OutputManager:
         """
         Save exponential decay fit plot for a specific time point across replicates.
 
+        The file name carries the timepoint, so exporting several timepoints does
+        not overwrite a single "plot_exponential_fit.png". The timepoint is named
+        by its experiment time in minutes (negative for baseline files), matching
+        the axis used everywhere else.
+
         Args:
             group_analysis: GroupAnalysis object.
             output_path (str): Directory to save the figure.
             replicated_time_point (int): Index of the replicate file to analyze.
 
         Returns:
-            None
+            str | None: the path written, or None when the fit produced nothing.
         """
         output_folder = os.path.join(output_path, "plots")
         os.makedirs(output_folder, exist_ok=True)
-        save_path = os.path.join(output_folder, "plot_exponential_fit.png")
-        group_analysis.plot_exponential_fit_aligned(save_path=save_path, replicate_time_point=replicated_time_point)
+
+        # Label the file by experiment time so it lines up with the CSV exports.
+        try:
+            times = group_analysis.get_timepoints_minutes()
+            t_min = times[replicated_time_point]
+            stamp = f"{'m' if t_min < 0 else ''}{abs(t_min):g}min"
+        except Exception:
+            stamp = f"file{replicated_time_point}"
+
+        save_path = os.path.join(
+            output_folder,
+            OutputManager._with_treatment(f"plot_exponential_fit_{stamp}.png"))
+        fig, _ax = group_analysis.plot_exponential_fit_aligned(
+            save_path=save_path, replicate_time_point=replicated_time_point)
+        return save_path if fig is not None else None
+
+    @staticmethod
+    def save_plots_exponential_fit_timepoints(group_analysis, output_path, timepoint_indices=None):
+        """
+        Save one exponential-fit plot per requested timepoint.
+
+        Args:
+            group_analysis: GroupAnalysis object.
+            output_path (str): Directory to save the figures.
+            timepoint_indices (list[int] | None): file indices to export. When
+                None, every timepoint is exported.
+
+        Returns:
+            tuple: (saved_paths, failures) where failures is a list of
+            (index, reason) for timepoints whose fit could not be produced.
+        """
+        experiments = group_analysis.get_experiments()
+        if not experiments:
+            return [], []
+        if timepoint_indices is None:
+            timepoint_indices = list(range(experiments[0].get_file_count()))
+
+        saved, failures = [], []
+        for idx in timepoint_indices:
+            try:
+                path = OutputManager.save_plot_exponential_fit_aligned(
+                    group_analysis, output_path, replicated_time_point=idx)
+                if path:
+                    saved.append(path)
+                else:
+                    failures.append((idx, "fit returned no result"))
+            except Exception as e:
+                # One bad timepoint must not abort the rest of the export.
+                print(f"[exp-fit plot] timepoint {idx}: skipping ({e})")
+                failures.append((idx, str(e)))
+        return saved, failures
 
     #@staticmethod
     #def save_plot_amplitudes_over_time_single_experiment(group_analysis, output_path):
@@ -1310,11 +1364,21 @@ class OutputManager:
                                     max_scans = param_info.get('max_artifact_scans', '0')
                                     max_scans_label = "auto (2 × acquisition frequency)" if str(max_scans) == "0" else max_scans
                                     f.write(f"   - Max Artifact Scans: {max_scans_label}\n")
-                                elif step == "Multiple Peak Detection":
-                                    f.write(f"   - Max Peaks: {param_info.get('max_peaks', 'N/A')}\n")
-                                    f.write(f"   - Min Prominence: {param_info.get('min_prominence', 'N/A')}\n")
-                                    f.write(f"   - CV Peak: {param_info.get('cv_peak', 'N/A')}\n")
-                                    f.write(f"   - Peak Height Threshold: {param_info.get('peak_height_threshold', 'N/A')}\n")
+                                elif step == "Find Amplitude":
+                                    # Multi-peak detector parameters, saved by key.
+                                    labels = {
+                                        'prominence_pct':       'Prominence (% of signal range)',
+                                        'min_height_na':        'Min Height (nA)',
+                                        'max_peaks':            'Max Peaks',
+                                        'min_distance_sec':     'Min Distance (s)',
+                                        'min_peak_width_scans': 'Min Peak Width (scans)',
+                                        'min_rise_sec':         'Rise Window min (s)',
+                                        'max_rise_sec':         'Rise Window max (s)',
+                                        'min_decay_sec':        'Decay Window min (s)',
+                                        'max_decay_sec':        'Decay Window max (s)',
+                                    }
+                                    for key, value in param_info.items():
+                                        f.write(f"   - {labels.get(key, key)}: {value}\n")
                                 else:
                                     for key, value in param_info.items():
                                         f.write(f"   - {key}: {value}\n")
