@@ -11,6 +11,77 @@ def _model_AkC(t, A, k, C):
     # Re-zeroed at each replicate's own peak: A is the value AT the peak (t=0), NOT amplitude above baseline.
     return (A - C) * np.exp(-k * t) + C
 
+
+def draw_exponential_fit(ax, result, freq):
+    """Draw a joint exponential fit onto ``ax``, in seconds.
+
+    This is the SINGLE implementation shared by the on-screen canvas
+    (``PlotCanvas.show_decay_exponential_fitting``) and the exported figure
+    (``GroupAnalysis.plot_exponential_fit_aligned``). They used to be two
+    separate bodies that had drifted apart: the export drew a points x-axis
+    with a mean +/- SD band, while the UI drew a seconds x-axis with the raw
+    data scattered, so the exported plot did not look like the one on screen.
+
+    Args:
+        ax (matplotlib.axes.Axes): axes to draw into.
+        result (dict): output of ``GroupAnalysis.exponential_fitting_joint``.
+        freq (float): acquisition frequency in Hz, used to convert the fit's
+            sample units to seconds.
+
+    Returns:
+        matplotlib.axes.Axes: the axes that were drawn into.
+    """
+    from scipy.stats import t as t_dist
+
+    cropped_ITs = result["cropped_ITs"]
+    time_all = result["time_all"]
+    A_fit, k_fit, C_fit = result["A"], result["k"], result["C"]
+    t_half = result["t_half"]
+
+    n_exps, n_post = cropped_ITs.shape
+    t_rel = np.arange(n_post) / freq                 # seconds
+
+    # Fit is evaluated in SAMPLE space (k is per sample), then mapped to seconds.
+    t_fit_pts = np.linspace(0, n_post - 1, 500)
+    y_fit = _model_AkC(t_fit_pts, A_fit, k_fit, C_fit)
+    t_fit_rel = t_fit_pts / freq
+
+    # 95% CI of the fit via the Jacobian and the full 3x3 covariance.
+    tval = t_dist.ppf(0.975, max(0, result["nu"]))
+    J = np.empty((len(t_fit_pts), 3))
+    J[:, 0] = np.exp(-t_fit_pts * k_fit)                                  # d/dA
+    J[:, 1] = -(A_fit - C_fit) * t_fit_pts * np.exp(-t_fit_pts * k_fit)   # d/dk
+    J[:, 2] = 1 - np.exp(-t_fit_pts * k_fit)                              # d/dC
+    pcov = np.asarray(result["pcov"], dtype=float)
+    ci = np.sqrt(np.sum((J @ pcov) * J, axis=1)) * tval
+
+    # a) each replicate in light grey
+    for row in cropped_ITs:
+        ax.plot(t_rel, row, color='gray', alpha=0.3, lw=1, label='_nolegend_')
+
+    # b) individual data points used for fitting
+    ax.scatter(np.asarray(time_all) / freq, cropped_ITs.flatten(),
+               color='black', s=16, alpha=0.7, label='Data points')
+
+    # c) fitted exponential curve and its 95% CI
+    ax.plot(t_fit_rel, y_fit, color='C1', lw=2, label='Exp fit')
+    ax.fill_between(t_fit_rel, y_fit - ci, y_fit + ci, color='C1', alpha=0.3, label='95% CI')
+
+    # d) half-life marker
+    t_half_s = t_half / freq
+    ax.axvline(t_half_s, color='magenta', ls='--', label=f't½ ≈ {t_half_s:.2f} s')
+
+    ax.set_xlabel('Time (seconds)', fontsize=12)
+    ax.set_ylabel('Current (nA)', fontsize=12)
+    ax.set_title('Post-peak IT decays & exponential fit', fontsize=14)
+    ax.legend(frameon=False)
+    ax.grid(False)
+
+    max_t = t_rel[-1]
+    tick_interval = 5  # seconds
+    ax.set_xticks(np.arange(0, max_t + tick_interval, tick_interval))
+    return ax
+
 class GroupAnalysis:
     """
     Initializes a GroupAnalysis instance with optional experiments.
@@ -96,6 +167,79 @@ class GroupAnalysis:
     def clear_single_experiment(self, index):
         """Remove single experiment from group analysis"""
         del self.experiments[index]
+
+    def get_timepoints_minutes(self):
+        """Experiment time axis in minutes, one entry per file.
+
+        Baseline files (those recorded before the treatment) are given NEGATIVE
+        times so that the first file recorded after the treatment is time zero:
+
+            time_min = (file_index - files_before_treatment) * time_between_files
+
+        This is the same convention the CSV exports use, so the plots and the
+        exported tables share one time axis. When no baseline files are
+        configured the axis simply starts at zero.
+
+        Returns:
+            np.ndarray: time in minutes for each file index.
+        """
+        if not self.experiments:
+            return np.array([])
+        exp = self.experiments[0]
+        n_files = exp.get_file_count()
+        n_before = exp.get_number_of_files_before_treatment() or 0
+        interval = exp.get_time_between_files()
+        return np.array([(i - n_before) * interval for i in range(n_files)], dtype=float)
+
+    @staticmethod
+    def _time_ticks(time_points, step=None):
+        """X ticks covering a (possibly negative) time axis, anchored on zero.
+
+        The old plots hard-coded ``np.arange(0, max+1, 10)``, which silently
+        clipped every baseline point once the axis was allowed to go negative.
+        Anchoring on zero keeps the treatment start on a tick.
+
+        Args:
+            time_points (array-like): the time axis being plotted, in minutes.
+            step (float, optional): spacing between ticks, in minutes. When
+                omitted, a readable spacing is chosen from the span so labels
+                do not collide.
+
+        Returns:
+            np.ndarray: tick positions spanning the whole axis.
+        """
+        time_points = np.asarray(time_points, dtype=float)
+        if time_points.size == 0:
+            return np.array([0.0])
+        if step is None:
+            step = GroupAnalysis._nice_time_step(time_points)
+        lo, hi = float(np.min(time_points)), float(np.max(time_points))
+        first = np.floor(lo / step) * step
+        return np.arange(first, hi + step, step)
+
+    # Tick spacings (minutes) worth labelling — no finer than 5 min, so a dense
+    # axis reads 0, 5, 10 … rather than every individual timepoint.
+    NICE_TICK_STEPS = (5, 10, 15, 20, 30, 60, 120, 180, 300, 600)
+
+    @staticmethod
+    def _nice_time_step(time_points, max_ticks=10):
+        """Smallest readable tick spacing that keeps the axis under max_ticks.
+
+        Args:
+            time_points (array-like): the time axis being plotted, in minutes.
+            max_ticks (int): rough upper bound on how many ticks to draw.
+
+        Returns:
+            float: spacing in minutes, taken from NICE_TICK_STEPS.
+        """
+        time_points = np.asarray(time_points, dtype=float)
+        if time_points.size == 0:
+            return GroupAnalysis.NICE_TICK_STEPS[0]
+        span = float(np.max(time_points) - np.min(time_points))
+        for step in GroupAnalysis.NICE_TICK_STEPS:
+            if span / step <= max_ticks:
+                return step
+        return GroupAnalysis.NICE_TICK_STEPS[-1]
 
     def set_processing_options_exp(self, processors = None):
         """Set the data processing pipeline for all experiments.
@@ -223,11 +367,7 @@ class GroupAnalysis:
         # Assume all experiments have the same number of files/timepoints
         n_timepoints = self.experiments[0].get_file_count()
         files_before_treatment = self.experiments[0].get_number_of_files_before_treatment() # This will be zero if no files before treatment
-        time_points = np.linspace(
-            0,
-            self.experiments[0].get_time_between_files() * (n_timepoints - 1),
-            n_timepoints
-        )
+        time_points = self.get_timepoints_minutes()
         amplitudes = []
         for i, experiment in enumerate(self.experiments):
             first_stim_spheroid = experiment.get_spheroid_file(0) #Getting the first stimulation
@@ -249,10 +389,10 @@ class GroupAnalysis:
         Returns:
             tuple: (time_points, amplitudes, files_before_treatment)
         """
-        experiment = group_analysis.get_single_experiments(experiment_index)
+        experiment = self.get_single_experiments(experiment_index)
         files_before_treatment = experiment.get_number_of_files_before_treatment()
         amplitudes = []
-        time_points = np.linspace(0, experiment.get_time_between_files() * (experiment.get_file_count() - 1), experiment.get_file_count())
+        time_points = self.get_timepoints_minutes()
         for spheroid_file in experiment.files:
             # Current metadata:
             # dict_keys(['peak_position', 'stim_start', 'stim_duration', 'stim_frequency', 
@@ -283,11 +423,7 @@ class GroupAnalysis:
         # Assume all experiments have the same number of files/timepoints
         n_timepoints = self.experiments[0].get_file_count()
         files_before_treatment = self.experiments[0].get_number_of_files_before_treatment() # This will be zero if no files before treatment
-        time_points = np.linspace(
-            0,
-            self.experiments[0].get_time_between_files() * (n_timepoints - 1),
-            n_timepoints
-        )
+        time_points = self.get_timepoints_minutes()
 
         all_amplitudes = np.full((n_experiments, n_timepoints), np.nan, dtype=float)
 
@@ -1264,6 +1400,11 @@ class GroupAnalysis:
         """
         Plot the exponential decay fit on peak-aligned IT curves with a 95% confidence interval.
 
+        Drawn by the shared ``draw_exponential_fit`` so the exported figure is
+        identical to the one shown on the Results page. Previously this drew a
+        points x-axis with a mean +/- SD band while the on-screen version drew a
+        seconds x-axis with the raw data scattered, so the two did not match.
+
         Args:
             replicate_time_point (int): Index of the replicate time point to analyze.
             save_path (str, optional): File path to save the figure. If None, shows the plot.
@@ -1272,63 +1413,20 @@ class GroupAnalysis:
             tuple: A tuple containing the matplotlib figure and axis objects.
         """
         import matplotlib.pyplot as plt
-        from scipy.stats import t
-        import numpy as np
 
-        # 1) run the joint fit and get the aligned, cropped IT matrix back with it
         result = self.exponential_fitting_joint(replicate_time_point)
         if result is None:
             return None, None
-        cropped_ITs = result["cropped_ITs"]
-        A_fit, k_fit, C_fit = result["A"], result["k"], result["C"]
-        t_half = result["t_half"]
-        tau_fit = result["tau"]
 
-        # 2) build a “time since peak” axis
-        n_exps, n_post = cropped_ITs.shape
-        t_rel = np.arange(n_post)
-
-        # 3) compute mean ± SD across replicates
-        mean_IT = np.nanmean(cropped_ITs, axis=0)
-        std_IT  = np.nanstd (cropped_ITs, axis=0)
-
-        # 4) smooth fit curve on that same relative axis (joint model: A is the
-        #    value AT the peak, so the curve is (A-C)exp(-kt)+C)
-        t_fit_rel = np.linspace(0, n_post-1, 500)
-        y_fit     = _model_AkC(t_fit_rel, A_fit, k_fit, C_fit)
-
-        # 5) 95% CI of the fit via Jacobian, using the FULL 3x3 covariance of the
-        #    simultaneous fit (the sequential method could only offer its diagonal)
-        dof  = max(0, result["nu"])
-        tval = t.ppf(0.975, dof)
-        J        = np.empty((len(t_fit_rel), 3))
-        J[:, 0]  = np.exp(-t_fit_rel * k_fit)                              # d/dA
-        J[:, 1]  = -(A_fit - C_fit) * t_fit_rel * np.exp(-t_fit_rel * k_fit)  # d/dk
-        J[:, 2]  = 1 - np.exp(-t_fit_rel * k_fit)                          # d/dC
-        pcov = np.asarray(result["pcov"], dtype=float)
-        ci       = np.sqrt(np.sum((J @ pcov) * J, axis=1)) * tval
-        lower_ci = y_fit - ci
-        upper_ci = y_fit + ci
-
-        # 6) start plotting
-        fig, ax = plt.subplots(figsize=(10,6))
-
-        for row in cropped_ITs:
-            ax.plot(t_rel, row, color='gray', alpha=0.3, lw=1, label='_nolegend_')
-        ax.fill_between(t_rel, mean_IT - std_IT, mean_IT + std_IT, color='C0', alpha=0.2, label='Mean ± 1 SD')
-        ax.plot(t_rel, mean_IT, color='C0', lw=2, label='Mean trace')
-        ax.plot(t_fit_rel, y_fit, color='C1', lw=2, label='Exp fit')
-        ax.fill_between(t_fit_rel, lower_ci, upper_ci, color='C1', alpha=0.3, label='95% CI')
-        ax.axvline(t_half, color='magenta', ls='--', label=f't½ ≈ {t_half:.1f} pts')
-        ax.set_xlabel('Time since peak (points)', fontsize=12)
-        ax.set_ylabel('Current (nA)', fontsize=12)
-        ax.set_title('Post-peak IT decays & exponential fit', fontsize=14)
-        ax.legend(frameon=False)
-        ax.grid(False)
+        freq = self.experiments[0].get_acquisition_frequency()
+        fig, ax = plt.subplots(figsize=(10, 6))
+        draw_exponential_fit(ax, result, freq)
         fig.tight_layout()
 
         if save_path:
             fig.savefig(save_path, dpi=300, bbox_inches='tight')
+            # Also export an SVG (vector) version for editing individual elements
+            fig.savefig(os.path.splitext(save_path)[0] + ".svg", bbox_inches='tight')
             plt.close(fig)
         else:
             plt.show()
@@ -1349,15 +1447,13 @@ class GroupAnalysis:
         import matplotlib.pyplot as plt
 
         tau_list, tau_err_list = self.get_tau_over_time()
-        n_files = self.experiments[0].get_file_count()
-        time_points = np.linspace(
-            0,
-            self.experiments[0].get_time_between_files() * (n_files - 1),
-            n_files
-        )
+        time_points = self.get_timepoints_minutes()
+        files_before_treatment = self.experiments[0].get_number_of_files_before_treatment() or 0
 
         plt.figure(figsize=(10, 6))
         plt.errorbar(time_points, tau_list, yerr=tau_err_list, fmt='o-', capsize=4, color='C1', label='Tau (decay constant)')
+        if files_before_treatment > 0:
+            plt.axvline(x=0, color='red', linestyle='--', label='Treatment Start')
         plt.xlabel("Time (minutes)")
         plt.ylabel("Tau (decay constant)")
         plt.title("Exponential Decay Tau Over Time Points")
@@ -1366,6 +1462,8 @@ class GroupAnalysis:
         plt.tight_layout()
         if save_path:
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            # Also export an SVG (vector) version for editing individual elements
+            plt.savefig(os.path.splitext(save_path)[0] + ".svg", bbox_inches='tight')
             plt.close()
         else:
             plt.show()
@@ -1490,9 +1588,8 @@ class GroupAnalysis:
 
         time_points, amplitudes, files_before_treatment = self.amplitudes_over_time_single_experiment(experiment_index=experiment_index)
 
-        # Compute treatment time in seconds
-        experiment = self.experiments[experiment_index]
-        treatment_time = files_before_treatment * experiment.get_time_between_files() # his will be zero if no files before treatment
+        # Baseline files carry negative times, so the treatment starts at zero.
+        treatment_time = 0.0
 
         # Split data
         before_treatment_x = time_points[:files_before_treatment]
@@ -1508,20 +1605,23 @@ class GroupAnalysis:
         plt.plot(after_treatment_x, after_treatment_y, label='Post-Treatment', color='green')
 
         # Vertical line for treatment start
-        plt.axvline(x=treatment_time, color='red', linestyle='--', label='Treatment Start')
+        if files_before_treatment > 0:
+            plt.axvline(x=treatment_time, color='red', linestyle='--', label='Treatment Start')
 
         # Optional scatter for emphasis
         plt.scatter(time_points, amplitudes, color='black', s=20, alpha=0.6)
 
         # Scientific styling
-        plt.xlabel('Time (s)', fontsize=12)
+        plt.xlabel('Time (minutes)', fontsize=12)
         plt.ylabel('Amplitude', fontsize=12)
-        plt.xticks(np.arange(0, max(time_points) + 1, 10), fontsize=10)
+        plt.xticks(self._time_ticks(time_points), fontsize=10)
         plt.title('Amplitude Over Time Relative to Treatment', fontsize=14)
         plt.legend()
         plt.tight_layout()
         if save_path:
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            # Also export an SVG (vector) version for editing individual elements
+            plt.savefig(os.path.splitext(save_path)[0] + ".svg", bbox_inches='tight')
             plt.close()
         else:
             plt.show()
@@ -1543,22 +1643,23 @@ class GroupAnalysis:
         all_amplitudes = np.array(all_amplitudes, dtype=float)
         std_amplitudes = np.nanstd(all_amplitudes, axis=0)
 
-        treatment_time = files_before_treatment * (time_points[1] - time_points[0])
-
         plt.figure(figsize=(10, 6))
         plt.plot(time_points, mean_amplitudes, label='Mean Amplitude', color='purple')
         plt.fill_between(time_points, mean_amplitudes - std_amplitudes, mean_amplitudes + std_amplitudes,
                          color='purple', alpha=0.2, label='SD')
+        # Baseline files carry negative times, so the treatment starts at zero.
         if files_before_treatment > 0:
-            plt.axvline(x=treatment_time, color='red', linestyle='--', label='Treatment Start')
+            plt.axvline(x=0, color='red', linestyle='--', label='Treatment Start')
         plt.xlabel('Time (minutes)')
         plt.ylabel('Amplitude')
         plt.title('Mean Amplitude Over Time (All Experiments)')
         plt.legend()
-        plt.xticks(np.arange(0, max(time_points) + 1, 10), fontsize=10)
+        plt.xticks(self._time_ticks(time_points), fontsize=10)
         plt.tight_layout()
         if save_path:
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            # Also export an SVG (vector) version for editing individual elements
+            plt.savefig(os.path.splitext(save_path)[0] + ".svg", bbox_inches='tight')
             plt.close()
         else:
             plt.show()
@@ -1578,21 +1679,23 @@ class GroupAnalysis:
         
         time_points, mean_amplitudes, all_amplitudes, files_before_treatment = self.amplitudes_over_time_all_experiments()
         all_amplitudes = np.array(all_amplitudes, dtype=float)
-        treatment_time = files_before_treatment * (time_points[1] - time_points[0])
 
         plt.figure(figsize=(10, 6))
         for i, amplitudes in enumerate(all_amplitudes):
             plt.plot(time_points, amplitudes, label=f'Experiment {i+1}', alpha=0.7)
+        # Baseline files carry negative times, so the treatment starts at zero.
         if files_before_treatment > 0:
-            plt.axvline(x=treatment_time, color='red', linestyle='--', label='Treatment Start')
-        plt.xlabel('Time (min)')
+            plt.axvline(x=0, color='red', linestyle='--', label='Treatment Start')
+        plt.xlabel('Time (minutes)')
         plt.ylabel('Amplitude')
         plt.title('Amplitudes Over Time (All Experiments)')
         plt.legend()
-        plt.xticks(np.arange(0, max(time_points) + 1, 10), fontsize=10)
+        plt.xticks(self._time_ticks(time_points), fontsize=10)
         plt.tight_layout()
         if save_path:
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            # Also export an SVG (vector) version for editing individual elements
+            plt.savefig(os.path.splitext(save_path)[0] + ".svg", bbox_inches='tight')
             plt.close()
         else:
             plt.show()
@@ -1639,6 +1742,8 @@ class GroupAnalysis:
         plt.tight_layout()
         if save_path:
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            # Also export an SVG (vector) version for editing individual elements
+            plt.savefig(os.path.splitext(save_path)[0] + ".svg", bbox_inches='tight')
             plt.close()
         else:
             plt.show()
@@ -1690,6 +1795,8 @@ class GroupAnalysis:
         plt.tight_layout()
         if save_path:
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            # Also export an SVG (vector) version for editing individual elements
+            plt.savefig(os.path.splitext(save_path)[0] + ".svg", bbox_inches='tight')
             plt.close()
         else:
             plt.show()
@@ -1733,6 +1840,8 @@ class GroupAnalysis:
         plt.tight_layout()
         if save_path:
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            # Also export an SVG (vector) version for editing individual elements
+            plt.savefig(os.path.splitext(save_path)[0] + ".svg", bbox_inches='tight')
             plt.close()
         else:
             plt.show()
@@ -1797,6 +1906,8 @@ class GroupAnalysis:
         # Save or show the figure
         if save_path:
             fig.savefig(save_path, dpi=300, bbox_inches='tight')
+            # Also export an SVG (vector) version for editing individual elements
+            fig.savefig(os.path.splitext(save_path)[0] + ".svg", bbox_inches='tight')
             plt.close(fig)
         else:
             plt.show()
