@@ -535,165 +535,179 @@ class OutputManager:
         df_paired.to_csv(paired_path)
         print(f"Saved paired ITs (same file side-by-side) to {paired_path}")
 
-    @staticmethod
-    def save_all_exponential_fitting_params(group_experiments : GroupAnalysis, output_folder_path):
-        """
-        Save exponential fitting parameters (A, tau, C) and related statistics over time.
+    # ---------------------------------------------------------------
+    # RETIRED — superseded by the joint fit (`exponential_fitting_joint`
+    # / `save_exp_fit_joint`), the only exponential method still in use.
+    # CSV for Path A (per-replicate fit, then pooled statistics).
+    # Kept commented out for reference; delete once the joint method has
+    # been in production long enough that these are no longer needed.
+    # ---------------------------------------------------------------
+#     @staticmethod
+#     def save_all_exponential_fitting_params(group_experiments : GroupAnalysis, output_folder_path):
+#         """
+#         Save exponential fitting parameters (A, tau, C) and related statistics over time.
+#
+#         Args:
+#             group_experiments (GroupAnalysis): Group with time-series IT data.
+#             output_folder_path (str): Directory to write parameter outputs.
+#
+#         Returns:
+#             None
+#         """
+#         params_matrix = group_experiments.get_exponential_fit_params_over_time()
+#         experiments = group_experiments.get_experiments()
+#         freq = experiments[0].get_acquisition_frequency()
+#         n_experiments = len(experiments)
+#         n_files = experiments[0].get_file_count()
+#         n_before = experiments[0].get_number_of_files_before_treatment()
+#         interval = experiments[0].get_time_between_files()  # e.g., 10
+#
+#         if n_experiments == 0:
+#             return None
+#         # Initialise the time axis (first column)
+#         if n_before > 0:
+#             time_points = [interval * (i - n_before) for i in range(n_files)]
+#         else:
+#             time_points = [i * interval for i in range(n_files)]
+#
+#         # Build DataFrame with unpacked columns
+#         df = pd.DataFrame(params_matrix, columns=["A_fit",   "A_SE",   "A_SD",   "A_CI95",
+#                     "tau_fit", "tau_SE", "tau_SD", "tau_CI95",
+#                     "C_fit",   "C_SE",   "C_SD",   "C_CI95",
+#                     "t_half",  "t_half_SE", "t_half_SD", "t_half_CI95"])
+#
+#         #df["Y0"] = df["A_fit"] + df["C_fit"]
+#         #df["Y0_SE"] = np.sqrt(df["A_SE"]**2 + df["C_SE"]**2)
+#         #df["Y0_SD"] = np.sqrt(df["A_SD"]**2 + df["C_SD"]**2)
+#         #df["Y0_CI95"] = np.sqrt(df["A_CI95"]**2 + df["C_CI95"]**2)
+#         df.insert(0, "Time", time_points)
+#
+#         # Document the sample size behind each row's pooled statistics: Path A
+#         # pools every replicate, so n_used = n_experiments on a successful fit
+#         # (0 where the fit failed and the row is NaN).
+#         df.insert(1, "n_used", np.where(
+#             np.isfinite(df["tau_fit"].to_numpy(dtype=float)), n_experiments, 0))
+#
+#         #y0_cols = ["Y0", "Y0_SE", "Y0_SD", "Y0_CI95"]
+#         #new_order = ["Time"] + y0_cols + [c for c in df.columns if c not in (["Time"] + y0_cols)]
+#         #df = df[new_order]
+#
+#         df["tau_fit"]    = df["tau_fit"]    / freq
+#         df["tau_SE"]     = df["tau_SE"]     / freq
+#         df["tau_SD"]     = df["tau_SD"]     / freq
+#         df["tau_CI95"]   = df["tau_CI95"]   / freq
+#
+#         df["t_half"]     = df["t_half"]     / freq
+#         df["t_half_SE"]  = df["t_half_SE"]  / freq
+#         df["t_half_SD"]  = df["t_half_SD"]  / freq
+#         df["t_half_CI95"]= df["t_half_CI95"]/ freq
+#
+#         # Save to CSV — folder name describes the method (per-replicate fit, then pool stats)
+#         output_folder = os.path.join(output_folder_path, "exp_fit_per_replicate_then_pooled_stats")
+#         os.makedirs(output_folder, exist_ok=True)
+#         output_path = os.path.join(
+#             output_folder,
+#             OutputManager._with_treatment("exp_fit_per_replicate_then_pooled_stats.csv"))
+#         df.to_csv(output_path, index=False)
+#         print(f"Saved per-replicate-then-pooled exp-fit params to {output_path}")
 
-        Args:
-            group_experiments (GroupAnalysis): Group with time-series IT data.
-            output_folder_path (str): Directory to write parameter outputs.
-
-        Returns:
-            None
-        """
-        params_matrix = group_experiments.get_exponential_fit_params_over_time()
-        experiments = group_experiments.get_experiments()
-        freq = experiments[0].get_acquisition_frequency()
-        n_experiments = len(experiments)
-        n_files = experiments[0].get_file_count()
-        n_before = experiments[0].get_number_of_files_before_treatment()
-        interval = experiments[0].get_time_between_files()  # e.g., 10
-
-        if n_experiments == 0:
-            return None
-        # Initialise the time axis (first column)
-        if n_before > 0:
-            time_points = [interval * (i - n_before) for i in range(n_files)]
-        else:
-            time_points = [i * interval for i in range(n_files)]
-        
-        # Build DataFrame with unpacked columns
-        df = pd.DataFrame(params_matrix, columns=["A_fit",   "A_SE",   "A_SD",   "A_CI95",
-                    "tau_fit", "tau_SE", "tau_SD", "tau_CI95",
-                    "C_fit",   "C_SE",   "C_SD",   "C_CI95",
-                    "t_half",  "t_half_SE", "t_half_SD", "t_half_CI95"])
-        
-        #df["Y0"] = df["A_fit"] + df["C_fit"]
-        #df["Y0_SE"] = np.sqrt(df["A_SE"]**2 + df["C_SE"]**2)
-        #df["Y0_SD"] = np.sqrt(df["A_SD"]**2 + df["C_SD"]**2)
-        #df["Y0_CI95"] = np.sqrt(df["A_CI95"]**2 + df["C_CI95"]**2)
-        df.insert(0, "Time", time_points)
-
-        # Document the sample size behind each row's pooled statistics: Path A
-        # pools every replicate, so n_used = n_experiments on a successful fit
-        # (0 where the fit failed and the row is NaN).
-        df.insert(1, "n_used", np.where(
-            np.isfinite(df["tau_fit"].to_numpy(dtype=float)), n_experiments, 0))
-
-        #y0_cols = ["Y0", "Y0_SE", "Y0_SD", "Y0_CI95"]
-        #new_order = ["Time"] + y0_cols + [c for c in df.columns if c not in (["Time"] + y0_cols)]
-        #df = df[new_order]
-
-        df["tau_fit"]    = df["tau_fit"]    / freq
-        df["tau_SE"]     = df["tau_SE"]     / freq
-        df["tau_SD"]     = df["tau_SD"]     / freq
-        df["tau_CI95"]   = df["tau_CI95"]   / freq
-
-        df["t_half"]     = df["t_half"]     / freq
-        df["t_half_SE"]  = df["t_half_SE"]  / freq
-        df["t_half_SD"]  = df["t_half_SD"]  / freq
-        df["t_half_CI95"]= df["t_half_CI95"]/ freq
-
-        # Save to CSV — folder name describes the method (per-replicate fit, then pool stats)
-        output_folder = os.path.join(output_folder_path, "exp_fit_per_replicate_then_pooled_stats")
-        os.makedirs(output_folder, exist_ok=True)
-        output_path = os.path.join(
-            output_folder,
-            OutputManager._with_treatment("exp_fit_per_replicate_then_pooled_stats.csv"))
-        df.to_csv(output_path, index=False)
-        print(f"Saved per-replicate-then-pooled exp-fit params to {output_path}")
-
-    @staticmethod
-    def save_all_exponential_fitting_params_global(group_experiments: GroupAnalysis, output_folder_path):
-        """
-        Save exponential fitting parameters from the GLOBAL method: all replicate
-        post-peak IT traces for a given file index are pooled into one dataset and a
-        SINGLE exponential is fit to that pooled data.
-
-        This contrasts with `save_all_exponential_fitting_params`, which fits each
-        replicate independently and then pools the resulting parameters. Use this
-        method when you want a single best-fit kinetic per timepoint that weighs every
-        data point from every replicate equally. Standard errors come from the
-        covariance matrix of the single fit; 95% CI uses z = 1.96.
-
-        Args:
-            group_experiments (GroupAnalysis): Group with time-series IT data.
-            output_folder_path (str): Directory to write parameter outputs.
-
-        Returns:
-            None
-        """
-        experiments = group_experiments.get_experiments()
-        if not experiments:
-            return None
-
-        freq = experiments[0].get_acquisition_frequency()
-        n_files = experiments[0].get_file_count()
-        n_before = experiments[0].get_number_of_files_before_treatment()
-        interval = experiments[0].get_time_between_files()
-
-        if n_before > 0:
-            time_points = [interval * (i - n_before) for i in range(n_files)]
-        else:
-            time_points = [i * interval for i in range(n_files)]
-
-        z95 = 1.96
-        n_cols = 12
-        n_reps = len(experiments)   # the global fit pools every replicate
-        rows = []
-        n_used_col = []
-
-        for t in range(n_files):
-            rel_t = t - n_before
-            try:
-                result = group_experiments.exponential_fitting_replicated_legacy(
-                    replicate_time_point=rel_t
-                )
-                if result is None or not isinstance(result, tuple) or len(result) < 8:
-                    raise ValueError("legacy fit returned no result")
-
-                _, _, t_half, _, pcov, A_fit, tau_fit, C_fit = result
-
-                pcov = np.asarray(pcov, dtype=float)
-                if pcov.shape != (3, 3) or not np.all(np.isfinite(pcov)):
-                    raise ValueError("invalid covariance matrix")
-                perr = np.sqrt(np.maximum(np.diag(pcov), 0.0))
-                A_SE, tau_SE, C_SE = float(perr[0]), float(perr[1]), float(perr[2])
-                t_half_SE = float(abs(np.log(2) * tau_SE)) if np.isfinite(tau_SE) else np.nan
-
-                rows.append([
-                    float(A_fit),   A_SE,     z95 * A_SE,
-                    float(tau_fit), tau_SE,   z95 * tau_SE,
-                    float(C_fit),   C_SE,     z95 * C_SE,
-                    float(t_half),  t_half_SE, z95 * t_half_SE,
-                ])
-                n_used_col.append(n_reps)
-            except Exception as e:
-                print(f"[global exp-fit] file index {t}: skipping ({e})")
-                rows.append([np.nan] * n_cols)
-                n_used_col.append(0)   # fit failed -> nothing pooled
-
-        df = pd.DataFrame(rows, columns=[
-            "A_fit",    "A_SE",     "A_CI95",
-            "tau_fit",  "tau_SE",   "tau_CI95",
-            "C_fit",    "C_SE",     "C_CI95",
-            "t_half",   "t_half_SE", "t_half_CI95",
-        ])
-        df.insert(0, "Time", time_points)
-        df.insert(1, "n_used", n_used_col)   # sample size behind each pooled row
-
-        # tau and t_half are in samples — convert to seconds
-        for col in ("tau_fit", "tau_SE", "tau_CI95", "t_half", "t_half_SE", "t_half_CI95"):
-            df[col] = df[col] / freq
-
-        output_folder = os.path.join(output_folder_path, "exp_fit_global_to_all_replicates")
-        os.makedirs(output_folder, exist_ok=True)
-        output_path = os.path.join(
-            output_folder,
-            OutputManager._with_treatment("exp_fit_global_to_all_replicates.csv"))
-        df.to_csv(output_path, index=False)
-        print(f"Saved global (single-fit-to-all-replicates) exp-fit params to {output_path}")
+    # ---------------------------------------------------------------
+    # RETIRED — superseded by the joint fit (`exponential_fitting_joint`
+    # / `save_exp_fit_joint`), the only exponential method still in use.
+    # CSV for the legacy global fit.
+    # Kept commented out for reference; delete once the joint method has
+    # been in production long enough that these are no longer needed.
+    # ---------------------------------------------------------------
+#     @staticmethod
+#     def save_all_exponential_fitting_params_global(group_experiments: GroupAnalysis, output_folder_path):
+#         """
+#         Save exponential fitting parameters from the GLOBAL method: all replicate
+#         post-peak IT traces for a given file index are pooled into one dataset and a
+#         SINGLE exponential is fit to that pooled data.
+#
+#         This contrasts with `save_all_exponential_fitting_params`, which fits each
+#         replicate independently and then pools the resulting parameters. Use this
+#         method when you want a single best-fit kinetic per timepoint that weighs every
+#         data point from every replicate equally. Standard errors come from the
+#         covariance matrix of the single fit; 95% CI uses z = 1.96.
+#
+#         Args:
+#             group_experiments (GroupAnalysis): Group with time-series IT data.
+#             output_folder_path (str): Directory to write parameter outputs.
+#
+#         Returns:
+#             None
+#         """
+#         experiments = group_experiments.get_experiments()
+#         if not experiments:
+#             return None
+#
+#         freq = experiments[0].get_acquisition_frequency()
+#         n_files = experiments[0].get_file_count()
+#         n_before = experiments[0].get_number_of_files_before_treatment()
+#         interval = experiments[0].get_time_between_files()
+#
+#         if n_before > 0:
+#             time_points = [interval * (i - n_before) for i in range(n_files)]
+#         else:
+#             time_points = [i * interval for i in range(n_files)]
+#
+#         z95 = 1.96
+#         n_cols = 12
+#         n_reps = len(experiments)   # the global fit pools every replicate
+#         rows = []
+#         n_used_col = []
+#
+#         for t in range(n_files):
+#             rel_t = t - n_before
+#             try:
+#                 result = group_experiments.exponential_fitting_replicated_legacy(
+#                     replicate_time_point=rel_t
+#                 )
+#                 if result is None or not isinstance(result, tuple) or len(result) < 8:
+#                     raise ValueError("legacy fit returned no result")
+#
+#                 _, _, t_half, _, pcov, A_fit, tau_fit, C_fit = result
+#
+#                 pcov = np.asarray(pcov, dtype=float)
+#                 if pcov.shape != (3, 3) or not np.all(np.isfinite(pcov)):
+#                     raise ValueError("invalid covariance matrix")
+#                 perr = np.sqrt(np.maximum(np.diag(pcov), 0.0))
+#                 A_SE, tau_SE, C_SE = float(perr[0]), float(perr[1]), float(perr[2])
+#                 t_half_SE = float(abs(np.log(2) * tau_SE)) if np.isfinite(tau_SE) else np.nan
+#
+#                 rows.append([
+#                     float(A_fit),   A_SE,     z95 * A_SE,
+#                     float(tau_fit), tau_SE,   z95 * tau_SE,
+#                     float(C_fit),   C_SE,     z95 * C_SE,
+#                     float(t_half),  t_half_SE, z95 * t_half_SE,
+#                 ])
+#                 n_used_col.append(n_reps)
+#             except Exception as e:
+#                 print(f"[global exp-fit] file index {t}: skipping ({e})")
+#                 rows.append([np.nan] * n_cols)
+#                 n_used_col.append(0)   # fit failed -> nothing pooled
+#
+#         df = pd.DataFrame(rows, columns=[
+#             "A_fit",    "A_SE",     "A_CI95",
+#             "tau_fit",  "tau_SE",   "tau_CI95",
+#             "C_fit",    "C_SE",     "C_CI95",
+#             "t_half",   "t_half_SE", "t_half_CI95",
+#         ])
+#         df.insert(0, "Time", time_points)
+#         df.insert(1, "n_used", n_used_col)   # sample size behind each pooled row
+#
+#         # tau and t_half are in samples — convert to seconds
+#         for col in ("tau_fit", "tau_SE", "tau_CI95", "t_half", "t_half_SE", "t_half_CI95"):
+#             df[col] = df[col] / freq
+#
+#         output_folder = os.path.join(output_folder_path, "exp_fit_global_to_all_replicates")
+#         os.makedirs(output_folder, exist_ok=True)
+#         output_path = os.path.join(
+#             output_folder,
+#             OutputManager._with_treatment("exp_fit_global_to_all_replicates.csv"))
+#         df.to_csv(output_path, index=False)
+#         print(f"Saved global (single-fit-to-all-replicates) exp-fit params to {output_path}")
 
     # ------------------------------------------------------------------
     #  Savers for the three new replicate-fitting methods.
@@ -742,16 +756,23 @@ class OutputManager:
             "t_half_CI95_hi_s": th_ci[1] / freq,
         }
 
-    @staticmethod
-    def _save_per_replicate_AC(rows, output_folder, filename, tag):
-        """Write a timepoint x replicate table of per-replicate A_i and C_i."""
-        if not rows:
-            return
-        df = pd.DataFrame(rows)
-        os.makedirs(output_folder, exist_ok=True)
-        path = os.path.join(output_folder, filename)
-        df.to_csv(path, index=False)
-        print(f"Saved per-replicate A_i/C_i ({tag}) to {path}")
+    # ---------------------------------------------------------------
+    # RETIRED — superseded by the joint fit (`exponential_fitting_joint`
+    # / `save_exp_fit_joint`), the only exponential method still in use.
+    # Per-replicate A_i/C_i writer; used only by shared-k and two-stage.
+    # Kept commented out for reference; delete once the joint method has
+    # been in production long enough that these are no longer needed.
+    # ---------------------------------------------------------------
+#     @staticmethod
+#     def _save_per_replicate_AC(rows, output_folder, filename, tag):
+#         """Write a timepoint x replicate table of per-replicate A_i and C_i."""
+#         if not rows:
+#             return
+#         df = pd.DataFrame(rows)
+#         os.makedirs(output_folder, exist_ok=True)
+#         path = os.path.join(output_folder, filename)
+#         df.to_csv(path, index=False)
+#         print(f"Saved per-replicate A_i/C_i ({tag}) to {path}")
 
     @staticmethod
     def save_exp_fit_joint(group_experiments: GroupAnalysis, output_folder_path):
@@ -818,128 +839,142 @@ class OutputManager:
         df.to_csv(output_path, index=False)
         print(f"Saved joint (simultaneous A,k,C) exp-fit params to {output_path}")
 
-    @staticmethod
-    def save_exp_fit_shared_k(group_experiments: GroupAnalysis, output_folder_path):
-        """Method 2 (shared-k fixed effects): one k, per-replicate A_i/C_i per timepoint.
+    # ---------------------------------------------------------------
+    # RETIRED — superseded by the joint fit (`exponential_fitting_joint`
+    # / `save_exp_fit_joint`), the only exponential method still in use.
+    # CSV for method 2 (shared k).
+    # Kept commented out for reference; delete once the joint method has
+    # been in production long enough that these are no longer needed.
+    # ---------------------------------------------------------------
+#     @staticmethod
+#     def save_exp_fit_shared_k(group_experiments: GroupAnalysis, output_folder_path):
+#         """Method 2 (shared-k fixed effects): one k, per-replicate A_i/C_i per timepoint.
+#
+#         Main CSV holds the shared-k results (+ profile-likelihood CI); the
+#         per-replicate A_i and C_i go to a SEPARATE timepoint x replicate file.
+#         """
+#         experiments = group_experiments.get_experiments()
+#         if len(experiments) == 0:      # guard BEFORE indexing experiments[0]
+#             return None
+#         freq = experiments[0].get_acquisition_frequency()
+#         n_files = experiments[0].get_file_count()
+#         n_reps = len(experiments)
+#         time_points = OutputManager._timepoints_minutes(experiments)
+#
+#         rows = []
+#         per_rep_rows = []
+#         for t in range(n_files):
+#             try:
+#                 result = group_experiments.exponential_fitting_shared_k(replicate_time_point=t)
+#                 row = OutputManager._common_fit_row(time_points[t], result, freq)
+#                 # profile-likelihood interval on tau (seconds), if computed
+#                 tau_prof = result.get("tau_prof_ci", (np.nan, np.nan))
+#                 row["tau_profCI_lo_s"] = tau_prof[0] / freq
+#                 row["tau_profCI_hi_s"] = tau_prof[1] / freq
+#                 row["status"] = "ok"
+#                 rows.append(row)
+#
+#                 A_i = np.asarray(result["A"], dtype=float)
+#                 C_i = np.asarray(result["C"], dtype=float)
+#                 pr = {"Time_min": time_points[t]}
+#                 for r in range(n_reps):
+#                     pr[f"A_Rep{r+1}"] = A_i[r] if r < len(A_i) else np.nan
+#                     pr[f"C_Rep{r+1}"] = C_i[r] if r < len(C_i) else np.nan
+#                 per_rep_rows.append(pr)
+#             except Exception as e:
+#                 print(f"[shared-k exp-fit] timepoint {t} (t={time_points[t]} min): skipping ({e})")
+#                 rows.append({"Time_min": time_points[t], "method": "shared_k",
+#                              "n_used": 0, "status": f"failed: {e}"})
+#
+#         output_folder = os.path.join(output_folder_path, "exp_fit_shared_k")
+#         os.makedirs(output_folder, exist_ok=True)
+#         output_path = os.path.join(output_folder,
+#                                    OutputManager._with_treatment("exp_fit_shared_k.csv"))
+#         pd.DataFrame(rows).to_csv(output_path, index=False)
+#         print(f"Saved shared-k (fixed-effects) exp-fit params to {output_path}")
+#         OutputManager._save_per_replicate_AC(
+#             per_rep_rows, output_folder,
+#             OutputManager._with_treatment("exp_fit_shared_k_per_replicate_AC.csv"), "shared_k")
 
-        Main CSV holds the shared-k results (+ profile-likelihood CI); the
-        per-replicate A_i and C_i go to a SEPARATE timepoint x replicate file.
-        """
-        experiments = group_experiments.get_experiments()
-        if len(experiments) == 0:      # guard BEFORE indexing experiments[0]
-            return None
-        freq = experiments[0].get_acquisition_frequency()
-        n_files = experiments[0].get_file_count()
-        n_reps = len(experiments)
-        time_points = OutputManager._timepoints_minutes(experiments)
-
-        rows = []
-        per_rep_rows = []
-        for t in range(n_files):
-            try:
-                result = group_experiments.exponential_fitting_shared_k(replicate_time_point=t)
-                row = OutputManager._common_fit_row(time_points[t], result, freq)
-                # profile-likelihood interval on tau (seconds), if computed
-                tau_prof = result.get("tau_prof_ci", (np.nan, np.nan))
-                row["tau_profCI_lo_s"] = tau_prof[0] / freq
-                row["tau_profCI_hi_s"] = tau_prof[1] / freq
-                row["status"] = "ok"
-                rows.append(row)
-
-                A_i = np.asarray(result["A"], dtype=float)
-                C_i = np.asarray(result["C"], dtype=float)
-                pr = {"Time_min": time_points[t]}
-                for r in range(n_reps):
-                    pr[f"A_Rep{r+1}"] = A_i[r] if r < len(A_i) else np.nan
-                    pr[f"C_Rep{r+1}"] = C_i[r] if r < len(C_i) else np.nan
-                per_rep_rows.append(pr)
-            except Exception as e:
-                print(f"[shared-k exp-fit] timepoint {t} (t={time_points[t]} min): skipping ({e})")
-                rows.append({"Time_min": time_points[t], "method": "shared_k",
-                             "n_used": 0, "status": f"failed: {e}"})
-
-        output_folder = os.path.join(output_folder_path, "exp_fit_shared_k")
-        os.makedirs(output_folder, exist_ok=True)
-        output_path = os.path.join(output_folder,
-                                   OutputManager._with_treatment("exp_fit_shared_k.csv"))
-        pd.DataFrame(rows).to_csv(output_path, index=False)
-        print(f"Saved shared-k (fixed-effects) exp-fit params to {output_path}")
-        OutputManager._save_per_replicate_AC(
-            per_rep_rows, output_folder,
-            OutputManager._with_treatment("exp_fit_shared_k_per_replicate_AC.csv"), "shared_k")
-
-    @staticmethod
-    def save_exp_fit_two_stage(group_experiments: GroupAnalysis, output_folder_path):
-        """Method 3 (two-stage): per-replicate fits combined linearly (mean +/- t*SD/sqrt(n)).
-
-        Main CSV holds tau_bar with the between-replicate SE/CI, the real
-        std(tau_i) of the KEPT fits, the two-tier drop accounting (stage-1
-        non-fits and stage-2 SD outliers), and the variance diagnostic.
-        Per-replicate A_i/C_i go to a SEPARATE timepoint x replicate file.
-        """
-        experiments = group_experiments.get_experiments()
-        if len(experiments) == 0:      # guard BEFORE indexing experiments[0]
-            return None
-        freq = experiments[0].get_acquisition_frequency()
-        n_files = experiments[0].get_file_count()
-        n_reps = len(experiments)
-        time_points = OutputManager._timepoints_minutes(experiments)
-
-        rows = []
-        per_rep_rows = []
-        for t in range(n_files):
-            try:
-                result = group_experiments.exponential_fitting_two_stage(
-                    replicate_time_point=t, verbose=True)
-                row = OutputManager._common_fit_row(time_points[t], result, freq)
-                # real between-replicate SD of the KEPT tau_i (NOT SE*sqrt(n))
-                row["tau_SD_s"] = result.get("std_tau", np.nan) / freq
-                # stage-1 non-fit rejections
-                rej = result.get("rejected", [])
-                row["n_valid"] = result.get("n_valid", np.nan)
-                row["n_rejected"] = len(rej)
-                row["rejected_replicates"] = ";".join(str(i + 1) for i, _c, _m in rej)
-                row["rejection_reasons"] = ";".join(cat for _i, cat, _m in rej)
-                # stage-2 SD outliers (excluded from the mean/CI)
-                outs = result.get("outliers", [])
-                row["n_outliers"] = len(outs)
-                row["outlier_replicates"] = ";".join(str(i + 1) for i, _tau in outs)
-                # variance diagnostic (linear, seconds)
-                diag = group_experiments.replicate_variance_diagnostic(replicate_time_point=t)
-                if diag is not None:
-                    row["diag_s_s"] = diag["s"] / freq
-                    row["diag_se_bar_s"] = diag["se_bar"] / freq
-                    row["diag_sigma_between_s"] = diag["sigma_b_hat"] / freq
-                row["status"] = result.get("status", "ok")
-                rows.append(row)
-
-                A_i = np.asarray(result["A"], dtype=float)
-                C_i = np.asarray(result["C"], dtype=float)
-                used = result.get("used_idx", list(range(len(A_i))))
-                pr = {"Time_min": time_points[t]}
-                for r in range(n_reps):
-                    if r in used:
-                        j = used.index(r)
-                        pr[f"A_Rep{r+1}"] = A_i[j]
-                        pr[f"C_Rep{r+1}"] = C_i[j]
-                    else:
-                        pr[f"A_Rep{r+1}"] = np.nan   # replicate dropped at this timepoint
-                        pr[f"C_Rep{r+1}"] = np.nan
-                per_rep_rows.append(pr)
-            except Exception as e:
-                print(f"[two-stage exp-fit] timepoint {t} (t={time_points[t]} min): skipping ({e})")
-                rows.append({"Time_min": time_points[t], "method": "two_stage",
-                             "n_used": 0, "status": f"failed: {e}"})
-
-        output_folder = os.path.join(output_folder_path, "exp_fit_two_stage")
-        os.makedirs(output_folder, exist_ok=True)
-        output_path = os.path.join(output_folder,
-                                   OutputManager._with_treatment("exp_fit_two_stage.csv"))
-        pd.DataFrame(rows).to_csv(output_path, index=False)
-        print(f"Saved two-stage (per-replicate, linear mean +/- t*SD/sqrt(n)) exp-fit params to {output_path}")
-        OutputManager._save_per_replicate_AC(
-            per_rep_rows, output_folder,
-            OutputManager._with_treatment("exp_fit_two_stage_per_replicate_AC.csv"), "two_stage")
+    # ---------------------------------------------------------------
+    # RETIRED — superseded by the joint fit (`exponential_fitting_joint`
+    # / `save_exp_fit_joint`), the only exponential method still in use.
+    # CSV for method 3 (two-stage).
+    # Kept commented out for reference; delete once the joint method has
+    # been in production long enough that these are no longer needed.
+    # ---------------------------------------------------------------
+#     @staticmethod
+#     def save_exp_fit_two_stage(group_experiments: GroupAnalysis, output_folder_path):
+#         """Method 3 (two-stage): per-replicate fits combined linearly (mean +/- t*SD/sqrt(n)).
+#
+#         Main CSV holds tau_bar with the between-replicate SE/CI, the real
+#         std(tau_i) of the KEPT fits, the two-tier drop accounting (stage-1
+#         non-fits and stage-2 SD outliers), and the variance diagnostic.
+#         Per-replicate A_i/C_i go to a SEPARATE timepoint x replicate file.
+#         """
+#         experiments = group_experiments.get_experiments()
+#         if len(experiments) == 0:      # guard BEFORE indexing experiments[0]
+#             return None
+#         freq = experiments[0].get_acquisition_frequency()
+#         n_files = experiments[0].get_file_count()
+#         n_reps = len(experiments)
+#         time_points = OutputManager._timepoints_minutes(experiments)
+#
+#         rows = []
+#         per_rep_rows = []
+#         for t in range(n_files):
+#             try:
+#                 result = group_experiments.exponential_fitting_two_stage(
+#                     replicate_time_point=t, verbose=True)
+#                 row = OutputManager._common_fit_row(time_points[t], result, freq)
+#                 # real between-replicate SD of the KEPT tau_i (NOT SE*sqrt(n))
+#                 row["tau_SD_s"] = result.get("std_tau", np.nan) / freq
+#                 # stage-1 non-fit rejections
+#                 rej = result.get("rejected", [])
+#                 row["n_valid"] = result.get("n_valid", np.nan)
+#                 row["n_rejected"] = len(rej)
+#                 row["rejected_replicates"] = ";".join(str(i + 1) for i, _c, _m in rej)
+#                 row["rejection_reasons"] = ";".join(cat for _i, cat, _m in rej)
+#                 # stage-2 SD outliers (excluded from the mean/CI)
+#                 outs = result.get("outliers", [])
+#                 row["n_outliers"] = len(outs)
+#                 row["outlier_replicates"] = ";".join(str(i + 1) for i, _tau in outs)
+#                 # variance diagnostic (linear, seconds)
+#                 diag = group_experiments.replicate_variance_diagnostic(replicate_time_point=t)
+#                 if diag is not None:
+#                     row["diag_s_s"] = diag["s"] / freq
+#                     row["diag_se_bar_s"] = diag["se_bar"] / freq
+#                     row["diag_sigma_between_s"] = diag["sigma_b_hat"] / freq
+#                 row["status"] = result.get("status", "ok")
+#                 rows.append(row)
+#
+#                 A_i = np.asarray(result["A"], dtype=float)
+#                 C_i = np.asarray(result["C"], dtype=float)
+#                 used = result.get("used_idx", list(range(len(A_i))))
+#                 pr = {"Time_min": time_points[t]}
+#                 for r in range(n_reps):
+#                     if r in used:
+#                         j = used.index(r)
+#                         pr[f"A_Rep{r+1}"] = A_i[j]
+#                         pr[f"C_Rep{r+1}"] = C_i[j]
+#                     else:
+#                         pr[f"A_Rep{r+1}"] = np.nan   # replicate dropped at this timepoint
+#                         pr[f"C_Rep{r+1}"] = np.nan
+#                 per_rep_rows.append(pr)
+#             except Exception as e:
+#                 print(f"[two-stage exp-fit] timepoint {t} (t={time_points[t]} min): skipping ({e})")
+#                 rows.append({"Time_min": time_points[t], "method": "two_stage",
+#                              "n_used": 0, "status": f"failed: {e}"})
+#
+#         output_folder = os.path.join(output_folder_path, "exp_fit_two_stage")
+#         os.makedirs(output_folder, exist_ok=True)
+#         output_path = os.path.join(output_folder,
+#                                    OutputManager._with_treatment("exp_fit_two_stage.csv"))
+#         pd.DataFrame(rows).to_csv(output_path, index=False)
+#         print(f"Saved two-stage (per-replicate, linear mean +/- t*SD/sqrt(n)) exp-fit params to {output_path}")
+#         OutputManager._save_per_replicate_AC(
+#             per_rep_rows, output_folder,
+#             OutputManager._with_treatment("exp_fit_two_stage_per_replicate_AC.csv"), "two_stage")
 
     ### Methods for spheroid_files
     @staticmethod
@@ -1444,7 +1479,7 @@ if __name__ == "__main__":
     #OutputManager.save_original_ITs(group_analysis,output_folder)
     #OutputManager.save_peak_amplitudes_metrics(group_analysis,output_folder)
     OutputManager.save_all_reuptake_curves(group_analysis,output_folder)
-    OutputManager.save_all_exponential_fitting_params(group_analysis,output_folder)
+#     OutputManager.save_all_exponential_fitting_params(group_analysis,output_folder)
 
     # 2. Save group-level plots
     OutputManager.save_mean_ITs_plot(group_analysis, output_folder)
