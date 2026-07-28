@@ -134,10 +134,9 @@ class ColorPlotPage(QWizardPage):
         self.btn_peak_click = QCheckBox("Edit on Plot")
         self.btn_peak_click.setCheckable(True)
         self.btn_peak_click.setToolTip("Left-click: add/make active; Right-click: remove nearest")
-        # self.btn_peak_click.toggled.connect(self._enable_peak_click_mode)  # pick-by-click temporarily disabled
-        # self.btn_peak_click.toggled.connect(self._update_peak_click_style)
+        self.btn_peak_click.toggled.connect(self._enable_peak_click_mode)
+        self.btn_peak_click.toggled.connect(self._update_peak_click_style)
         apply_custom_styles(self.btn_peak_click)
-        self.btn_peak_click.hide()  # pick-by-click temporarily disabled
 
 
         self.btn_edit_peaks = QPushButton("Edit Peaks")
@@ -1593,7 +1592,7 @@ class ColorPlotPage(QWizardPage):
             md["peak_amplitude_values"]    = val_list
         md["active_peak_index"] = active
     def _render_current_cv_plot(self):
-        """Render the current file's CV to PNG + SVG under <output>/CV_plots.
+        """Render the current file's CV to PNG + SVG under <output>/plots/CV_plots.
 
         Shared by 'Export Current CV' and 'Save Current Plots'. Renders into a
         fresh off-screen figure rather than dumping the small on-screen canvas,
@@ -1606,7 +1605,7 @@ class ColorPlotPage(QWizardPage):
         sph_file = self._current_spheroid_file()
         base_name = os.path.splitext(os.path.basename(sph_file.get_filepath()))[0]
         output_folder_path = QSettings("HashemiLab", "NeuroStemVolt").value("output_folder")
-        output_folder_cv = os.path.join(output_folder_path, "CV_plots")
+        output_folder_cv = os.path.join(output_folder_path, "plots", "CV_plots")
         os.makedirs(output_folder_cv, exist_ok=True)
 
         ref_voltage = self.spin_cv_ref.value() if self.chk_cv_ref.isChecked() else None
