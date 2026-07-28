@@ -226,7 +226,11 @@ Minimal environment (see `environment.yml` or `requirements.txt`):
 ## License
 
 [MIT License](LICENSE)  
-© 2025 Hashemi Lab · NeuroStemVolt
+© 2026 Hashemi Lab · NeuroStemVolt
+
+<p align="center">
+  <img width="402" height="202" alt="Hashemi Lab neuron logo design" src="https://github.com/user-attachments/assets/cdae03b3-0f10-4e09-8647-0d591bba7502" />
+</p>
 
 ---
 
