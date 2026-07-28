@@ -39,7 +39,7 @@ class ResultsPage(QWizardPage):
                 " padding-top: 6px; border-top: 1px solid palette(mid);")
             return lbl
 
-        # ── Analysis buttons ─────────────────────────────────────────
+        # Analysis buttons
 
         # Available for both
         btn_avg = QPushButton("Mean Amplitude Over Experiments"); apply_custom_styles(btn_avg)
@@ -65,7 +65,7 @@ class ResultsPage(QWizardPage):
 
         self.analysis_buttons = [btn_avg, btn_fit, btn_param, btn_amp, btn_mean_its, btn_save, btn_save_all, btn_export]
 
-        # ── Connect buttons ──────────────────────────────────────────
+        # Connect buttons
         for btn, fn in (
             (btn_avg,   lambda: self.result_plot.show_average_over_experiments(self.wizard().group_analysis)),
             (btn_fit,   self.handle_decay_fit),
@@ -81,7 +81,7 @@ class ResultsPage(QWizardPage):
         btn_save_all.clicked.connect(self.save_all_plots)
         btn_export.clicked.connect(self.export_all_as_csv)
 
-        # ── Left panel ───────────────────────────────────────────────
+        # Left panel
         left = QVBoxLayout()
         left.setSpacing(4)
 
@@ -107,7 +107,7 @@ class ResultsPage(QWizardPage):
         left.addWidget(btn_save_all)
         left.addWidget(btn_export)
 
-        # ── Right panel (plot) ───────────────────────────────────────
+        # Right panel (plot)
         self.placeholder = QLabel("Select an analysis option to show plot")
         self.placeholder.setAlignment(Qt.AlignCenter)
         self.placeholder.setStyleSheet("color: palette(windowtext); font-size: 11pt;")
@@ -118,7 +118,7 @@ class ResultsPage(QWizardPage):
         right.addWidget(self.placeholder, stretch=1)
         right.addWidget(self.result_plot, stretch=1)
 
-        # ── Main layout ──────────────────────────────────────────────
+        # Main layout
         content = QHBoxLayout()
         content.addLayout(left, 1)
         content.addLayout(right, 3)
@@ -133,7 +133,7 @@ class ResultsPage(QWizardPage):
 
         self.setLayout(main_layout)
 
-    # ── Windowed amplitude plot ──────────────────────────────────────────────
+    # Windowed amplitude plot
 
     AMPLITUDE_WINDOW_KEY = "amplitude_window_sec"
 

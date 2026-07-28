@@ -189,7 +189,7 @@ class ColorPlotPage(QWizardPage):
         left = QVBoxLayout()
         left.setSpacing(4)
 
-        # ── Navigation ───────────────────────────────
+        # Navigation
         left.addWidget(_sec("Navigation"))
         left.addWidget(self.cbo_rep)
         rep_nav = QHBoxLayout()
@@ -202,7 +202,7 @@ class ColorPlotPage(QWizardPage):
         file_nav.addWidget(self.btn_next)
         left.addLayout(file_nav)
 
-        # ── Processing ───────────────────────────────
+        # Processing
         left.addWidget(_sec("Processing"))
         proc_row = QHBoxLayout()
         proc_row.addWidget(self.btn_filter)
@@ -220,7 +220,7 @@ class ColorPlotPage(QWizardPage):
         peak_edit_row.addWidget(self.btn_edit_peaks)
         left.addLayout(peak_edit_row)
 
-        # ── Export ───────────────────────────────────
+        # Export
         left.addWidget(_sec("Export"))
         left.addWidget(self.btn_save)
         export_row = QHBoxLayout()
@@ -238,7 +238,7 @@ class ColorPlotPage(QWizardPage):
 
         left.addStretch()
 
-        # ── Visualization ────────────────────────────
+        # Visualization
         self.chk_show_cv = QCheckBox("Show CV Plot")
         self.chk_show_cv.toggled.connect(self._on_show_cv_toggled)
 
@@ -1501,7 +1501,7 @@ class ColorPlotPage(QWizardPage):
             QMessageBox.warning(self, "Import Warning",
                                 "Session file version is unrecognised. Attempting import anyway.")
 
-        # ── Restore filter settings ──────────────────────────────────────────
+        # Restore filter settings
         filters = session.get("filters", {})
         settings = QSettings("HashemiLab", "NeuroStemVolt")
 
@@ -1525,7 +1525,7 @@ class ColorPlotPage(QWizardPage):
             self.btn_normalize.setText("Normalize")
             apply_custom_styles(self.btn_normalize)
 
-        # ── Restore peak metadata ────────────────────────────────────────────
+        # Restore peak metadata
         group_analysis = self.wizard().group_analysis
         display_names  = getattr(self.wizard(), "display_names_list", [])
         matched = 0

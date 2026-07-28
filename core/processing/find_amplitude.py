@@ -47,19 +47,19 @@ class FindAmplitude(Processor):
         decay_window_sec (float): Hint for decay-window search (default 40.0 s).
     """
 
-    # ── Detection constants ──────────────────────────────────────────────────
+    # Detection constants
     DEFAULT_PROMINENCE_FRACTION = 0.10
     DEFAULT_MIN_HEIGHT_NA       = 0.03
     MIN_PEAK_DISTANCE_SEC       = 1.0   # minimum gap between candidate peaks (s)
     MIN_PEAK_WIDTH_SCANS        = 3     # minimum scan width — rejects single-scan spikes
 
-    # ── Adaptive validation window limits ────────────────────────────────────
+    # Adaptive validation window limits
     MIN_RISE_TIME_SEC  = 0.5
     MAX_RISE_TIME_SEC  = 5.0
     MIN_DECAY_TIME_SEC = 2.0
     MAX_DECAY_TIME_SEC = 20.0
 
-    # ── Signal-range percentiles for normalisation ───────────────────────────
+    # Signal-range percentiles for normalisation
     SIGNAL_PCT_LOW  = 5
     SIGNAL_PCT_HIGH = 95
 
@@ -71,7 +71,7 @@ class FindAmplitude(Processor):
         self.rise_window_sec     = rise_window_sec
         self.decay_window_sec    = decay_window_sec
 
-    # ── Private helpers ──────────────────────────────────────────────────────
+    # Private helpers
 
     def _find_adaptive_time_windows(self, fx, peak_idx, freq):
         min_rise  = max(5,  int(self.MIN_RISE_TIME_SEC  * freq))

@@ -237,7 +237,7 @@ class ProcessingOptionsDialog(QDialog):
             filter_container.setLayout(filter_layout)
             layout.addWidget(filter_container)
 
-        # ── Peak detection parameters (always visible) ────────────────────────
+        # Peak detection parameters (always visible)
         fa_saved = saved_params.get("Find Amplitude", None)
 
         if file_type == "Multi-Peak":
@@ -281,7 +281,7 @@ class ProcessingOptionsDialog(QDialog):
 
         self.setLayout(layout)
 
-    # ── Multi-Peak detector parameters ───────────────────────────────────────
+    # Multi-Peak detector parameters
 
     # Every FindAmplitudeMultiple parameter, as (key, label, default, width).
     # The first group is always visible; the second sits behind the "Advanced"

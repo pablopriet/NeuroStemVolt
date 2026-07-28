@@ -36,20 +36,20 @@ class FindAmplitudeMultiple(Processor):
             adaptive decay-window search.
     """
 
-    # ── Detection constants ──────────────────────────────────────────────────
+    # Detection constants
     DEFAULT_PROMINENCE_FRACTION = 0.05
     DEFAULT_MIN_HEIGHT_NA       = 0.02
     DEFAULT_MAX_PEAKS           = 10
     MIN_PEAK_DISTANCE_SEC       = 0.5   # minimum gap between candidate peaks (s)
     MIN_PEAK_WIDTH_SCANS        = 2     # minimum scan width — rejects single-scan spikes
 
-    # ── Adaptive validation window limits ────────────────────────────────────
+    # Adaptive validation window limits
     MIN_RISE_TIME_SEC  = 0.2
     MAX_RISE_TIME_SEC  = 3.0
     MIN_DECAY_TIME_SEC = 1.0
     MAX_DECAY_TIME_SEC = 10.0
 
-    # ── Signal-range percentiles for normalisation ───────────────────────────
+    # Signal-range percentiles for normalisation
     SIGNAL_PCT_LOW  = 5
     SIGNAL_PCT_HIGH = 95
 
@@ -72,7 +72,7 @@ class FindAmplitudeMultiple(Processor):
         self.min_decay_time_sec    = _or_default(min_decay_time_sec, self.MIN_DECAY_TIME_SEC)
         self.max_decay_time_sec    = _or_default(max_decay_time_sec, self.MAX_DECAY_TIME_SEC)
 
-    # ── Construction from saved UI parameters ────────────────────────────────
+    # Construction from saved UI parameters
 
     @classmethod
     def from_params(cls, peak_position, params):
@@ -115,7 +115,7 @@ class FindAmplitudeMultiple(Processor):
             max_decay_time_sec    = _num("max_decay_sec", float, cls.MAX_DECAY_TIME_SEC),
         )
 
-    # ── Private helpers ──────────────────────────────────────────────────────
+    # Private helpers
 
     def _find_adaptive_time_windows(self, fx, peak_idx, freq):
         min_rise  = max(3, int(self.min_rise_time_sec  * freq))
@@ -237,7 +237,7 @@ class FindAmplitudeMultiple(Processor):
         except Exception:
             return False
 
-    # ── Public interface ─────────────────────────────────────────────────────
+    # Public interface
 
     def process(self, data, context=None):
         """

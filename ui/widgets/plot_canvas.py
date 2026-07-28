@@ -342,8 +342,8 @@ class PlotCanvas(FigureCanvas):
         for i in range(files_before_treatment, n_files):
             self.axes.plot(time_points, mean_ITs[i, :], label=f"File {i+1} (After Treatment)", color="green", alpha=0.7)
 
-        if files_before_treatment < n_files:
-            self.axes.plot(time_points, mean_ITs[files_before_treatment, :], label="First File After Treatment", color="red", linewidth=2)
+        #if files_before_treatment < n_files:
+            #self.axes.plot(time_points, mean_ITs[files_before_treatment, :], label="First File After Treatment", color="red", linewidth=2)
 
         self.axes.set_xlabel('Time (s)')
         self.axes.set_ylabel('Mean IT (nA)')
@@ -508,6 +508,12 @@ class PlotCanvas(FigureCanvas):
     def show_spontaneous_peak_frequency(self, group_analysis):
         """
         Plot spontaneous peak frequency over time for all experiments.
+
+        Args:
+            group_analysis (GroupAnalysis): Backend object holding replicate experiments.
+
+        Returns:
+            None
         """
         import numpy as np
         from PyQt5.QtCore import QSettings
