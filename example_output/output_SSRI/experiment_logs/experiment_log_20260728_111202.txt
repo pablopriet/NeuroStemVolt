@@ -1,0 +1,286 @@
+================================================================================
+NEUROSTEMVOLT EXPERIMENT LOG
+================================================================================
+Generated: 2026-07-28 11:12:02
+Output Folder: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/output_SSRI
+================================================================================
+
+================================================================================
+EXPERIMENT CONFIGURATION
+================================================================================
+
+File Type: Single Peak
+Waveform: 5HT
+Treatment: SSRI
+Acquisition Frequency: 10 Hz
+File Length: 60 seconds
+Peak Position (voltage index): 257
+Time Between Files: 10 minutes
+Files Before Treatment: 3
+
+--------------------------------------------------------------------------------
+STIMULATION PARAMETERS
+--------------------------------------------------------------------------------
+Stimulation Start: 5.0 seconds
+Stimulation Duration: 2.5 seconds
+Stimulation Frequency: 20.0 Hz
+Stimulation Amplitude: 25.0 V
+Number of Pulses: 50.0
+
+--------------------------------------------------------------------------------
+CALIBRATION SETTINGS
+--------------------------------------------------------------------------------
+Calibration Enabled: False
+Data is in raw current units (nA).
+
+================================================================================
+PROCESSING PIPELINE
+================================================================================
+
+Applied Processing Steps (in order):
+
+1. Savitzky-Golay Filter
+   - Window: 30, Order: 2
+
+2. Baseline Correction
+
+3. Artifact Removal
+   - Parameters: 100, 3, 
+
+
+================================================================================
+SUMMARY
+================================================================================
+
+Total Files Processed: 32
+Source Folders: 2
+  - C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate1_SSRI
+  - C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate2_SSRI
+
+================================================================================
+REPLICATE DATA
+================================================================================
+
+Total Number of Replicates: 2
+
+--------------------------------------------------------------------------------
+REPLICATE 1
+--------------------------------------------------------------------------------
+Treatment: SSRI
+Waveform: 5HT
+Number of Files (Timepoints): 16
+File Length: 60 seconds
+Acquisition Frequency: 10 Hz
+Time Between Files: 10.0 minutes
+Files Before Treatment: 3
+
+Data Files:
+  1. 001_-30min.txt (t=0.0 min) [BASELINE]
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate1_SSRI\001_-30min.txt
+     Peak Amplitude: 1.0000 nA
+     Peak Position: 71 samples (7.10 s)
+     Baseline: 0.0032 nA
+
+  2. 002_-20min.txt (t=10.0 min) [BASELINE]
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate1_SSRI\002_-20min.txt
+     Peak Amplitude: 1.0555 nA
+     Peak Position: 70 samples (7.00 s)
+     Baseline: 0.0232 nA
+
+  3. 003_-10min.txt (t=20.0 min) [BASELINE]
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate1_SSRI\003_-10min.txt
+     Peak Amplitude: 1.1045 nA
+     Peak Position: 71 samples (7.10 s)
+     Baseline: -0.0047 nA
+
+  4. 004_0min.txt (t=30.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate1_SSRI\004_0min.txt
+     Peak Amplitude: 1.2083 nA
+     Peak Position: 73 samples (7.30 s)
+     Baseline: 0.0077 nA
+
+  5. 005_10min.txt (t=40.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate1_SSRI\005_10min.txt
+     Peak Amplitude: 1.2309 nA
+     Peak Position: 75 samples (7.50 s)
+     Baseline: 0.0043 nA
+
+  6. 006_20min.txt (t=50.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate1_SSRI\006_20min.txt
+     Peak Amplitude: 1.2897 nA
+     Peak Position: 75 samples (7.50 s)
+     Baseline: -0.0082 nA
+
+  7. 007_30min.txt (t=60.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate1_SSRI\007_30min.txt
+     Peak Amplitude: 1.3650 nA
+     Peak Position: 73 samples (7.30 s)
+     Baseline: -0.0046 nA
+
+  8. 008_40min.txt (t=70.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate1_SSRI\008_40min.txt
+     Peak Amplitude: 1.3852 nA
+     Peak Position: 75 samples (7.50 s)
+     Baseline: 0.0266 nA
+
+  9. 009_50min.txt (t=80.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate1_SSRI\009_50min.txt
+     Peak Amplitude: 1.4318 nA
+     Peak Position: 75 samples (7.50 s)
+     Baseline: 0.0149 nA
+
+  10. 010_60min.txt (t=90.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate1_SSRI\010_60min.txt
+     Peak Amplitude: 1.4499 nA
+     Peak Position: 78 samples (7.80 s)
+     Baseline: 0.0088 nA
+
+  11. 011_70min.txt (t=100.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate1_SSRI\011_70min.txt
+     Peak Amplitude: 1.4369 nA
+     Peak Position: 74 samples (7.40 s)
+     Baseline: 0.0115 nA
+
+  12. 012_80min.txt (t=110.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate1_SSRI\012_80min.txt
+     Peak Amplitude: 1.5122 nA
+     Peak Position: 75 samples (7.50 s)
+     Baseline: 0.0312 nA
+
+  13. 013_90min.txt (t=120.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate1_SSRI\013_90min.txt
+     Peak Amplitude: 1.5353 nA
+     Peak Position: 76 samples (7.60 s)
+     Baseline: 0.0311 nA
+
+  14. 014_100min.txt (t=130.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate1_SSRI\014_100min.txt
+     Peak Amplitude: 1.5191 nA
+     Peak Position: 76 samples (7.60 s)
+     Baseline: -0.0089 nA
+
+  15. 015_110min.txt (t=140.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate1_SSRI\015_110min.txt
+     Peak Amplitude: 1.4329 nA
+     Peak Position: 77 samples (7.70 s)
+     Baseline: 0.0094 nA
+
+  16. 016_120min.txt (t=150.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate1_SSRI\016_120min.txt
+     Peak Amplitude: 1.5835 nA
+     Peak Position: 78 samples (7.80 s)
+     Baseline: 0.0092 nA
+
+
+--------------------------------------------------------------------------------
+REPLICATE 2
+--------------------------------------------------------------------------------
+Treatment: SSRI
+Waveform: 5HT
+Number of Files (Timepoints): 16
+File Length: 60 seconds
+Acquisition Frequency: 10 Hz
+Time Between Files: 10.0 minutes
+Files Before Treatment: 3
+
+Data Files:
+  1. 001_-30min.txt (t=0.0 min) [BASELINE]
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate2_SSRI\001_-30min.txt
+     Peak Amplitude: 1.0000 nA
+     Peak Position: 125 samples (12.50 s)
+     Baseline: -0.0042 nA
+
+  2. 002_-20min.txt (t=10.0 min) [BASELINE]
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate2_SSRI\002_-20min.txt
+     Peak Amplitude: 1.0194 nA
+     Peak Position: 110 samples (11.00 s)
+     Baseline: -0.0091 nA
+
+  3. 003_-10min.txt (t=20.0 min) [BASELINE]
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate2_SSRI\003_-10min.txt
+     Peak Amplitude: 0.9300 nA
+     Peak Position: 111 samples (11.10 s)
+     Baseline: -0.0124 nA
+
+  4. 004_0min.txt (t=30.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate2_SSRI\004_0min.txt
+     Peak Amplitude: 1.1450 nA
+     Peak Position: 108 samples (10.80 s)
+     Baseline: -0.0038 nA
+
+  5. 005_10min.txt (t=40.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate2_SSRI\005_10min.txt
+     Peak Amplitude: 1.1970 nA
+     Peak Position: 108 samples (10.80 s)
+     Baseline: -0.0069 nA
+
+  6. 006_20min.txt (t=50.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate2_SSRI\006_20min.txt
+     Peak Amplitude: 1.0987 nA
+     Peak Position: 121 samples (12.10 s)
+     Baseline: 0.0068 nA
+
+  7. 007_30min.txt (t=60.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate2_SSRI\007_30min.txt
+     Peak Amplitude: 1.2273 nA
+     Peak Position: 142 samples (14.20 s)
+     Baseline: 0.0097 nA
+
+  8. 008_40min.txt (t=70.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate2_SSRI\008_40min.txt
+     Peak Amplitude: 0.9642 nA
+     Peak Position: 105 samples (10.50 s)
+     Baseline: 0.0107 nA
+
+  9. 009_50min.txt (t=80.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate2_SSRI\009_50min.txt
+     Peak Amplitude: 1.3957 nA
+     Peak Position: 129 samples (12.90 s)
+     Baseline: 0.0104 nA
+
+  10. 010_60min.txt (t=90.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate2_SSRI\010_60min.txt
+     Peak Amplitude: 1.4026 nA
+     Peak Position: 115 samples (11.50 s)
+     Baseline: 0.0056 nA
+
+  11. 011_70min.txt (t=100.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate2_SSRI\011_70min.txt
+     Peak Amplitude: 1.5105 nA
+     Peak Position: 111 samples (11.10 s)
+     Baseline: 0.0107 nA
+
+  12. 012_80min.txt (t=110.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate2_SSRI\012_80min.txt
+     Peak Amplitude: 1.3363 nA
+     Peak Position: 114 samples (11.40 s)
+     Baseline: -0.0029 nA
+
+  13. 013_90min.txt (t=120.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate2_SSRI\013_90min.txt
+     Peak Amplitude: 1.1726 nA
+     Peak Position: 117 samples (11.70 s)
+     Baseline: -0.0056 nA
+
+  14. 014_100min.txt (t=130.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate2_SSRI\014_100min.txt
+     Peak Amplitude: 1.2396 nA
+     Peak Position: 130 samples (13.00 s)
+     Baseline: -0.0134 nA
+
+  15. 015_110min.txt (t=140.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate2_SSRI\015_110min.txt
+     Peak Amplitude: 1.1541 nA
+     Peak Position: 134 samples (13.40 s)
+     Baseline: -0.0111 nA
+
+  16. 016_120min.txt (t=150.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate2_SSRI\016_120min.txt
+     Peak Amplitude: 1.2160 nA
+     Peak Position: 115 samples (11.50 s)
+     Baseline: -0.0040 nA
+
+
+================================================================================
+END OF LOG
+================================================================================

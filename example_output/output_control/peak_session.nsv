@@ -1,0 +1,330 @@
+{
+  "version": 2,
+  "filters": {
+    "pipeline": [
+      "Savitzky-Golay Filter",
+      "Baseline Correction",
+      "Artifact Removal"
+    ],
+    "params": {
+      "Background Subtraction": [
+        "0.1",
+        "2"
+      ],
+      "Rolling Mean": "5",
+      "Butterworth Filter": [
+        "15",
+        "4",
+        "37500.0"
+      ],
+      "Savitzky-Golay Filter": [
+        "30",
+        "2"
+      ],
+      "Artifact Removal": [
+        "100",
+        "3",
+        ""
+      ],
+      "Find Amplitude": [
+        "10",
+        "0.03"
+      ]
+    },
+    "normalize_active": true
+  },
+  "replicates": {
+    "replicate1_control": {
+      "001_-30min.txt": {
+        "positions": [
+          103
+        ],
+        "active_index": 0,
+        "values": [
+          1.0
+        ]
+      },
+      "002_-20min.txt": {
+        "positions": [
+          109
+        ],
+        "active_index": 0,
+        "values": [
+          0.9102857540633031
+        ]
+      },
+      "003_-10min.txt": {
+        "positions": [
+          103
+        ],
+        "active_index": 0,
+        "values": [
+          1.0106746845244918
+        ]
+      },
+      "004_0min.txt": {
+        "positions": [
+          105
+        ],
+        "active_index": 0,
+        "values": [
+          0.9140762907797125
+        ]
+      },
+      "005_10min.txt": {
+        "positions": [
+          105
+        ],
+        "active_index": 0,
+        "values": [
+          1.031510377972822
+        ]
+      },
+      "006_20min.txt": {
+        "positions": [
+          124
+        ],
+        "active_index": 0,
+        "values": [
+          0.7975995971111134
+        ]
+      },
+      "007_30min.txt": {
+        "positions": [
+          104
+        ],
+        "active_index": 0,
+        "values": [
+          0.9719248279180258
+        ]
+      },
+      "008_40min.txt": {
+        "positions": [
+          116
+        ],
+        "active_index": 0,
+        "values": [
+          0.8103071420469786
+        ]
+      },
+      "009_50min.txt": {
+        "positions": [
+          113
+        ],
+        "active_index": 0,
+        "values": [
+          0.8250402369715455
+        ]
+      },
+      "010_60min.txt": {
+        "positions": [
+          102
+        ],
+        "active_index": 0,
+        "values": [
+          0.8366290974480327
+        ]
+      },
+      "011_70min.txt": {
+        "positions": [
+          101
+        ],
+        "active_index": 0,
+        "values": [
+          0.8080411827945874
+        ]
+      },
+      "012_80min.txt": {
+        "positions": [
+          104
+        ],
+        "active_index": 0,
+        "values": [
+          0.7994262773446037
+        ]
+      },
+      "013_90min.txt": {
+        "positions": [
+          113
+        ],
+        "active_index": 0,
+        "values": [
+          0.7606304883438411
+        ]
+      },
+      "014_100min.txt": {
+        "positions": [
+          100
+        ],
+        "active_index": 0,
+        "values": [
+          0.7170902780421864
+        ]
+      },
+      "015_110min.txt": {
+        "positions": [
+          112
+        ],
+        "active_index": 0,
+        "values": [
+          0.7186311032707502
+        ]
+      },
+      "016_120min.txt": {
+        "positions": [
+          95
+        ],
+        "active_index": 0,
+        "values": [
+          0.7698960693786474
+        ]
+      }
+    },
+    "replicate2_control": {
+      "001_-30min.txt": {
+        "positions": [
+          102
+        ],
+        "active_index": 0,
+        "values": [
+          1.0
+        ]
+      },
+      "002_-20min.txt": {
+        "positions": [
+          106
+        ],
+        "active_index": 0,
+        "values": [
+          0.8968512708344307
+        ]
+      },
+      "003_-10min.txt": {
+        "positions": [
+          111
+        ],
+        "active_index": 0,
+        "values": [
+          0.8542532207936435
+        ]
+      },
+      "004_0min.txt": {
+        "positions": [
+          102
+        ],
+        "active_index": 0,
+        "values": [
+          0.864332651714132
+        ]
+      },
+      "005_10min.txt": {
+        "positions": [
+          99
+        ],
+        "active_index": 0,
+        "values": [
+          0.8587659303525852
+        ]
+      },
+      "006_20min.txt": {
+        "positions": [
+          102
+        ],
+        "active_index": 0,
+        "values": [
+          0.8390765359064369
+        ]
+      },
+      "007_30min.txt": {
+        "positions": [
+          101
+        ],
+        "active_index": 0,
+        "values": [
+          0.7626717540331662
+        ]
+      },
+      "008_40min.txt": {
+        "positions": [
+          96
+        ],
+        "active_index": 0,
+        "values": [
+          0.738449266142644
+        ]
+      },
+      "009_50min.txt": {
+        "positions": [
+          96
+        ],
+        "active_index": 0,
+        "values": [
+          0.7189103479520932
+        ]
+      },
+      "010_60min.txt": {
+        "positions": [
+          103
+        ],
+        "active_index": 0,
+        "values": [
+          0.7482948723320272
+        ]
+      },
+      "011_70min.txt": {
+        "positions": [
+          103
+        ],
+        "active_index": 0,
+        "values": [
+          0.7717989666622703
+        ]
+      },
+      "012_80min.txt": {
+        "positions": [
+          107
+        ],
+        "active_index": 0,
+        "values": [
+          0.7275886137156674
+        ]
+      },
+      "013_90min.txt": {
+        "positions": [
+          97
+        ],
+        "active_index": 0,
+        "values": [
+          0.6870928184240451
+        ]
+      },
+      "014_100min.txt": {
+        "positions": [
+          107
+        ],
+        "active_index": 0,
+        "values": [
+          0.7785979011810011
+        ]
+      },
+      "015_110min.txt": {
+        "positions": [
+          98
+        ],
+        "active_index": 0,
+        "values": [
+          0.6670086668166341
+        ]
+      },
+      "016_120min.txt": {
+        "positions": [
+          102
+        ],
+        "active_index": 0,
+        "values": [
+          0.5086674027144729
+        ]
+      }
+    }
+  }
+}

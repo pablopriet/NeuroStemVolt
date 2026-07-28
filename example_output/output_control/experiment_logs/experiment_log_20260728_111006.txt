@@ -1,0 +1,286 @@
+================================================================================
+NEUROSTEMVOLT EXPERIMENT LOG
+================================================================================
+Generated: 2026-07-28 11:10:06
+Output Folder: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/output_control
+================================================================================
+
+================================================================================
+EXPERIMENT CONFIGURATION
+================================================================================
+
+File Type: Single Peak
+Waveform: 5HT
+Treatment: control
+Acquisition Frequency: 10 Hz
+File Length: 60 seconds
+Peak Position (voltage index): 257
+Time Between Files: 10 minutes
+Files Before Treatment: 3
+
+--------------------------------------------------------------------------------
+STIMULATION PARAMETERS
+--------------------------------------------------------------------------------
+Stimulation Start: 5.0 seconds
+Stimulation Duration: 2.5 seconds
+Stimulation Frequency: 20.0 Hz
+Stimulation Amplitude: 25.0 V
+Number of Pulses: 50.0
+
+--------------------------------------------------------------------------------
+CALIBRATION SETTINGS
+--------------------------------------------------------------------------------
+Calibration Enabled: False
+Data is in raw current units (nA).
+
+================================================================================
+PROCESSING PIPELINE
+================================================================================
+
+Applied Processing Steps (in order):
+
+1. Savitzky-Golay Filter
+   - Window: 30, Order: 2
+
+2. Baseline Correction
+
+3. Artifact Removal
+   - Parameters: 100, 3, 
+
+
+================================================================================
+SUMMARY
+================================================================================
+
+Total Files Processed: 32
+Source Folders: 2
+  - C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate1_control
+  - C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate2_control
+
+================================================================================
+REPLICATE DATA
+================================================================================
+
+Total Number of Replicates: 2
+
+--------------------------------------------------------------------------------
+REPLICATE 1
+--------------------------------------------------------------------------------
+Treatment: control
+Waveform: 5HT
+Number of Files (Timepoints): 16
+File Length: 60 seconds
+Acquisition Frequency: 10 Hz
+Time Between Files: 10.0 minutes
+Files Before Treatment: 3
+
+Data Files:
+  1. 001_-30min.txt (t=0.0 min) [BASELINE]
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate1_control\001_-30min.txt
+     Peak Amplitude: 1.0000 nA
+     Peak Position: 103 samples (10.30 s)
+     Baseline: -0.0115 nA
+
+  2. 002_-20min.txt (t=10.0 min) [BASELINE]
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate1_control\002_-20min.txt
+     Peak Amplitude: 0.9103 nA
+     Peak Position: 109 samples (10.90 s)
+     Baseline: 0.0104 nA
+
+  3. 003_-10min.txt (t=20.0 min) [BASELINE]
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate1_control\003_-10min.txt
+     Peak Amplitude: 1.0107 nA
+     Peak Position: 103 samples (10.30 s)
+     Baseline: 0.0056 nA
+
+  4. 004_0min.txt (t=30.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate1_control\004_0min.txt
+     Peak Amplitude: 0.9141 nA
+     Peak Position: 105 samples (10.50 s)
+     Baseline: -0.0077 nA
+
+  5. 005_10min.txt (t=40.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate1_control\005_10min.txt
+     Peak Amplitude: 1.0315 nA
+     Peak Position: 105 samples (10.50 s)
+     Baseline: 0.0171 nA
+
+  6. 006_20min.txt (t=50.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate1_control\006_20min.txt
+     Peak Amplitude: 0.7976 nA
+     Peak Position: 124 samples (12.40 s)
+     Baseline: -0.0273 nA
+
+  7. 007_30min.txt (t=60.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate1_control\007_30min.txt
+     Peak Amplitude: 0.9719 nA
+     Peak Position: 104 samples (10.40 s)
+     Baseline: 0.0033 nA
+
+  8. 008_40min.txt (t=70.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate1_control\008_40min.txt
+     Peak Amplitude: 0.8103 nA
+     Peak Position: 116 samples (11.60 s)
+     Baseline: 0.0115 nA
+
+  9. 009_50min.txt (t=80.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate1_control\009_50min.txt
+     Peak Amplitude: 0.8250 nA
+     Peak Position: 113 samples (11.30 s)
+     Baseline: 0.0119 nA
+
+  10. 010_60min.txt (t=90.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate1_control\010_60min.txt
+     Peak Amplitude: 0.8366 nA
+     Peak Position: 102 samples (10.20 s)
+     Baseline: 0.0040 nA
+
+  11. 011_70min.txt (t=100.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate1_control\011_70min.txt
+     Peak Amplitude: 0.8080 nA
+     Peak Position: 101 samples (10.10 s)
+     Baseline: 0.0255 nA
+
+  12. 012_80min.txt (t=110.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate1_control\012_80min.txt
+     Peak Amplitude: 0.7994 nA
+     Peak Position: 104 samples (10.40 s)
+     Baseline: 0.0249 nA
+
+  13. 013_90min.txt (t=120.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate1_control\013_90min.txt
+     Peak Amplitude: 0.7606 nA
+     Peak Position: 113 samples (11.30 s)
+     Baseline: 0.0077 nA
+
+  14. 014_100min.txt (t=130.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate1_control\014_100min.txt
+     Peak Amplitude: 0.7171 nA
+     Peak Position: 100 samples (10.00 s)
+     Baseline: -0.0049 nA
+
+  15. 015_110min.txt (t=140.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate1_control\015_110min.txt
+     Peak Amplitude: 0.7186 nA
+     Peak Position: 112 samples (11.20 s)
+     Baseline: -0.0059 nA
+
+  16. 016_120min.txt (t=150.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate1_control\016_120min.txt
+     Peak Amplitude: 0.7699 nA
+     Peak Position: 95 samples (9.50 s)
+     Baseline: 0.0255 nA
+
+
+--------------------------------------------------------------------------------
+REPLICATE 2
+--------------------------------------------------------------------------------
+Treatment: control
+Waveform: 5HT
+Number of Files (Timepoints): 16
+File Length: 60 seconds
+Acquisition Frequency: 10 Hz
+Time Between Files: 10.0 minutes
+Files Before Treatment: 3
+
+Data Files:
+  1. 001_-30min.txt (t=0.0 min) [BASELINE]
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate2_control\001_-30min.txt
+     Peak Amplitude: 1.0000 nA
+     Peak Position: 102 samples (10.20 s)
+     Baseline: -0.0006 nA
+
+  2. 002_-20min.txt (t=10.0 min) [BASELINE]
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate2_control\002_-20min.txt
+     Peak Amplitude: 0.8969 nA
+     Peak Position: 106 samples (10.60 s)
+     Baseline: -0.0096 nA
+
+  3. 003_-10min.txt (t=20.0 min) [BASELINE]
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate2_control\003_-10min.txt
+     Peak Amplitude: 0.8543 nA
+     Peak Position: 111 samples (11.10 s)
+     Baseline: -0.0030 nA
+
+  4. 004_0min.txt (t=30.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate2_control\004_0min.txt
+     Peak Amplitude: 0.8643 nA
+     Peak Position: 102 samples (10.20 s)
+     Baseline: -0.0227 nA
+
+  5. 005_10min.txt (t=40.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate2_control\005_10min.txt
+     Peak Amplitude: 0.8588 nA
+     Peak Position: 99 samples (9.90 s)
+     Baseline: 0.0065 nA
+
+  6. 006_20min.txt (t=50.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate2_control\006_20min.txt
+     Peak Amplitude: 0.8391 nA
+     Peak Position: 102 samples (10.20 s)
+     Baseline: 0.0078 nA
+
+  7. 007_30min.txt (t=60.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate2_control\007_30min.txt
+     Peak Amplitude: 0.7627 nA
+     Peak Position: 101 samples (10.10 s)
+     Baseline: -0.0127 nA
+
+  8. 008_40min.txt (t=70.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate2_control\008_40min.txt
+     Peak Amplitude: 0.7384 nA
+     Peak Position: 96 samples (9.60 s)
+     Baseline: -0.0054 nA
+
+  9. 009_50min.txt (t=80.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate2_control\009_50min.txt
+     Peak Amplitude: 0.7189 nA
+     Peak Position: 96 samples (9.60 s)
+     Baseline: 0.0037 nA
+
+  10. 010_60min.txt (t=90.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate2_control\010_60min.txt
+     Peak Amplitude: 0.7483 nA
+     Peak Position: 103 samples (10.30 s)
+     Baseline: 0.0061 nA
+
+  11. 011_70min.txt (t=100.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate2_control\011_70min.txt
+     Peak Amplitude: 0.7718 nA
+     Peak Position: 103 samples (10.30 s)
+     Baseline: 0.0009 nA
+
+  12. 012_80min.txt (t=110.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate2_control\012_80min.txt
+     Peak Amplitude: 0.7276 nA
+     Peak Position: 107 samples (10.70 s)
+     Baseline: -0.0045 nA
+
+  13. 013_90min.txt (t=120.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate2_control\013_90min.txt
+     Peak Amplitude: 0.6871 nA
+     Peak Position: 97 samples (9.70 s)
+     Baseline: 0.0146 nA
+
+  14. 014_100min.txt (t=130.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate2_control\014_100min.txt
+     Peak Amplitude: 0.7786 nA
+     Peak Position: 107 samples (10.70 s)
+     Baseline: -0.0023 nA
+
+  15. 015_110min.txt (t=140.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate2_control\015_110min.txt
+     Peak Amplitude: 0.6670 nA
+     Peak Position: 98 samples (9.80 s)
+     Baseline: -0.0001 nA
+
+  16. 016_120min.txt (t=150.0 min)
+     Path: C:/Users/betti/OneDrive/Pictures/Documents/Lab/NeuroStemVolt-data/example data/replicate2_control\016_120min.txt
+     Peak Amplitude: 0.5087 nA
+     Peak Position: 102 samples (10.20 s)
+     Baseline: -0.0141 nA
+
+
+================================================================================
+END OF LOG
+================================================================================
