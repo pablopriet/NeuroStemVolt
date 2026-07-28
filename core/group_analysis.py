@@ -1766,8 +1766,9 @@ class GroupAnalysis:
         # Number of files (rows in mean_ITs)
         n_files = mean_ITs.shape[0]
 
-        # Time points (columns in mean_ITs)
-        time_points = np.arange(mean_ITs.shape[1])
+        # Time points (columns in mean_ITs), converted from samples to seconds
+        freq = self.experiments[0].get_acquisition_frequency()
+        time_points = np.arange(mean_ITs.shape[1]) / freq
 
         # Create the plot
         plt.figure(figsize=(12, 8))
@@ -1785,7 +1786,7 @@ class GroupAnalysis:
             plt.plot(time_points, mean_ITs[files_before_treatment, :], label="First File After Treatment", color="red", linewidth=2)
 
         # Add labels, title, and legend
-        plt.xlabel("Time Points", fontsize=14)
+        plt.xlabel("Time (s)", fontsize=14)
         plt.ylabel("Mean IT (nA)", fontsize=14)
         plt.title(f"Mean IT Profiles Over Replicates", fontsize=16)
         plt.legend(fontsize=10, loc="upper right")

@@ -134,9 +134,10 @@ class ColorPlotPage(QWizardPage):
         self.btn_peak_click = QCheckBox("Edit on Plot")
         self.btn_peak_click.setCheckable(True)
         self.btn_peak_click.setToolTip("Left-click: add/make active; Right-click: remove nearest")
-        self.btn_peak_click.toggled.connect(self._enable_peak_click_mode)
-        self.btn_peak_click.toggled.connect(self._update_peak_click_style)
+        # self.btn_peak_click.toggled.connect(self._enable_peak_click_mode)  # pick-by-click temporarily disabled
+        # self.btn_peak_click.toggled.connect(self._update_peak_click_style)
         apply_custom_styles(self.btn_peak_click)
+        self.btn_peak_click.hide()  # pick-by-click temporarily disabled
 
 
         self.btn_edit_peaks = QPushButton("Edit Peaks")
@@ -346,7 +347,7 @@ class ColorPlotPage(QWizardPage):
         main_layout.addLayout(content_layout)
 
         # Footer
-        footer = QLabel("© 2026 Hashemi Lab · NeuroStemVolt · v1.1.0")
+        footer = QLabel("© 2026 Hashemi Lab · NeuroStemVolt · v1.1.1")
         footer.setAlignment(Qt.AlignCenter)
         footer.setStyleSheet("""
             color: palette(windowtext);
@@ -1147,27 +1148,8 @@ class ColorPlotPage(QWizardPage):
             pass
 
     def _draw_cv_ref_on_color(self, file_obj):
-        """Draw a horizontal line on the color plot at the CV reference voltage step."""
-        if not self.chk_cv_ref.isChecked():
-            return
-        if not self.main_plot.fig.axes:
-            return
-        try:
-            data = file_obj.get_processed_data()
-            if data is None:
-                return
-            from core.spheroid_file import voltage_axis_for_waveform
-            waveform_type = QSettings("HashemiLab", "NeuroStemVolt").value("waveform", "5HT", type=str)
-            voltage = voltage_axis_for_waveform(waveform_type, data.shape[1])
-            if voltage is None:
-                return  # no defined voltage sweep, so no reference line to draw
-            ref_v = self.spin_cv_ref.value()
-            step_idx = int(np.argmin(np.abs(voltage - ref_v)))
-            ax = self.main_plot.fig.axes[0]
-            ax.axhline(y=step_idx, color='#e74c3c', linestyle='--', linewidth=1.5, alpha=0.8)
-            self.main_plot.fig.canvas.draw_idle()
-        except Exception:
-            pass
+        """CV reference line on the colorplot is disabled; the line is shown on the CV plot only."""
+        return
 
     def _redraw_all_peak_overlays(self, file_obj):
         self._draw_peak_overlays_color(file_obj)

@@ -40,6 +40,7 @@ class PeakEditorDialog(QDialog):
 
         self.chk_click = QCheckBox("Pick by clicking on plot(s)"); v.addWidget(self.chk_click)
         self.chk_click.setEnabled(len(self._canvases) > 0)
+        self.chk_click.hide()  # pick-by-click temporarily disabled
 
         self.btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel); v.addWidget(self.btns)
 
@@ -50,7 +51,7 @@ class PeakEditorDialog(QDialog):
         self.btn_remove.clicked.connect(self._on_remove)
         self.btn_set_active.clicked.connect(self._on_set_active)
         self.btns.accepted.connect(self.accept); self.btns.rejected.connect(self.reject)
-        self.chk_click.toggled.connect(self._toggle_canvas_pick)
+        # self.chk_click.toggled.connect(self._toggle_canvas_pick)  # pick-by-click temporarily disabled
 
         self._refresh()
         if self._peaks: self.listw.setCurrentRow(self._active)
