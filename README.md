@@ -134,7 +134,7 @@ Pre-built executables are available for Windows and macOS.
 These versions run without requiring any Python installation or environment setup.
 
 Download the latest release here:  
-[**NeuroStemVolt v1.1.0 – Release Assets**](https://github.com/pablopriet/NeuroStemVolt/releases/tag/v1.1.0)
+[**NeuroStemVolt v1.1.1 – Release Assets**](https://github.com/pablopriet/NeuroStemVolt/releases/tag/v1.1.1)
 
 ### Included in the release:
 - `NeuroStemVolt-windows-v1.1.0.exe` — Windows executable
