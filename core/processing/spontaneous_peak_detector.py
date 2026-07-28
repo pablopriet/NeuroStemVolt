@@ -4,12 +4,20 @@ from scipy.signal import find_peaks
 from PyQt5.QtCore import QSettings
 
 
+def _or_default(value, default):
+    """Return ``value`` unless it is None, in which case return ``default``."""
+    return default if value is None else value
+
+
 class FindAmplitudeMultiple(Processor):
     """
     Detect multiple spontaneous peaks in the I-T profile.
 
     If no valid peaks are found, context is updated with empty lists and a
     warning is written to ``context['processing_warnings']``.
+
+    Every detection and validation parameter is settable, so the UI can expose
+    them; the class constants below are only the defaults.
 
     Args:
         peak_position (int): Column index of the voltage step to analyse.
@@ -19,44 +27,101 @@ class FindAmplitudeMultiple(Processor):
         max_peaks (int): Maximum number of peaks to keep (default 10).
         min_peak_distance_sec (float | None): Minimum gap between peaks in
             seconds.  Defaults to the class constant MIN_PEAK_DISTANCE_SEC.
+        min_peak_width_scans (int | None): Minimum candidate width in scans —
+            rejects single-scan spikes.
+        min_rise_time_sec / max_rise_time_sec (float | None): Bounds of the
+            adaptive rise-window search. A candidate whose rise window falls
+            below the minimum is rejected.
+        min_decay_time_sec / max_decay_time_sec (float | None): Same, for the
+            adaptive decay-window search.
     """
 
-    # ── Detection constants ──────────────────────────────────────────────────
+    # Detection constants
     DEFAULT_PROMINENCE_FRACTION = 0.05
     DEFAULT_MIN_HEIGHT_NA       = 0.02
+    DEFAULT_MAX_PEAKS           = 10
     MIN_PEAK_DISTANCE_SEC       = 0.5   # minimum gap between candidate peaks (s)
     MIN_PEAK_WIDTH_SCANS        = 2     # minimum scan width — rejects single-scan spikes
 
-    # ── Adaptive validation window limits ────────────────────────────────────
+    # Adaptive validation window limits
     MIN_RISE_TIME_SEC  = 0.2
     MAX_RISE_TIME_SEC  = 3.0
     MIN_DECAY_TIME_SEC = 1.0
     MAX_DECAY_TIME_SEC = 10.0
 
-    # ── Signal-range percentiles for normalisation ───────────────────────────
+    # Signal-range percentiles for normalisation
     SIGNAL_PCT_LOW  = 5
     SIGNAL_PCT_HIGH = 95
 
-    def __init__(self, peak_position, prominence_fraction=0.05, min_height_na=0.02,
-                 rise_window_sec=1.0, decay_window_sec=20.0, max_peaks=10,
-                 min_peak_distance_sec=None):
+    def __init__(self, peak_position,
+                 prominence_fraction=DEFAULT_PROMINENCE_FRACTION,
+                 min_height_na=DEFAULT_MIN_HEIGHT_NA,
+                 max_peaks=DEFAULT_MAX_PEAKS,
+                 min_peak_distance_sec=None,
+                 min_peak_width_scans=None,
+                 min_rise_time_sec=None, max_rise_time_sec=None,
+                 min_decay_time_sec=None, max_decay_time_sec=None):
         self.peak_position         = peak_position
         self.prominence_fraction   = prominence_fraction
         self.min_height_na         = min_height_na
-        self.rise_window_sec       = rise_window_sec
-        self.decay_window_sec      = decay_window_sec
         self.max_peaks             = max_peaks
-        self.min_peak_distance_sec = (min_peak_distance_sec
-                                      if min_peak_distance_sec is not None
-                                      else self.MIN_PEAK_DISTANCE_SEC)
+        self.min_peak_distance_sec = _or_default(min_peak_distance_sec, self.MIN_PEAK_DISTANCE_SEC)
+        self.min_peak_width_scans  = int(_or_default(min_peak_width_scans, self.MIN_PEAK_WIDTH_SCANS))
+        self.min_rise_time_sec     = _or_default(min_rise_time_sec,  self.MIN_RISE_TIME_SEC)
+        self.max_rise_time_sec     = _or_default(max_rise_time_sec,  self.MAX_RISE_TIME_SEC)
+        self.min_decay_time_sec    = _or_default(min_decay_time_sec, self.MIN_DECAY_TIME_SEC)
+        self.max_decay_time_sec    = _or_default(max_decay_time_sec, self.MAX_DECAY_TIME_SEC)
 
-    # ── Private helpers ──────────────────────────────────────────────────────
+    # Construction from saved UI parameters
+
+    @classmethod
+    def from_params(cls, peak_position, params):
+        """
+        Build a detector from the parameters saved by the processing dialog.
+
+        Accepts the current dict form as well as the legacy 3-item list
+        ``[prominence_pct, max_peaks, min_distance_sec]`` written by older
+        versions, so existing QSettings keep working.
+
+        Args:
+            peak_position (int): Voltage index of the peak.
+            params (dict | list | None): Saved "Find Amplitude" parameters.
+
+        Returns:
+            FindAmplitudeMultiple: detector with defaults filled in for
+            anything missing or unparseable.
+        """
+        if isinstance(params, (list, tuple)):
+            params = dict(zip(("prominence_pct", "max_peaks", "min_distance_sec"), params))
+        elif not isinstance(params, dict):
+            params = {}
+
+        def _num(key, cast, default, scale=1.0):
+            try:
+                return cast(params[key]) * scale if scale != 1.0 else cast(params[key])
+            except (KeyError, TypeError, ValueError):
+                return default
+
+        return cls(
+            peak_position,
+            prominence_fraction   = _num("prominence_pct", float, cls.DEFAULT_PROMINENCE_FRACTION, 0.01),
+            min_height_na         = _num("min_height_na", float, cls.DEFAULT_MIN_HEIGHT_NA),
+            max_peaks             = _num("max_peaks", int, cls.DEFAULT_MAX_PEAKS),
+            min_peak_distance_sec = _num("min_distance_sec", float, cls.MIN_PEAK_DISTANCE_SEC),
+            min_peak_width_scans  = _num("min_peak_width_scans", int, cls.MIN_PEAK_WIDTH_SCANS),
+            min_rise_time_sec     = _num("min_rise_sec", float, cls.MIN_RISE_TIME_SEC),
+            max_rise_time_sec     = _num("max_rise_sec", float, cls.MAX_RISE_TIME_SEC),
+            min_decay_time_sec    = _num("min_decay_sec", float, cls.MIN_DECAY_TIME_SEC),
+            max_decay_time_sec    = _num("max_decay_sec", float, cls.MAX_DECAY_TIME_SEC),
+        )
+
+    # Private helpers
 
     def _find_adaptive_time_windows(self, fx, peak_idx, freq):
-        min_rise  = max(3, int(self.MIN_RISE_TIME_SEC  * freq))
-        max_rise  =        int(self.MAX_RISE_TIME_SEC  * freq)
-        min_decay = max(5, int(self.MIN_DECAY_TIME_SEC * freq))
-        max_decay =        int(self.MAX_DECAY_TIME_SEC * freq)
+        min_rise  = max(3, int(self.min_rise_time_sec  * freq))
+        max_rise  = max(min_rise,  int(self.max_rise_time_sec  * freq))
+        min_decay = max(5, int(self.min_decay_time_sec * freq))
+        max_decay = max(min_decay, int(self.max_decay_time_sec * freq))
 
         rise_w  = self._find_rise_window(fx, peak_idx, min_rise, max_rise)
         decay_w = self._find_decay_window(fx, peak_idx, fx[peak_idx], min_decay, max_decay)
@@ -130,7 +195,7 @@ class FindAmplitudeMultiple(Processor):
 
         decay_ok  = self._check_decay(fx, peak_idx, decay_w)
         rise_ok   = self._check_rise(fx, peak_idx, rise_w)
-        window_ok = rise_sec >= self.MIN_RISE_TIME_SEC and decay_sec >= self.MIN_DECAY_TIME_SEC
+        window_ok = rise_sec >= self.min_rise_time_sec and decay_sec >= self.min_decay_time_sec
 
         return (decay_ok and rise_ok and window_ok), {
             'rise_window_samples':  rise_w,
@@ -172,7 +237,7 @@ class FindAmplitudeMultiple(Processor):
         except Exception:
             return False
 
-    # ── Public interface ─────────────────────────────────────────────────────
+    # Public interface
 
     def process(self, data, context=None):
         """
@@ -194,10 +259,10 @@ class FindAmplitudeMultiple(Processor):
         peaks, _ = find_peaks(
             fx,
             prominence=effective_prom,
-            distance=max(self.MIN_PEAK_WIDTH_SCANS,
+            distance=max(self.min_peak_width_scans,
                          int(self.min_peak_distance_sec * freq)),
             height=self.min_height_na,
-            width=self.MIN_PEAK_WIDTH_SCANS,
+            width=self.min_peak_width_scans,
         )
 
         # Validate all candidates

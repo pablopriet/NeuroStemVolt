@@ -54,7 +54,7 @@ class DriftCorrection(Processor):
         file_idx = context["drift_file_index"]
 
         if file_idx < n_baseline:
-            # ── Baseline phase ────────────────────────────────────────
+            # Baseline phase
             # For each voltage step, average across time in this file
             # data shape: (time_points, voltage_steps)
             col_means = np.mean(data, axis=0)  # shape: (n_voltages,)
@@ -79,7 +79,7 @@ class DriftCorrection(Processor):
             corrected = data  # baseline files returned unchanged
 
         else:
-            # ── Stimulation phase ─────────────────────────────────────
+            # Stimulation phase
             slopes = context.get("drift_slopes")
             intercepts = context.get("drift_intercepts")
 

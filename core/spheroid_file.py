@@ -157,17 +157,20 @@ class SpheroidFile:
         # the old percentile-based scaling.
         norm = plot_settings.get_norm(processed_data, vmax=vmax)
 
-        # Create and save plot
+        # Create and save plot. The x-axis is in SECONDS so the exported colour
+        # plot matches the on-screen one (PlotCanvas.plot_color), which divides
+        # the sample count by the acquisition frequency.
+        time_extent_seconds = processed_data.shape[0] / self.acq_freq
         fig, ax = plt.subplots(figsize=(10, 6), constrained_layout=True)
         im = ax.imshow(processed_data.T,  # Transpose to match time points and voltage steps, imshow expects (y, x)
                        aspect='auto',
                        cmap=custom_cmap,
                        origin='lower',
-                       extent=[0, processed_data.shape[0],
+                       extent=[0, time_extent_seconds,
                                0, processed_data.shape[1]],
                        norm=norm)
         cbar = fig.colorbar(im, ax=ax, label="Current (nA)")
-        ax.set_xlabel("Time Points")
+        ax.set_xlabel("Time (seconds)")
         ax.set_ylabel("Voltage Steps")
         ax.set_title(
             f"Color Plot{': ' + title_suffix if title_suffix else ''}\nRange: [{norm.vmin:.2f}, {norm.vmax:.2f}] nA")
@@ -362,9 +365,13 @@ class SpheroidFile:
         # Extract the profile at the peak position
         profile = self.processed_data[:, self.peak_position]
 
+        # Time axis in SECONDS so the exported I-T matches the on-screen one
+        # (PlotCanvas.plot_IT), which plots np.arange(n) / acquisition_frequency.
+        t = np.arange(len(profile)) / self.acq_freq
+
         # Create the plot
         fig, ax = plt.subplots(figsize=(10, 6))
-        ax.plot(profile, color='blue', linewidth=1.5, label="I-T Profile")
+        ax.plot(t, profile, color='blue', linewidth=1.5, label="I-T Profile")
 
         # Robustly handle peak markers if available in metadata
         peak_indices = self.metadata.get('peak_amplitude_positions', None)
@@ -380,9 +387,9 @@ class SpheroidFile:
             if isinstance(peak_indices, (list, np.ndarray)) and isinstance(peak_values, (list, np.ndarray)):
                 for idx, val in zip(peak_indices, peak_values):
                     if 0 <= idx < len(profile):
-                        ax.scatter(idx, val, color='red', label="Peak Amplitude", zorder=5)
-                        ax.annotate(f"({idx}, {val:.2f})",
-                                    (idx, val),
+                        ax.scatter(t[idx], val, color='red', label="Peak Amplitude", zorder=5)
+                        ax.annotate(f"({t[idx]:.2f} s, {val:.2f})",
+                                    (t[idx], val),
                                     textcoords="offset points",
                                     xytext=(10, 10),
                                     ha='center',
@@ -394,9 +401,9 @@ class SpheroidFile:
                     idx = int(peak_indices)
                     val = float(peak_values)
                     if 0 <= idx < len(profile):
-                        ax.scatter(idx, val, color='red', label="Peak Amplitude", zorder=5)
-                        ax.annotate(f"({idx}, {val:.2f})",
-                                    (idx, val),
+                        ax.scatter(t[idx], val, color='red', label="Peak Amplitude", zorder=5)
+                        ax.annotate(f"({t[idx]:.2f} s, {val:.2f})",
+                                    (t[idx], val),
                                     textcoords="offset points",
                                     xytext=(10, 10),
                                     ha='center',
@@ -406,7 +413,7 @@ class SpheroidFile:
                     pass
 
         # Add labels, title, and grid
-        ax.set_xlabel("Time Points")
+        ax.set_xlabel("Time (seconds)")
         ax.set_ylabel("Current (nA)")
         ax.set_title(f"I-T Profile at Peak Position {self.peak_position}")
         ax.grid(False)
@@ -514,9 +521,7 @@ class SpheroidFile:
                 "This method is currently only implemented for the 5HT waveform.")
 
         # Generate the voltage waveform based on the 5HT scan parameters and number of data points
-        wf = Waveforms(0.2, [1.0, -0.1], 0.2, 1000,
-                       self.processed_data.shape[1])
-        voltage = wf.voltage_waveform()
+        voltage = voltage_axis_for_waveform("5HT", self.processed_data.shape[1])
 
         # Extract current values for the requested CV (time point)
         current = self.processed_data[time_sec, :]
@@ -600,6 +605,37 @@ class Waveforms:
         for (start, end), npts in zip(segs, points):
             voltage.extend(list(np.linspace(start, end, npts, endpoint=False)))
         return np.array(voltage)
+
+
+# Scan parameters per waveform: (Vstart, Vvertices, Vend, scan_rate).
+# Single source of truth so the CV plots and the CV CSV export cannot drift apart.
+WAVEFORM_PARAMS = {
+    "5HT": (0.2, [1.0, -0.1], 0.2, 1000),
+    "HA":  (-0.5, [-0.7, 1.1], -0.5, 600),
+    "DA":  (-0.4, [1.3, -0.4], -0.4, 400),
+}
+
+
+def voltage_axis_for_waveform(waveform_type, n_steps):
+    """Voltage axis (V) for a waveform, for use as the CV x-axis.
+
+    Args:
+        waveform_type (str): "5HT", "HA" or "DA". Anything else (including
+            "Non-specific") has no defined voltage sweep.
+        n_steps (int): number of voltage steps in the data.
+
+    Returns:
+        np.ndarray | None: the voltage per step, or None when the waveform has
+        no defined sweep, in which case callers should fall back to scan index.
+    """
+    params = WAVEFORM_PARAMS.get(waveform_type)
+    if params is None:
+        return None
+    vstart, vvertices, vend, scan_rate = params
+    try:
+        return Waveforms(vstart, vvertices, vend, scan_rate, n_steps).voltage_waveform()
+    except Exception:
+        return None
 
 
 class PLOT_SETTINGS:

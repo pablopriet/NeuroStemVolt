@@ -291,13 +291,64 @@ class PlotCanvas(FigureCanvas):
         self.axes.plot(time_points, mean_amplitudes, label='Mean Amplitude', color='purple')
         self.axes.fill_between(time_points, mean_amplitudes - std_amplitudes, mean_amplitudes + std_amplitudes,
                             color='purple', alpha=0.2, label='SD')
+        # Baseline files carry negative times, so the treatment starts at zero.
         if files_before_treatment > 0:
-            treatment_time = files_before_treatment * (time_points[1] - time_points[0])
-            self.axes.axvline(x=treatment_time, color='red', linestyle='--', label='Treatment Start')
+            self.axes.axvline(x=0, color='red', linestyle='--', label='Treatment Start')
         self.axes.set_xlabel('Time (minutes)')
         self.axes.set_ylabel('Amplitude')
         self.axes.set_title('Mean Amplitude Over Time (All Experiments)')
         self.axes.legend()
+        self.axes.grid(False)
+        self.fig.tight_layout()
+        self.draw()
+        progress.close()
+
+    def show_mean_ITs(self, group_analysis):
+        """
+        Plot mean IT profiles over replicates, highlighting files before treatment
+        and marking the first file after treatment.
+
+        Args:
+            group_analysis (GroupAnalysis): Backend object holding replicate experiments.
+
+        Returns:
+            None
+        """
+        import numpy as np
+
+        # Show loading dialog
+        progress = QProgressDialog("Processing data, please wait...", None, 0, 0, self)
+        progress.setWindowModality(Qt.ApplicationModal)
+        progress.setAutoClose(True)
+        progress.setAutoReset(True)
+        progress.setMinimumDuration(0)
+        progress.show()
+        QApplication.processEvents()  # Ensure dialog appears
+
+        mean_ITs = group_analysis.average_IT_over_replicates()
+        files_before_treatment = group_analysis.experiments[0].get_number_of_files_before_treatment()
+        freq = group_analysis.experiments[0].get_acquisition_frequency()
+
+        n_files = mean_ITs.shape[0]
+        time_points = np.arange(mean_ITs.shape[1]) / freq
+
+        # Clear and plot
+        self.fig.clear()
+        self.axes = self.fig.add_subplot(111)
+
+        for i in range(files_before_treatment):
+            self.axes.plot(time_points, mean_ITs[i, :], label=f"File {i+1} (Before Treatment)", color="blue", alpha=0.7)
+
+        for i in range(files_before_treatment, n_files):
+            self.axes.plot(time_points, mean_ITs[i, :], label=f"File {i+1} (After Treatment)", color="green", alpha=0.7)
+
+        #if files_before_treatment < n_files:
+            #self.axes.plot(time_points, mean_ITs[files_before_treatment, :], label="First File After Treatment", color="red", linewidth=2)
+
+        self.axes.set_xlabel('Time (s)')
+        self.axes.set_ylabel('Mean IT (nA)')
+        self.axes.set_title('Mean IT Profiles Over Replicates')
+        self.axes.legend(fontsize=10, loc="upper right")
         self.axes.grid(False)
         self.fig.tight_layout()
         self.draw()
@@ -328,16 +379,18 @@ class PlotCanvas(FigureCanvas):
         freq = settings.value("acquisition_frequency", 10, type=int)
 
         try:
-            result = group_analysis.exponential_fitting_replicated(replicate_time_point)
-        except ValueError as e:
+            result = group_analysis.exponential_fitting_joint(replicate_time_point)
+        except Exception as e:
+            # ValueError = mismatched lengths / too few post-peak samples;
+            # RuntimeError = curve_fit failed to converge.
             QMessageBox.warning(
                 self,
-                "Dimension Mismatch",
+                "Exponential Fit Failed",
                 f"Error: {str(e)}\n\nPlease ensure all replicates have the same number of time points."
             )
             self.fig.clear()
             self.axes = self.fig.add_subplot(111)
-            self.axes.set_title("Dimension mismatch error")
+            self.axes.set_title("Exponential fit failed")
             self.draw()
             progress.close()
             return
@@ -349,75 +402,14 @@ class PlotCanvas(FigureCanvas):
             progress.close()
             return
 
-        from scipy.stats import t
-        import numpy as np
+        from core.group_analysis import draw_exponential_fit
 
-        # Get fit and aligned ITs from group_analysis
-        # result = group_analysis.exponential_fitting_replicated(replicate_time_point)
-        time_all, cropped_ITs, _, t_half, fit_vals, fit_errs, min_peak = result
-
-        A_fit, k_fit, C_fit = fit_vals
-        A_err, k_err, C_err = fit_errs
-        tau_fit = 1 / k_fit if k_fit != 0 else np.nan
-
-        n_exps, n_post = cropped_ITs.shape
-        t_rel = np.arange(n_post) / freq        # seconds
-
-        mean_IT = np.nanmean(cropped_ITs, axis=0)
-        std_IT  = np.nanstd (cropped_ITs, axis=0)
-        # do the fit in sample‐point space, then map to seconds:
-        t_fit_pts = np.linspace(0, n_post-1, 500)          # in points
-        y_fit     = (A_fit - C_fit) * np.exp(-k_fit * t_fit_pts) + C_fit
-        t_fit_rel = t_fit_pts / freq                       # now in seconds
-
-        # 95% CI of the fit via Jacobian
-        dof  = max(0, len(time_all) - 3)
-        tval = t.ppf(0.975, dof)
-        J        = np.empty((len(t_fit_rel), 3))
-        J[:, 0] = np.exp(-t_fit_rel * k_fit)                            
-        J[:, 1] = -(A_fit - C_fit) * t_fit_rel * np.exp(-t_fit_rel * k_fit) 
-        J[:, 2] = 1 - np.exp(-t_fit_rel * k_fit)                        
-        pcov = np.diag([A_err**2, k_err**2, C_err**2])
-        ci = np.sqrt(np.sum((J @ pcov) * J, axis=1)) * tval
-        lower_ci = y_fit - ci
-        upper_ci = y_fit + ci
-
-        # Plot on the embedded axes
+        # Plot on the embedded axes using the SAME drawing routine as the export,
+        # so "Save All Plots" produces exactly what is shown here.
         self.fig.clear()
         self.axes = self.fig.add_subplot(111)
-
-        # a) each replicate in light gray
-        for row in cropped_ITs:
-            self.axes.plot(t_rel, row, color='gray', alpha=0.3, lw=1, label='_nolegend_')
-
-        # b) individual data points used for fitting
-        ITs_flattened = cropped_ITs.flatten()
-        t_data = (np.array(time_all)) / freq
-        self.axes.scatter(t_data, ITs_flattened, color='black', s=16, alpha=0.7, label='Data points')
-
-        # d) fitted exponential curve
-        self.axes.plot(t_fit_rel, y_fit, color='C1', lw=2, label='Exp fit')
-
-        # e) 95% CI around the fit
-        self.axes.fill_between(t_fit_rel, lower_ci, upper_ci, color='C1', alpha=0.3, label='95% CI')
-
-        # f) half-life marker
-        t_half_s = t_half / freq
-        self.axes.axvline(t_half_s, color='magenta', ls='--',label=f't½ ≈ {t_half_s:.2f} s')
-
-        # 7) labels & styling
-        self.axes.set_xlabel('Time (seconds)', fontsize=12)
-        self.axes.set_ylabel('Current (nA)', fontsize=12)
-        self.axes.set_title('Post-peak IT decays & exponential fit', fontsize=14)
-        self.axes.legend(frameon=False)
-        self.axes.grid(False)
+        draw_exponential_fit(self.axes, result, freq)
         self.fig.tight_layout()
-
-        max_t = t_rel[-1]  # since t_rel is in seconds
-
-        tick_interval = 5  # seconds
-        ticks = np.arange(0, max_t + tick_interval, tick_interval)
-        self.axes.set_xticks(ticks)
 
         self.draw()
         progress.close()
@@ -444,16 +436,15 @@ class PlotCanvas(FigureCanvas):
         QApplication.processEvents()  # Ensure dialog appears
 
         tau_list, tau_err_list = group_analysis.get_tau_over_time()
-        n_files = group_analysis.get_experiments()[0].get_file_count()
-        time_points = np.linspace(
-            0,
-            group_analysis.get_experiments()[0].get_time_between_files() * (n_files - 1),
-            n_files
-        )
+        time_points = group_analysis.get_timepoints_minutes()
+        files_before_treatment = group_analysis.get_experiments()[0].get_number_of_files_before_treatment() or 0
 
         self.fig.clear()
         self.axes = self.fig.add_subplot(111)
         self.axes.errorbar(time_points, tau_list, yerr=tau_err_list, fmt='o-', capsize=4, color='C1', label='Tau (decay constant)')
+        # Baseline files carry negative times, so the treatment starts at zero.
+        if files_before_treatment > 0:
+            self.axes.axvline(x=0, color='red', linestyle='--', label='Treatment Start')
         self.axes.set_xlabel("Time (minutes)")
         self.axes.set_ylabel("Tau (decay constant)")
         self.axes.set_title("Exponential Decay Tau Over Time Points")
@@ -494,21 +485,22 @@ class PlotCanvas(FigureCanvas):
             return
 
         all_amplitudes = np.array(all_amplitudes, dtype=float)
-        treatment_time = files_before_treatment * (time_points[1] - time_points[0])
 
         self.fig.clear()
         self.axes = self.fig.add_subplot(111)
         for i, amplitudes in enumerate(all_amplitudes):
             self.axes.plot(time_points, amplitudes, label=f'Experiment {i+1}', alpha=0.7)
+        # Baseline files carry negative times, so the treatment starts at zero.
         if files_before_treatment > 0:
-            self.axes.axvline(x=treatment_time, color='red', linestyle='--', label='Treatment Start')
-        self.axes.set_xlabel('Time (min)')
+            self.axes.axvline(x=0, color='red', linestyle='--', label='Treatment Start')
+        self.axes.set_xlabel('Time (minutes)')
         self.axes.set_ylabel('Amplitude')
         self.axes.set_title('Amplitudes Over Time (All Experiments)')
         self.axes.legend()
-        max_t = time_points[-1]
-        tick_interval = 5
-        self.axes.set_xticks(np.arange(0, max_t + tick_interval, tick_interval))
+        # Ticks must span the negative baseline times too, so anchor them on zero
+        # instead of starting at zero.
+        from core.group_analysis import GroupAnalysis
+        self.axes.set_xticks(GroupAnalysis._time_ticks(time_points))
         self.fig.tight_layout()
         self.draw()
         progress.close()
@@ -516,6 +508,12 @@ class PlotCanvas(FigureCanvas):
     def show_spontaneous_peak_frequency(self, group_analysis):
         """
         Plot spontaneous peak frequency over time for all experiments.
+
+        Args:
+            group_analysis (GroupAnalysis): Backend object holding replicate experiments.
+
+        Returns:
+            None
         """
         import numpy as np
         from PyQt5.QtCore import QSettings
@@ -618,16 +616,71 @@ class PlotCanvas(FigureCanvas):
         finally:
             progress.close()
 
-    def show_spontaneous_peak_amplitudes(self, group_analysis):
+    @staticmethod
+    def collect_peak_times(group_analysis):
         """
-        Plot spontaneous peak amplitudes over time for all experiments.
+        Gather every detected peak on a single experiment-wide time axis.
+
+        Each peak's absolute time combines where its file sits in the experiment
+        (``time_between_files`` apart, negative before treatment) with where the
+        peak sits inside that file (sample index / acquisition frequency).
+
+        Args:
+            group_analysis: GroupAnalysis instance with processed experiments.
+
+        Returns:
+            list[tuple[np.ndarray, np.ndarray]]: one (times_sec, amplitudes) pair
+            per experiment. Experiments with no peaks yield empty arrays.
         """
         import numpy as np
-        from PyQt5.QtCore import QSettings
+
+        per_experiment = []
+        for exp in group_analysis.get_experiments():
+            freq = exp.get_acquisition_frequency() or 1
+            interval_sec = exp.get_time_between_files() * 60.0
+            files_before = exp.get_number_of_files_before_treatment()
+
+            times, amps = [], []
+            for file_index, spheroid_file in enumerate(exp.files):
+                meta = spheroid_file.get_metadata()
+                positions = meta.get('peak_amplitude_positions', [])
+                values = meta.get('peak_amplitude_values', [])
+
+                # Single-peak files store scalars rather than lists.
+                if not isinstance(positions, (list, tuple, np.ndarray)):
+                    positions = [positions] if positions is not None else []
+                if not isinstance(values, (list, tuple, np.ndarray)):
+                    values = [values] if values is not None else []
+
+                file_start_sec = (file_index - files_before) * interval_sec
+                for pos, val in zip(positions, values):
+                    if pos is None or val is None:
+                        continue
+                    times.append(file_start_sec + float(pos) / freq)
+                    amps.append(float(val))
+
+            per_experiment.append((np.asarray(times, dtype=float),
+                                   np.asarray(amps, dtype=float)))
+        return per_experiment
+
+    def show_windowed_peak_amplitudes(self, group_analysis, window_sec=60.0):
+        """
+        Plot mean peak amplitude per time window across the whole experiment.
+
+        Peaks are placed on an absolute time axis (file position + position
+        within the file), then bucketed into consecutive windows of
+        ``window_sec``. Every peak falling in a window contributes to that
+        window's mean amplitude, so a 60 s window containing peaks at 10 s and
+        30 s reports the mean of those two.
+
+        Args:
+            group_analysis: GroupAnalysis instance with processed experiments.
+            window_sec (float): Width of the averaging window in seconds.
+        """
+        import numpy as np
         from PyQt5.QtWidgets import QProgressDialog, QApplication
 
-        # Show loading dialog
-        progress = QProgressDialog("Processing spontaneous peak amplitude data...", None, 0, 0, self)
+        progress = QProgressDialog("Binning peak amplitudes...", None, 0, 0, self)
         progress.setWindowModality(Qt.ApplicationModal)
         progress.setAutoClose(True)
         progress.setAutoReset(True)
@@ -636,78 +689,91 @@ class PlotCanvas(FigureCanvas):
         QApplication.processEvents()
 
         try:
-            settings = QSettings("HashemiLab", "NeuroStemVolt")
-            time_between_files = settings.value("time_between_files", 0, type=float)
+            self.fig.clear()
+            self.axes = self.fig.add_subplot(111)
 
             experiments = group_analysis.get_experiments()
             if not experiments:
-                self.fig.clear()
-                self.axes = self.fig.add_subplot(111)
                 self.axes.set_title("No experiments to analyze")
                 self.draw()
                 return
 
-            # Collect amplitude data from all experiments
-            all_mean_amplitudes = []
-            time_points = []
+            window_sec = float(window_sec) if window_sec and window_sec > 0 else 60.0
+            per_experiment = self.collect_peak_times(group_analysis)
 
-            n_files = experiments[0].get_file_count()
-            files_before_treatment = experiments[0].get_number_of_files_before_treatment()
+            all_times = np.concatenate([t for t, _a in per_experiment if t.size]) \
+                if any(t.size for t, _a in per_experiment) else np.array([])
+            if all_times.size == 0:
+                self.axes.text(0.5, 0.5, "No peaks were detected in these files.",
+                               ha='center', va='center', transform=self.axes.transAxes)
+                self.draw()
+                return
 
-            # Calculate time points
-            if files_before_treatment > 0:
-                time_points = [time_between_files * (i - files_before_treatment) for i in range(n_files)]
-            else:
-                time_points = [i * time_between_files for i in range(n_files)]
+            # Window edges anchored on 0 (treatment start) so baseline windows
+            # fall on negative multiples of the window width.
+            first_edge = np.floor(all_times.min() / window_sec) * window_sec
+            last_edge = (np.floor(all_times.max() / window_sec) + 1) * window_sec
+            edges = np.arange(first_edge, last_edge + window_sec / 2, window_sec)
+            centers_min = (edges[:-1] + window_sec / 2) / 60.0
 
-            # Collect amplitude data for each experiment
-            for exp in experiments:
-                exp_mean_amplitudes = []
-                for j, spheroid_file in enumerate(exp.files):
-                    meta = spheroid_file.get_metadata()
-                    peak_values = meta.get('peak_amplitude_values', [])
+            # Pooled statistics across all replicates, per window.
+            pooled_times = all_times
+            pooled_amps = np.concatenate([a for _t, a in per_experiment if a.size])
+            bin_idx = np.clip(np.digitize(pooled_times, edges) - 1, 0, len(edges) - 2)
 
-                    # Handle both single value and list/array cases
-                    if not isinstance(peak_values, (list, np.ndarray)):
-                        peak_values = [peak_values] if peak_values else []
+            means, sds, counts = [], [], []
+            for b in range(len(edges) - 1):
+                vals = pooled_amps[bin_idx == b]
+                counts.append(vals.size)
+                means.append(np.mean(vals) if vals.size else np.nan)
+                sds.append(np.std(vals) if vals.size else np.nan)
+            means = np.asarray(means)
+            sds = np.asarray(sds)
+            counts = np.asarray(counts)
 
-                    # Calculate mean amplitude for this file
-                    mean_amplitude = np.mean(peak_values) if peak_values else 0
-                    exp_mean_amplitudes.append(mean_amplitude)
+            filled = counts > 0
 
-                all_mean_amplitudes.append(exp_mean_amplitudes)
+            # Individual replicates in the background
+            for i, (times, amps) in enumerate(per_experiment):
+                if times.size == 0:
+                    continue
+                idx = np.clip(np.digitize(times, edges) - 1, 0, len(edges) - 2)
+                exp_bins = np.array([b for b in range(len(edges) - 1) if np.any(idx == b)])
+                if exp_bins.size == 0:
+                    continue
+                exp_means = np.array([np.mean(amps[idx == b]) for b in exp_bins])
+                # Windows with no peaks are skipped rather than drawn as gaps, so
+                # the replicate traces stay comparable with the pooled mean.
+                self.axes.plot(centers_min[exp_bins], exp_means, 'o--', color='gray',
+                               alpha=0.45, markersize=3, linewidth=1,
+                               label=f'Exp {i + 1}' if i < 3 else '_nolegend_')
 
-            # Convert to numpy array for easier manipulation
-            all_mean_amplitudes = np.array(all_mean_amplitudes)
-            mean_amplitudes = np.nanmean(all_mean_amplitudes, axis=0)
-            std_amplitudes = np.nanstd(all_mean_amplitudes, axis=0)
+            self.axes.errorbar(centers_min[filled], means[filled], yerr=sds[filled],
+                               fmt='o-', color='#8B008B', ecolor='#8B008B',
+                               elinewidth=1, capsize=3, linewidth=2, markersize=6,
+                               label=f'Mean Amplitude ({window_sec:g} s windows)')
 
-            # Clear and plot
-            self.fig.clear()
-            self.axes = self.fig.add_subplot(111)
+            # Peak counts per window, only while they stay readable.
+            if filled.sum() <= 25:
+                for x, y, n in zip(centers_min[filled], means[filled], counts[filled]):
+                    self.axes.annotate(f'n={n}', (x, y), textcoords='offset points',
+                                       xytext=(0, 8), ha='center', fontsize=8, color='dimgray')
 
-            # Plot mean amplitude with standard deviation
-            self.axes.plot(time_points, mean_amplitudes, 'o-', color='#8B008B',
-                          linewidth=2, markersize=6, label='Mean Amplitude')
-            self.axes.fill_between(time_points,
-                                  mean_amplitudes - std_amplitudes,
-                                  mean_amplitudes + std_amplitudes,
-                                  color='#8B008B', alpha=0.2, label='SD')
+            if experiments[0].get_number_of_files_before_treatment() > 0:
+                self.axes.axvline(x=0, color='red', linestyle='--', linewidth=2,
+                                  label='Treatment Start')
 
-            # Plot individual experiments in lighter colors
-            for i, amplitudes in enumerate(all_mean_amplitudes):
-                self.axes.plot(time_points, amplitudes, '--', alpha=0.5,
-                              color='gray', linewidth=1, label=f'Exp {i+1}' if i < 3 else '_nolegend_')
-
-            # Add treatment line if applicable
-            if files_before_treatment > 0:
-                treatment_time = 0  # Treatment starts at time 0 in this coordinate system
-                self.axes.axvline(x=treatment_time, color='red', linestyle='--',
-                                 linewidth=2, label='Treatment Start')
+            # One window per point crowds the axis, so label only every few
+            # minutes instead of letting matplotlib tick each window.
+            from core.group_analysis import GroupAnalysis
+            self.axes.set_xticks(GroupAnalysis._time_ticks(centers_min[filled]))
 
             self.axes.set_xlabel('Time (minutes)', fontsize=12)
             self.axes.set_ylabel('Mean Peak Amplitude (nA)', fontsize=12)
-            self.axes.set_title('Spontaneous Peak Amplitudes Over Time', fontweight='bold')
+            self.axes.set_title(
+                f'Peak Amplitudes in {window_sec:g} s Windows '
+                f'({int(counts.sum())} peaks, {int(filled.sum())} windows)',
+                fontweight='bold')
             self.axes.legend()
             self.axes.grid(True, alpha=0.3)
             self.fig.tight_layout()
@@ -716,105 +782,8 @@ class PlotCanvas(FigureCanvas):
         except Exception as e:
             self.fig.clear()
             self.axes = self.fig.add_subplot(111)
-            self.axes.text(0.5, 0.5, f"Error plotting amplitude data: {str(e)}",
-                          ha='center', va='center', transform=self.axes.transAxes)
-            self.draw()
-        finally:
-            progress.close()
-
-    def show_mean_amplitude_and_frequency(self, group_analysis):
-        """
-        Plot mean amplitude and peak frequency on a dual y-axis chart over time.
-        """
-        import numpy as np
-        from PyQt5.QtCore import QSettings
-        from PyQt5.QtWidgets import QProgressDialog, QApplication
-
-        progress = QProgressDialog("Processing amplitude & frequency data...", None, 0, 0, self)
-        progress.setWindowModality(Qt.ApplicationModal)
-        progress.setMinimumDuration(0)
-        progress.show()
-        QApplication.processEvents()
-
-        try:
-            settings = QSettings("HashemiLab", "NeuroStemVolt")
-            file_length_sec = settings.value("file_length", 100, type=int)
-            time_between_files = settings.value("time_between_files", 10, type=float)
-
-            experiments = group_analysis.get_experiments()
-            if not experiments:
-                self.axes.clear()
-                self.axes.set_title("No experiments to analyze")
-                self.draw()
-                return
-
-            n_files = experiments[0].get_file_count()
-            files_before_treatment = experiments[0].get_number_of_files_before_treatment()
-
-            if files_before_treatment > 0:
-                time_points = [time_between_files * (i - files_before_treatment) for i in range(n_files)]
-            else:
-                time_points = [i * time_between_files for i in range(n_files)]
-
-            all_amplitudes = []
-            all_frequencies = []
-
-            for exp in experiments:
-                exp_amplitudes = []
-                exp_frequencies = []
-                for spheroid_file in exp.files:
-                    meta = spheroid_file.get_metadata()
-
-                    peak_values = meta.get('peak_amplitude_values', [])
-                    if not isinstance(peak_values, (list, np.ndarray)):
-                        peak_values = [peak_values] if peak_values else []
-                    exp_amplitudes.append(np.mean(peak_values) if peak_values else 0)
-
-                    peak_positions = meta.get('peak_amplitude_positions', [])
-                    if not isinstance(peak_positions, (list, np.ndarray)):
-                        peak_positions = [peak_positions] if peak_positions else []
-                    exp_frequencies.append(len(peak_positions) / (file_length_sec / 60))
-
-                all_amplitudes.append(exp_amplitudes)
-                all_frequencies.append(exp_frequencies)
-
-            all_amplitudes = np.array(all_amplitudes)
-            all_frequencies = np.array(all_frequencies)
-            mean_amp = np.nanmean(all_amplitudes, axis=0)
-            std_amp = np.nanstd(all_amplitudes, axis=0)
-            mean_freq = np.nanmean(all_frequencies, axis=0)
-            std_freq = np.nanstd(all_frequencies, axis=0)
-
-            self.fig.clear()
-            ax1 = self.fig.add_subplot(111)
-            ax2 = ax1.twinx()
-            self.axes = ax1  # keep self.axes in sync so subsequent methods clear correctly
-
-            ax1.plot(time_points, mean_amp, 'o-', color='#8B008B', linewidth=2, markersize=6, label='Mean Amplitude')
-            ax1.fill_between(time_points, mean_amp - std_amp, mean_amp + std_amp, color='#8B008B', alpha=0.2)
-
-            ax2.plot(time_points, mean_freq, 's--', color='#2E8B57', linewidth=2, markersize=6, label='Frequency')
-            ax2.fill_between(time_points, mean_freq - std_freq, mean_freq + std_freq, color='#2E8B57', alpha=0.2)
-
-            if files_before_treatment > 0:
-                ax1.axvline(x=0, color='red', linestyle='--', linewidth=2, label='Treatment Start')
-
-            ax1.set_xlabel('Time (minutes)', fontsize=12)
-            ax1.set_ylabel('Mean Peak Amplitude (nA)', fontsize=12, color='#8B008B')
-            ax2.set_ylabel('Peak Frequency (peaks/min)', fontsize=12, color='#2E8B57')
-            ax1.set_title('Mean Amplitude & Frequency Over Time', fontweight='bold')
-
-            lines1, labels1 = ax1.get_legend_handles_labels()
-            lines2, labels2 = ax2.get_legend_handles_labels()
-            ax1.legend(lines1 + lines2, labels1 + labels2)
-            ax1.grid(True, alpha=0.3)
-            self.fig.tight_layout()
-            self.draw()
-
-        except Exception as e:
-            self.fig.clear()
-            self.axes = self.fig.add_subplot(111)
-            self.axes.text(0.5, 0.5, f"Error: {str(e)}", ha='center', va='center', transform=self.axes.transAxes)
+            self.axes.text(0.5, 0.5, f"Error plotting windowed amplitudes: {str(e)}",
+                           ha='center', va='center', transform=self.axes.transAxes)
             self.draw()
         finally:
             progress.close()
@@ -841,27 +810,17 @@ class PlotCanvas(FigureCanvas):
         - metadata: dict containing peak information from I-T analysis
         - title_suffix: optional suffix for the title
         """
-        from core.spheroid_file import Waveforms
+        from core.spheroid_file import voltage_axis_for_waveform
 
         self.fig.clear()
         self.axes = self.fig.add_subplot(111)
 
-        # Generate voltage waveform based on the configured waveform type
+        # Generate voltage waveform based on the configured waveform type.
+        # None means the waveform has no defined sweep ("Non-specific"), in which
+        # case the scan index is used as the x-axis.
         waveform_type = QSettings("HashemiLab", "NeuroStemVolt").value("waveform", "5HT", type=str)
-        try:
-            if waveform_type == "5HT":
-                wf = Waveforms(0.2, [1.0, -0.1], 0.2, 1000, processed_data.shape[1])
-                voltage = wf.voltage_waveform()
-            elif waveform_type == "DA":
-                wf = Waveforms(-0.4, [1.3, -0.4], -0.4, 400, processed_data.shape[1])
-                voltage = wf.voltage_waveform()
-            elif waveform_type == "HA":
-                wf = Waveforms(-0.5, [-0.7, 1.1], -0.5, 600, processed_data.shape[1])
-                voltage = wf.voltage_waveform()
-            else:
-                # Non-specific: use scan index as x-axis
-                voltage = np.arange(processed_data.shape[1])
-        except:
+        voltage = voltage_axis_for_waveform(waveform_type, processed_data.shape[1])
+        if voltage is None:
             voltage = np.arange(processed_data.shape[1])
 
         # Get peak time points from metadata
@@ -967,27 +926,17 @@ class PlotCanvas(FigureCanvas):
         """
         Original single CV plot method (renamed for clarity).
         """
-        from core.spheroid_file import Waveforms
+        from core.spheroid_file import voltage_axis_for_waveform
 
         self.fig.clear()
         self.axes = self.fig.add_subplot(111)
 
-        # Generate voltage waveform based on the configured waveform type
+        # Generate voltage waveform based on the configured waveform type.
+        # None means the waveform has no defined sweep ("Non-specific"), in which
+        # case the scan index is used as the x-axis.
         waveform_type = QSettings("HashemiLab", "NeuroStemVolt").value("waveform", "5HT", type=str)
-        try:
-            if waveform_type == "5HT":
-                wf = Waveforms(0.2, [1.0, -0.1], 0.2, 1000, processed_data.shape[1])
-                voltage = wf.voltage_waveform()
-            elif waveform_type == "DA":
-                wf = Waveforms(-0.4, [1.3, -0.4], -0.4, 400, processed_data.shape[1])
-                voltage = wf.voltage_waveform()
-            elif waveform_type == "HA":
-                wf = Waveforms(-0.5, [-0.7, 1.1], -0.5, 600, processed_data.shape[1])
-                voltage = wf.voltage_waveform()
-            else:
-                # Non-specific: use scan index as x-axis
-                voltage = np.arange(processed_data.shape[1])
-        except:
+        voltage = voltage_axis_for_waveform(waveform_type, processed_data.shape[1])
+        if voltage is None:
             voltage = np.arange(processed_data.shape[1])
 
         # Extract current values for the requested CV (time point)

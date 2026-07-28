@@ -1,10 +1,9 @@
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QCheckBox, QLabel, QLineEdit, QDialogButtonBox, QWidget, QPushButton, QComboBox
+    QDialog, QVBoxLayout, QHBoxLayout, QCheckBox, QLabel, QLineEdit, QDialogButtonBox, QWidget, QPushButton
 )
-from PyQt5.QtCore import QSettings, pyqtSignal
+from PyQt5.QtCore import QSettings, Qt, pyqtSignal
 import json
 
-from ui.utils.styles import apply_custom_styles
 from ui.utils.ui_helpers import make_labeled_field_with_help
 from core.processing import BackgroundSubtraction, SavitzkyGolayFilter, RollingMean, GaussianSmoothing2D, \
     ButterworthFilter, BaselineCorrection, Normalize, FindAmplitude, ExponentialFitting, \
@@ -44,7 +43,6 @@ class ProcessingOptionsDialog(QDialog):
             ("Invert Data", False),
             # ("Drift Correction", False),
             ("Find Amplitude", True),
-            #("Multiple Peak Detection", False),  # New option
         ]
 
         self.checkboxes = {}
@@ -62,11 +60,23 @@ class ProcessingOptionsDialog(QDialog):
             "Rolling Mean": "Smooths the trace by computing a moving average over a sliding window of N points. The 'window size' parameter sets how many consecutive samples are included in each average. Larger windows yield smoother traces but can blur sharp features.",
             "Butterworth Filter": "Applies a low-pass filter while preserving waveform. The 'order' (p) controls the steepness of the filter roll-off, while 'cx' and 'cy' set the cutoff frequencies (Hz) in the time and voltage dimensions, respectively. Lower cx = more smoothing along the time axis.",
             "Savitzky-Golay Filter": "Fits a local polynomial of a given 'order' over each segment of the data to smooth noise. The 'window size' sets how many points are used per fit, while 'order' (the 'p' polynomial order) controls how closely the fit can follow rapid changes.",
-            "Baseline Correction": "Prior to the onset of stimulation, if the file is not starting at 0.0 nA, Baseline Correction computes the mean current across the period prior to stimulation and substracts this baseline from the entire signal",
-            "Artifact Removal": "Detects and removes sudden large electrical noise spikes — sharp jumps in current that appear in only one or a few scans and stand out massively from the surrounding signal. Threshold controls how many times larger a jump must be (relative to the median) to be flagged; Pad sets how many neighbouring scans are also zeroed. Note: this is NOT designed for stimulation artefacts. It is intended for random electrical interference that contaminates isolated scans. If no such noise is detected, the data is returned unchanged.",
+            "Baseline Correction": "Prior to the onset of stimulation, if the file is not starting at 0.0 nA, Baseline Correction computes the mean current across the period prior to stimulation and subtracts this baseline from the entire signal.",
+            "Artifact Removal": (
+                "Detects and removes sudden large electrical noise spikes: sharp jumps in current that appear "
+                "in only one or a few scans and stand out massively from the surrounding signal. "
+                "Threshold controls how many times larger a jump must be (relative to the median) to be flagged. "
+                "Pad sets how many neighbouring scans on each side of a detected region are also replaced. "
+                "Max Scans sets the widest a single artefact is allowed to be, in scans. A spike usually produces "
+                "two jumps, one as the signal leaves the baseline and one as it returns; if those two jumps are no "
+                "more than Max Scans apart they are treated as one artefact and everything between them is "
+                "interpolated, whereas if they are further apart they are treated as separate one-scan events. "
+                "Leaving it blank uses twice the acquisition frequency, which is two seconds of recording. "
+                "Note: this is NOT designed for stimulation artefacts. It is intended for random electrical "
+                "interference that contaminates isolated scans. If no such noise is detected, the data is "
+                "returned unchanged."
+            ),
             "Invert Data": "Inverts the sign of the signal. Use this if your data is recorded with reversed polarity.",
             "Drift Correction": "Fits a linear trend to the baseline file amplitudes (files before treatment) and subtracts the extrapolated drift from all subsequent files. Requires at least 2 baseline files. Must run after peak detection.",
-            #"Multiple Peak Detection": "Detects multiple spontaneous peaks throughout the signal using adaptive validation windows. Useful for analyzing spontaneous activity patterns.",
         }
 
         file_type = QSettings("HashemiLab", "NeuroStemVolt").value("file_type", "None", type=str)
@@ -210,66 +220,6 @@ class ProcessingOptionsDialog(QDialog):
                 param_widget = ar_container
                 self.param_widgets[name] = (ar_threshold, ar_pad, ar_max)
 
-            elif name == "Multiple Peak Detection":
-                # Parameters for multiple peak detection
-                mpd_layout = QVBoxLayout()
-
-                # Max peaks
-                max_peaks_layout = QHBoxLayout()
-                max_peaks_label = QLabel("Max Peaks:")
-                max_peaks_label.setStyleSheet("font-size: 11px; color: palette(windowtext); margin-left: 16px;")
-                max_peaks_edit = QLineEdit("10")
-                max_peaks_layout.addWidget(max_peaks_label)
-                max_peaks_layout.addWidget(max_peaks_edit)
-
-                # Min prominence
-                prominence_layout = QHBoxLayout()
-                prominence_label = QLabel("Min Prominence:")
-                prominence_label.setStyleSheet("font-size: 11px; color: palette(windowtext); margin-left: 16px;")
-                prominence_edit = QLineEdit("0.5")
-                prominence_layout.addWidget(prominence_label)
-                prominence_layout.addWidget(prominence_edit)
-
-                # Rise window
-                rise_layout = QHBoxLayout()
-                rise_label = QLabel("Rise Window (sec):")
-                rise_label.setStyleSheet("font-size: 11px; color: palette(windowtext); margin-left: 16px;")
-                rise_edit = QLineEdit("3.0")
-                rise_layout.addWidget(rise_label)
-                rise_layout.addWidget(rise_edit)
-
-                # Decay window
-                decay_layout = QHBoxLayout()
-                decay_label = QLabel("Decay Window (sec):")
-                decay_label.setStyleSheet("font-size: 11px; color: palette(windowtext); margin-left: 16px;")
-                decay_edit = QLineEdit("10.0")
-                decay_layout.addWidget(decay_label)
-                decay_layout.addWidget(decay_edit)
-
-                if "Multiple Peak Detection" in saved_params:
-                    params = saved_params["Multiple Peak Detection"]
-                    max_peaks_edit.setText(str(params.get("max_peaks", "10")))
-                    prominence_edit.setText(str(params.get("min_prominence", "0.5")))
-                    rise_edit.setText(str(params.get("rise_window_sec", "3.0")))
-                    decay_edit.setText(str(params.get("decay_window_sec", "10.0")))
-
-                mpd_layout.addLayout(max_peaks_layout)
-                mpd_layout.addLayout(prominence_layout)
-                mpd_layout.addLayout(rise_layout)
-                mpd_layout.addLayout(decay_layout)
-
-                mpd_container = QWidget()
-                mpd_container.setLayout(mpd_layout)
-                mpd_container.setContentsMargins(24, 0, 0, 0)  # Indent
-                mpd_container.hide()
-                param_widget = mpd_container
-                self.param_widgets[name] = {
-                    "max_peaks": max_peaks_edit,
-                    "min_prominence": prominence_edit,
-                    "rise_window_sec": rise_edit,
-                    "decay_window_sec": decay_edit
-                }
-
             # Add parameter widget to filter layout if it exists
             if param_widget:
                 filter_layout.addWidget(param_widget)
@@ -287,67 +237,16 @@ class ProcessingOptionsDialog(QDialog):
             filter_container.setLayout(filter_layout)
             layout.addWidget(filter_container)
 
-        single_peak_layout = QHBoxLayout()
-        single_peak_layout.setContentsMargins(0, 0, 0, 0)
-        single_peak_layout.setSpacing(0)
-
-        self.find_amplitudes_btn = QPushButton("Single Peak Detection: ON")
-        self.find_amplitudes_btn.setCheckable(True)
-        self.find_amplitudes_btn.setChecked(True)   # Always starts ON
-        self.find_amplitudes_btn.setEnabled(False)  # Users can't click directly
-
-        # Apply your green general style
-        apply_custom_styles(self.find_amplitudes_btn)
-
-        # Add button flush-left in a horizontal layout
-        single_peak_layout.addWidget(self.find_amplitudes_btn)
-        single_peak_layout.addStretch()  # Pushes everything else to the left
-        layout.addLayout(single_peak_layout)
-
-        # Wire Multiple Peak Detection -> Single Peak Detection button state
-        mpd_cb = self.checkboxes.get("Multiple Peak Detection")
-        if mpd_cb is not None:
-            def sync_single_peak_detection(checked: bool):
-                # When MPD is on, Single Peak Detection shows OFF; otherwise ON
-                self.find_amplitudes_btn.setChecked(not checked)
-                self.find_amplitudes_btn.setText(
-                    "Single Peak Detection: OFF" if checked else "Single Peak Detection: ON"
-                )
-            sync_single_peak_detection(mpd_cb.isChecked())  # Initial state
-            mpd_cb.toggled.connect(sync_single_peak_detection)
-
-        # ── Peak detection parameters (always visible) ────────────────────────
+        # Peak detection parameters (always visible)
         fa_saved = saved_params.get("Find Amplitude", None)
-        fa_params_layout = QHBoxLayout()
-        fa_params_layout.setContentsMargins(8, 2, 0, 0)
-        fa_params_layout.setSpacing(6)
 
         if file_type == "Multi-Peak":
-            fa_pct_lbl  = QLabel("Prominence (%):")
-            fa_pct_lbl.setStyleSheet("font-size: 11px; color: palette(windowtext);")
-            fa_pct      = QLineEdit("5")
-            fa_pct.setFixedWidth(45)
-            fa_max_lbl  = QLabel("Max Peaks:")
-            fa_max_lbl.setStyleSheet("font-size: 11px; color: palette(windowtext);")
-            fa_max      = QLineEdit("10")
-            fa_max.setFixedWidth(40)
-            fa_dist_lbl = QLabel("Min Distance (s):")
-            fa_dist_lbl.setStyleSheet("font-size: 11px; color: palette(windowtext);")
-            fa_dist     = QLineEdit("0.5")
-            fa_dist.setFixedWidth(45)
-            if isinstance(fa_saved, list) and len(fa_saved) >= 3:
-                fa_pct.setText(fa_saved[0])
-                fa_max.setText(fa_saved[1])
-                fa_dist.setText(fa_saved[2])
-            fa_params_layout.addWidget(fa_pct_lbl)
-            fa_params_layout.addWidget(fa_pct)
-            fa_params_layout.addWidget(fa_max_lbl)
-            fa_params_layout.addWidget(fa_max)
-            fa_params_layout.addWidget(fa_dist_lbl)
-            fa_params_layout.addWidget(fa_dist)
-            fa_params_layout.addStretch()
-            self.param_widgets["Find Amplitude"] = (fa_pct, fa_max, fa_dist)
+            layout.addWidget(self._build_multi_peak_params(fa_saved))
         else:
+            fa_params_layout = QHBoxLayout()
+            fa_params_layout.setContentsMargins(8, 2, 0, 0)
+            fa_params_layout.setSpacing(6)
+
             fa_pct_lbl    = QLabel("Prominence (%):")
             fa_pct_lbl.setStyleSheet("font-size: 11px; color: palette(windowtext);")
             fa_pct        = QLineEdit("10")
@@ -366,9 +265,9 @@ class ProcessingOptionsDialog(QDialog):
             fa_params_layout.addStretch()
             self.param_widgets["Find Amplitude"] = (fa_pct, fa_height)
 
-        fa_params_container = QWidget()
-        fa_params_container.setLayout(fa_params_layout)
-        layout.addWidget(fa_params_container)
+            fa_params_container = QWidget()
+            fa_params_container.setLayout(fa_params_layout)
+            layout.addWidget(fa_params_container)
 
         # Dialog buttons — OK / Apply / Reverse Changes / Cancel
         buttons = QDialogButtonBox(
@@ -381,6 +280,147 @@ class ProcessingOptionsDialog(QDialog):
         layout.addWidget(buttons)
 
         self.setLayout(layout)
+
+    # Multi-Peak detector parameters
+
+    # Every FindAmplitudeMultiple parameter, as (key, label, default, width).
+    # The first group is always visible; the second sits behind the "Advanced"
+    # toggle so the common case stays uncluttered.
+    MULTI_PEAK_CRITICAL = [
+        ("prominence_pct",   "Prominence (%):",   "5",    45),
+        ("min_height_na",    "Min Height (nA):",  "0.02", 55),
+        ("max_peaks",        "Max Peaks:",        "10",   40),
+        ("min_distance_sec", "Min Distance (s):", "0.5",  45),
+    ]
+    MULTI_PEAK_ADVANCED = [
+        ("min_peak_width_scans", "Min Peak Width (scans):", "2",    45),
+        ("min_rise_sec",         "Rise Window min (s):",    "0.2",  45),
+        ("max_rise_sec",         "Rise Window max (s):",    "3.0",  45),
+        ("min_decay_sec",        "Decay Window min (s):",   "1.0",  45),
+        ("max_decay_sec",        "Decay Window max (s):",   "10.0", 45),
+    ]
+
+    MULTI_PEAK_HELP = (
+        "Detection thresholds:\n"
+        "• Prominence (%) — how far a peak must stand out from its surroundings, "
+        "as a percentage of the signal's dynamic range (5–95th percentile).\n"
+        "• Min Height (nA) — absolute current floor; anything below is ignored.\n"
+        "• Max Peaks — only the N largest peaks in a file are kept.\n"
+        "• Min Distance (s) — minimum gap between two accepted peaks.\n\n"
+        "Advanced (shape validation): each candidate is checked for a rising edge and "
+        "a decaying tail, searched adaptively inside these bounds.\n"
+        "• Min Peak Width (scans) — rejects single-scan spikes.\n"
+        "• Rise Window min/max (s) — a candidate whose rise is shorter than the minimum "
+        "is rejected; the maximum is how far back the search looks.\n"
+        "• Decay Window min/max (s) — same, for the decay after the peak.\n"
+        "Widening the windows or lowering the minima accepts slower, broader events; "
+        "tightening them keeps only sharp transients."
+    )
+
+    def _build_multi_peak_params(self, saved):
+        """
+        Build the FindAmplitudeMultiple parameter block.
+
+        Critical thresholds are always visible; the shape-validation windows are
+        collapsed behind an "Advanced" toggle. Every parameter of the detector
+        is editable here.
+
+        Args:
+            saved (dict | list | None): previously saved "Find Amplitude" params.
+                The legacy 3-item list form is still understood.
+
+        Returns:
+            QWidget: container holding the whole block.
+        """
+        # Legacy list form: [prominence_pct, max_peaks, min_distance_sec]
+        if isinstance(saved, list):
+            saved = dict(zip(("prominence_pct", "max_peaks", "min_distance_sec"), saved))
+        elif not isinstance(saved, dict):
+            saved = {}
+
+        fields = {}
+
+        def make_row(specs):
+            row = QHBoxLayout()
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(6)
+            for key, label, default, width in specs:
+                lbl = QLabel(label)
+                lbl.setStyleSheet("font-size: 11px; color: palette(windowtext);")
+                edit = QLineEdit(str(saved.get(key, default)))
+                edit.setFixedWidth(width)
+                fields[key] = edit
+                row.addWidget(lbl)
+                row.addWidget(edit)
+            row.addStretch()
+            return row
+
+        outer = QVBoxLayout()
+        outer.setContentsMargins(8, 2, 0, 0)
+        outer.setSpacing(4)
+
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        title = QLabel("Peak Detection")
+        title.setStyleSheet("font-weight: bold; font-size: 12px;")
+        header.addWidget(make_labeled_field_with_help(
+            "Peak Detection", title, self.MULTI_PEAK_HELP))
+        header.addStretch()
+        outer.addLayout(header)
+
+        outer.addLayout(make_row(self.MULTI_PEAK_CRITICAL))
+
+        # Advanced section — hidden until the user asks for it
+        self.mp_advanced_btn = QPushButton("▸ Advanced")
+        self.mp_advanced_btn.setCheckable(True)
+        self.mp_advanced_btn.setFlat(True)
+        self.mp_advanced_btn.setStyleSheet(
+            "QPushButton { font-size: 11px; text-align: left; padding: 0px; border: none; }")
+        self.mp_advanced_btn.setCursor(Qt.PointingHandCursor)
+
+        advanced_box = QVBoxLayout()
+        advanced_box.setContentsMargins(16, 0, 0, 0)
+        advanced_box.setSpacing(2)
+        advanced_box.addLayout(make_row(self.MULTI_PEAK_ADVANCED[:1]))
+        advanced_box.addLayout(make_row(self.MULTI_PEAK_ADVANCED[1:3]))
+        advanced_box.addLayout(make_row(self.MULTI_PEAK_ADVANCED[3:]))
+
+        reset_btn = QPushButton("Reset Advanced to Defaults")
+        reset_btn.setStyleSheet("font-size: 11px;")
+        reset_btn.clicked.connect(self._reset_multi_peak_advanced)
+        reset_row = QHBoxLayout()
+        reset_row.setContentsMargins(0, 0, 0, 0)
+        reset_row.addWidget(reset_btn)
+        reset_row.addStretch()
+        advanced_box.addLayout(reset_row)
+
+        advanced_container = QWidget()
+        advanced_container.setLayout(advanced_box)
+        advanced_container.hide()
+
+        def toggle_advanced(checked):
+            advanced_container.setVisible(checked)
+            self.mp_advanced_btn.setText("▾ Advanced" if checked else "▸ Advanced")
+            self.adjustSize()
+        self.mp_advanced_btn.toggled.connect(toggle_advanced)
+
+        outer.addWidget(self.mp_advanced_btn)
+        outer.addWidget(advanced_container)
+
+        self.param_widgets["Find Amplitude"] = fields
+
+        container = QWidget()
+        container.setLayout(outer)
+        return container
+
+    def _reset_multi_peak_advanced(self):
+        """Restore the advanced multi-peak validation fields to their defaults."""
+        fields = self.param_widgets.get("Find Amplitude")
+        if not isinstance(fields, dict):
+            return
+        for key, _label, default, _width in self.MULTI_PEAK_ADVANCED:
+            if key in fields:
+                fields[key].setText(default)
 
     def _on_apply(self):
         """Save current settings and emit apply_requested (dialog stays open)."""
@@ -397,13 +437,8 @@ class ProcessingOptionsDialog(QDialog):
         self.qsettings.setValue("processing_pipeline", json.dumps(selected))
         out = {}
         for name, widget in self.param_widgets.items():
-            if name == "Multiple Peak Detection":
-                out[name] = {
-                    "max_peaks": widget["max_peaks"].text(),
-                    "min_prominence": widget["min_prominence"].text(),
-                    "rise_window_sec": widget["rise_window_sec"].text(),
-                    "decay_window_sec": widget["decay_window_sec"].text()
-                }
+            if isinstance(widget, dict):
+                out[name] = {key: w.text() for key, w in widget.items()}
             elif isinstance(widget, tuple):
                 out[name] = [w.text() for w in widget]
             else:
@@ -490,20 +525,11 @@ class ProcessingOptionsDialog(QDialog):
             fa_params = self.param_widgets.get("Find Amplitude")
 
             if file_type == "Multi-Peak":
-                prominence_fraction = 0.05
-                max_peaks  = 10
-                min_dist   = 0.5
-                if isinstance(fa_params, tuple) and len(fa_params) >= 3:
-                    try: prominence_fraction = float(fa_params[0].text()) / 100.0
-                    except ValueError: pass
-                    try: max_peaks = int(fa_params[1].text())
-                    except ValueError: pass
-                    try: min_dist = float(fa_params[2].text())
-                    except ValueError: pass
-                return FindAmplitudeMultiple(peak_position,
-                                            prominence_fraction=prominence_fraction,
-                                            max_peaks=max_peaks,
-                                            min_peak_distance_sec=min_dist)
+                # fa_params maps parameter keys to their QLineEdits; hand the raw
+                # text to the detector, which parses it and fills in defaults.
+                texts = ({k: w.text() for k, w in fa_params.items()}
+                         if isinstance(fa_params, dict) else fa_params)
+                return FindAmplitudeMultiple.from_params(peak_position, texts)
             else:
                 prominence_fraction = 0.10
                 min_height_na = 0.03
@@ -515,25 +541,6 @@ class ProcessingOptionsDialog(QDialog):
                 return FindAmplitude(peak_position,
                                      prominence_fraction=prominence_fraction,
                                      min_height_na=min_height_na)
-        elif name == "Multiple Peak Detection":
-            params = self.param_widgets[name]
-            try:
-                max_peaks = int(params["max_peaks"].text())
-                min_prominence = float(params["min_prominence"].text())
-                rise_window_sec = float(params["rise_window_sec"].text())
-                decay_window_sec = float(params["decay_window_sec"].text())
-            except ValueError:
-                max_peaks = 10
-                min_prominence = 0.5
-                rise_window_sec = 3.0
-                decay_window_sec = 10.0
-            return FindAmplitudeMultiple(
-                peak_position=peak_position,
-                max_peaks=max_peaks,
-                min_prominence=min_prominence,
-                rise_window_sec=rise_window_sec,
-                decay_window_sec=decay_window_sec
-            )
         elif name == "Exponential Fitting":
             return ExponentialFitting()
         else:
