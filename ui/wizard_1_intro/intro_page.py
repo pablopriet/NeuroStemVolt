@@ -76,7 +76,7 @@ class IntroPage(QWizardPage):
             font-family: Helvetica, Arial;
             font-weight: bold;
         """)
-        footer = QLabel("© 2026 Hashemi Lab · NeuroStemVolt · v1.1.0")
+        footer = QLabel("© 2026 Hashemi Lab · NeuroStemVolt · v1.1.1")
         footer.setAlignment(Qt.AlignCenter)
         footer.setStyleSheet("""
             color: palette(windowtext);
