@@ -42,13 +42,14 @@ class ResultsPage(QWizardPage):
         # Analysis buttons
 
         # Available for both
-        btn_avg = QPushButton("Mean Amplitude Over Experiments"); apply_custom_styles(btn_avg)
-        btn_amp = QPushButton("Individual Amplitudes Per Replicate"); apply_custom_styles(btn_amp)
-        self.btn_mean_its = QPushButton("Mean ITs"); apply_custom_styles(self.btn_mean_its)
-
+        self.btn_avg = QPushButton("Mean Amplitude Over Experiments"); apply_custom_styles(self.btn_avg)
+        self.btn_amp = QPushButton("Individual Amplitudes Per Replicate"); apply_custom_styles(self.btn_amp)
+    
         # Recommended for Single Peak
-        btn_fit   = QPushButton("Exponential Decay Fitting"); apply_custom_styles(btn_fit)
-        btn_param = QPushButton("Tau-Time");             apply_custom_styles(btn_param)
+        self.btn_fit   = QPushButton("Exponential Decay Fitting"); apply_custom_styles(self.btn_fit)
+        self.btn_param = QPushButton("Tau-Time");             apply_custom_styles(self.btn_param)
+        self.btn_mean_its = QPushButton("Mean ITs"); apply_custom_styles(self.btn_mean_its)
+        
 
         # Recommended for Multi-Peak
         self.btn_spont_freq     = QPushButton("Peak Frequency");            apply_custom_styles(self.btn_spont_freq)
@@ -59,40 +60,40 @@ class ResultsPage(QWizardPage):
             btn.hide()
 
         # Export buttons
-        btn_save     = QPushButton("Save Current Plot");     apply_custom_styles(btn_save)
-        btn_save_all = QPushButton("Save All Plots");        apply_custom_styles(btn_save_all)
-        btn_export   = QPushButton("Export Metrics as CSV"); apply_custom_styles(btn_export)
+        self.btn_save     = QPushButton("Save Current Plot");     apply_custom_styles(self.btn_save)
+        self.btn_save_all = QPushButton("Save All Plots");        apply_custom_styles(self.btn_save_all)
+        self.btn_export   = QPushButton("Export Metrics as CSV"); apply_custom_styles(self.btn_export)
 
-        self.analysis_buttons = [btn_avg, btn_fit, btn_param, btn_amp, self.btn_mean_its, btn_save, btn_save_all, btn_export]
+        self.analysis_buttons = [self.btn_avg, self.btn_fit, self.btn_param, self.btn_amp, self.btn_mean_its, self.btn_save, self.btn_save_all, self.btn_export]
 
         # Connect buttons
         for btn, fn in (
-            (btn_avg,   lambda: self.result_plot.show_average_over_experiments(self.wizard().group_analysis)),
-            (btn_fit,   self.handle_decay_fit),
-            (btn_param, lambda: self.result_plot.show_tau_param_over_time(self.wizard().group_analysis)),
-            (btn_amp,   lambda: self.result_plot.show_amplitudes_over_time(self.wizard().group_analysis)),
+            (self.btn_avg,   lambda: self.result_plot.show_average_over_experiments(self.wizard().group_analysis)),
+            (self.btn_fit,   self.handle_decay_fit),
+            (self.btn_param, lambda: self.result_plot.show_tau_param_over_time(self.wizard().group_analysis)),
+            (self.btn_amp,   lambda: self.result_plot.show_amplitudes_over_time(self.wizard().group_analysis)),
             (self.btn_mean_its, lambda: self.result_plot.show_mean_ITs(self.wizard().group_analysis)),
             (self.btn_spont_freq,     lambda: self.result_plot.show_spontaneous_peak_frequency(self.wizard().group_analysis)),
             (self.btn_spont_windowed, self.handle_windowed_amplitudes),
         ):
             btn.clicked.connect(lambda _, f=fn: self._reveal_and_call(f))
 
-        btn_save.clicked.connect(self.save_current_plot)
-        btn_save_all.clicked.connect(self.save_all_plots)
-        btn_export.clicked.connect(self.export_all_as_csv)
+        self.btn_save.clicked.connect(self.save_current_plot)
+        self.btn_save_all.clicked.connect(self.save_all_plots)
+        self.btn_export.clicked.connect(self.export_all_as_csv)
 
         # Left panel
         left = QVBoxLayout()
         left.setSpacing(4)
 
         left.addWidget(_sec("Available for All"))
-        left.addWidget(btn_avg)
-        left.addWidget(btn_amp)
-        left.addWidget(self.btn_mean_its)
+        left.addWidget(self.btn_avg)
+        left.addWidget(self.btn_amp)
 
         left.addWidget(_sec("Single Peak"))
-        left.addWidget(btn_param)
-        left.addWidget(btn_fit)
+        left.addWidget(self.btn_param)
+        left.addWidget(self.btn_fit)
+        left.addWidget(self.btn_mean_its)
 
         self.lbl_multi_peak = _sec("Multi-Peak")
         self.lbl_multi_peak.hide()
@@ -103,9 +104,9 @@ class ResultsPage(QWizardPage):
         left.addStretch()
 
         left.addWidget(_sec("Export"))
-        left.addWidget(btn_save)
-        left.addWidget(btn_save_all)
-        left.addWidget(btn_export)
+        left.addWidget(self.btn_save)
+        left.addWidget(self.btn_save_all)
+        left.addWidget(self.btn_export)
 
         # Right panel (plot)
         self.placeholder = QLabel("Select an analysis option to show plot")
