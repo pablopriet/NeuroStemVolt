@@ -123,6 +123,10 @@ Whether you're characterizing iPSC-derived neuronal systems or investigating neu
 - Current-vs-time traces with stimulation markers and event annotations
 ---
 
+## Accessing the Manual
+
+A [**NeuroStemVolt v1.1.1 User Manual](https://github.com/Hashemi-Lab/NeuroStemVolt/blob/main/NeuroStemVolt_User_Manual.pdf) can be found in the repository main branch. This manual covers all aspects of software use and can be of great help when trying to understand how the batch analysis works.
+
 ## Running NeuroStemVolt
 
 You can either use the pre-built executables (no Python setup required) or run directly from source.
