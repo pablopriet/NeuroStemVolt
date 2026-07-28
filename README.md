@@ -76,21 +76,20 @@ Whether you're characterizing iPSC-derived neuronal systems or investigating neu
 
 ---
 
-## **What's New in v1.1.0**
-
-- **Stimulation visualisation** — stimulation onset time is now drawn on every current-vs-time plot
-- **Stim params from settings** — the colorplot page reads stimulation parameters directly from experiment settings so they are consistent across the session
-- **Manual peak editor** — interactively click to add or remove peaks; edited files are flagged in metadata
-- **Exponential fitting per replicate** — fit and export reuptake curves individually, then combine into pooled statistics; global fitting is still available
-- **Full session export** — export all replicates and all peaks with a single button press; the results page exports everything too
-- **Experiment log in CSV** — session notes and settings are included in every CSV export
-- **Non-specific waveform option** — new waveform type for experiments that do not target a specific analyte
-- **Progress & confirmation dialogs** — clear visual feedback for processing steps and safety prompts before destructive actions (clear, revert)
-- **Improved help text** — stim artifact removal and stim start dialogs now show clearer instructions in correct units (seconds)
-- **File sorting fix** — file naming and sort order are now consistent across platforms
-- **Butterworth filter fix** — resolved edge-case bugs in filter coefficient calculation
-- **Acquisition frequency from QSettings** — frequency is now read from the global settings store instead of being hard-coded
-- **Updated branding** — new NeuroStemVolt v1.1.0 logo and icon
+## **What's New in v1.1.1**
+- **Multi-peak detection overhaul** — all FindAmplitudeMultiple detector parameters are now configurable through from_params() for complete control over detection behaviour
+- **Selective exponential-fit plotting** — choose exactly which timepoints generate exponential-fit figures using a new multi-select dialog
+- **Cleaner multi-peak results** — removed the redundant Peak Amplitudes plot and hidden Mean IT plots in Multi-Peak mode to reduce duplicate output
+- **Improved exponential fitting** — unified the fitting workflow, corrected joint fitting of the A and C parameters, and improved plot axes with adaptive tick spacing
+- **Per-timepoint exponential exports** — exponential-fit plots are now exported individually instead of overwriting a single figure
+- **Treatment-aware CSV exports** — treatment names are now automatically included in exported CSV filenames
+- **Windowed amplitude plot** — added a new windowed amplitude plot to improve visualisation of signal changes over time
+- **Improved plotting consistency** — all time-based plots now display and export in seconds using a shared waveform voltage-axis helper
+- **SVG export support** — figures can now be exported as scalable vector graphics (SVG) in addition to existing formats
+- **Improved CV exports** — fixed the cyclic voltammogram voltage axis, included CV plots in Save Current Plots, and consolidated all exported plots into a single plots folder
+- **Manual peak editor restored** — interactive click-to-edit peak selection has been re-enabled
+- **Improved help text** — experiment settings documentation has been clarified
+- **Repository updates** — refreshed example datasets, updated example outputs, and cleaned up internal documentation and source code comments
 
 ---
 
@@ -137,8 +136,8 @@ Download the latest release here:
 [**NeuroStemVolt v1.1.1 – Release Assets**](https://github.com/pablopriet/NeuroStemVolt/releases/tag/v1.1.1)
 
 ### Included in the release:
-- `NeuroStemVolt-windows-v1.1.0.exe` — Windows executable
-- `NeuroStemVolt-mac-v1.1.0.zip` — macOS application bundle (`.app`)
+- `NeuroStemVolt-windows-v1.1.1.exe` — Windows executable
+- `NeuroStemVolt-mac-v1.1.1.zip` — macOS application bundle (`.app`)
 
 **Usage:**
 1. Download the file for your operating system.
