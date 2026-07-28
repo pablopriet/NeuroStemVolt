@@ -303,6 +303,57 @@ class PlotCanvas(FigureCanvas):
         self.draw()
         progress.close()
 
+    def show_mean_ITs(self, group_analysis):
+        """
+        Plot mean IT profiles over replicates, highlighting files before treatment
+        and marking the first file after treatment.
+
+        Args:
+            group_analysis (GroupAnalysis): Backend object holding replicate experiments.
+
+        Returns:
+            None
+        """
+        import numpy as np
+
+        # Show loading dialog
+        progress = QProgressDialog("Processing data, please wait...", None, 0, 0, self)
+        progress.setWindowModality(Qt.ApplicationModal)
+        progress.setAutoClose(True)
+        progress.setAutoReset(True)
+        progress.setMinimumDuration(0)
+        progress.show()
+        QApplication.processEvents()  # Ensure dialog appears
+
+        mean_ITs = group_analysis.average_IT_over_replicates()
+        files_before_treatment = group_analysis.experiments[0].get_number_of_files_before_treatment()
+        freq = group_analysis.experiments[0].get_acquisition_frequency()
+
+        n_files = mean_ITs.shape[0]
+        time_points = np.arange(mean_ITs.shape[1]) / freq
+
+        # Clear and plot
+        self.fig.clear()
+        self.axes = self.fig.add_subplot(111)
+
+        for i in range(files_before_treatment):
+            self.axes.plot(time_points, mean_ITs[i, :], label=f"File {i+1} (Before Treatment)", color="blue", alpha=0.7)
+
+        for i in range(files_before_treatment, n_files):
+            self.axes.plot(time_points, mean_ITs[i, :], label=f"File {i+1} (After Treatment)", color="green", alpha=0.7)
+
+        if files_before_treatment < n_files:
+            self.axes.plot(time_points, mean_ITs[files_before_treatment, :], label="First File After Treatment", color="red", linewidth=2)
+
+        self.axes.set_xlabel('Time (s)')
+        self.axes.set_ylabel('Mean IT (nA)')
+        self.axes.set_title('Mean IT Profiles Over Replicates')
+        self.axes.legend(fontsize=10, loc="upper right")
+        self.axes.grid(False)
+        self.fig.tight_layout()
+        self.draw()
+        progress.close()
+
     def show_decay_exponential_fitting(self, group_analysis, replicate_time_point=0):
         """
         Display exponential decay fitting across replicates for a selected time point.
@@ -554,110 +605,6 @@ class PlotCanvas(FigureCanvas):
             self.fig.clear()
             self.axes = self.fig.add_subplot(111)
             self.axes.text(0.5, 0.5, f"Error plotting frequency data: {str(e)}",
-                          ha='center', va='center', transform=self.axes.transAxes)
-            self.draw()
-        finally:
-            progress.close()
-
-    def show_spontaneous_peak_amplitudes(self, group_analysis):
-        """
-        Plot spontaneous peak amplitudes over time for all experiments.
-        """
-        import numpy as np
-        from PyQt5.QtCore import QSettings
-        from PyQt5.QtWidgets import QProgressDialog, QApplication
-
-        # Show loading dialog
-        progress = QProgressDialog("Processing spontaneous peak amplitude data...", None, 0, 0, self)
-        progress.setWindowModality(Qt.ApplicationModal)
-        progress.setAutoClose(True)
-        progress.setAutoReset(True)
-        progress.setMinimumDuration(0)
-        progress.show()
-        QApplication.processEvents()
-
-        try:
-            settings = QSettings("HashemiLab", "NeuroStemVolt")
-            time_between_files = settings.value("time_between_files", 0, type=float)
-
-            experiments = group_analysis.get_experiments()
-            if not experiments:
-                self.fig.clear()
-                self.axes = self.fig.add_subplot(111)
-                self.axes.set_title("No experiments to analyze")
-                self.draw()
-                return
-
-            # Collect amplitude data from all experiments
-            all_mean_amplitudes = []
-            time_points = []
-
-            n_files = experiments[0].get_file_count()
-            files_before_treatment = experiments[0].get_number_of_files_before_treatment()
-
-            # Calculate time points
-            if files_before_treatment > 0:
-                time_points = [time_between_files * (i - files_before_treatment) for i in range(n_files)]
-            else:
-                time_points = [i * time_between_files for i in range(n_files)]
-
-            # Collect amplitude data for each experiment
-            for exp in experiments:
-                exp_mean_amplitudes = []
-                for j, spheroid_file in enumerate(exp.files):
-                    meta = spheroid_file.get_metadata()
-                    peak_values = meta.get('peak_amplitude_values', [])
-
-                    # Handle both single value and list/array cases
-                    if not isinstance(peak_values, (list, np.ndarray)):
-                        peak_values = [peak_values] if peak_values else []
-
-                    # Calculate mean amplitude for this file
-                    mean_amplitude = np.mean(peak_values) if peak_values else 0
-                    exp_mean_amplitudes.append(mean_amplitude)
-
-                all_mean_amplitudes.append(exp_mean_amplitudes)
-
-            # Convert to numpy array for easier manipulation
-            all_mean_amplitudes = np.array(all_mean_amplitudes)
-            mean_amplitudes = np.nanmean(all_mean_amplitudes, axis=0)
-            std_amplitudes = np.nanstd(all_mean_amplitudes, axis=0)
-
-            # Clear and plot
-            self.fig.clear()
-            self.axes = self.fig.add_subplot(111)
-
-            # Plot mean amplitude with standard deviation
-            self.axes.plot(time_points, mean_amplitudes, 'o-', color='#8B008B',
-                          linewidth=2, markersize=6, label='Mean Amplitude')
-            self.axes.fill_between(time_points,
-                                  mean_amplitudes - std_amplitudes,
-                                  mean_amplitudes + std_amplitudes,
-                                  color='#8B008B', alpha=0.2, label='SD')
-
-            # Plot individual experiments in lighter colors
-            for i, amplitudes in enumerate(all_mean_amplitudes):
-                self.axes.plot(time_points, amplitudes, '--', alpha=0.5,
-                              color='gray', linewidth=1, label=f'Exp {i+1}' if i < 3 else '_nolegend_')
-
-            # Add treatment line if applicable
-            if files_before_treatment > 0:
-                treatment_time = 0  # Treatment starts at time 0 in this coordinate system
-                self.axes.axvline(x=treatment_time, color='red', linestyle='--',
-                                 linewidth=2, label='Treatment Start')
-
-            self.axes.set_xlabel('Time (minutes)', fontsize=12)
-            self.axes.set_ylabel('Mean Peak Amplitude (nA)', fontsize=12)
-            self.axes.set_title('Spontaneous Peak Amplitudes Over Time', fontweight='bold')
-            self.axes.legend()
-            self.axes.grid(True, alpha=0.3)
-            self.fig.tight_layout()
-            self.draw()
-
-        except Exception as e:
-            self.fig.clear()
-            self.axes = self.fig.add_subplot(111)
-            self.axes.text(0.5, 0.5, f"Error plotting amplitude data: {str(e)}",
                           ha='center', va='center', transform=self.axes.transAxes)
             self.draw()
         finally:

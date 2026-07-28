@@ -44,6 +44,7 @@ class ResultsPage(QWizardPage):
         # Available for both
         btn_avg = QPushButton("Mean Amplitude Over Experiments"); apply_custom_styles(btn_avg)
         btn_amp = QPushButton("Individual Amplitudes Per Replicate"); apply_custom_styles(btn_amp)
+        btn_mean_its = QPushButton("Mean ITs"); apply_custom_styles(btn_mean_its)
 
         # Recommended for Single Peak
         btn_fit   = QPushButton("Exponential Decay Fitting"); apply_custom_styles(btn_fit)
@@ -51,9 +52,8 @@ class ResultsPage(QWizardPage):
 
         # Recommended for Multi-Peak
         self.btn_spont_freq     = QPushButton("Peak Frequency");            apply_custom_styles(self.btn_spont_freq)
-        self.btn_spont_amp      = QPushButton("Peak Amplitudes");           apply_custom_styles(self.btn_spont_amp)
         self.btn_spont_windowed = QPushButton("Amplitudes per Time Window"); apply_custom_styles(self.btn_spont_windowed)
-        self.spontaneous_buttons = [self.btn_spont_freq, self.btn_spont_amp, self.btn_spont_windowed]
+        self.spontaneous_buttons = [self.btn_spont_freq, self.btn_spont_windowed]
 
         for btn in self.spontaneous_buttons:
             btn.hide()
@@ -63,7 +63,7 @@ class ResultsPage(QWizardPage):
         btn_save_all = QPushButton("Save All Plots");        apply_custom_styles(btn_save_all)
         btn_export   = QPushButton("Export Metrics as CSV"); apply_custom_styles(btn_export)
 
-        self.analysis_buttons = [btn_avg, btn_fit, btn_param, btn_amp, btn_save, btn_save_all, btn_export]
+        self.analysis_buttons = [btn_avg, btn_fit, btn_param, btn_amp, btn_mean_its, btn_save, btn_save_all, btn_export]
 
         # ── Connect buttons ──────────────────────────────────────────
         for btn, fn in (
@@ -71,8 +71,8 @@ class ResultsPage(QWizardPage):
             (btn_fit,   self.handle_decay_fit),
             (btn_param, lambda: self.result_plot.show_tau_param_over_time(self.wizard().group_analysis)),
             (btn_amp,   lambda: self.result_plot.show_amplitudes_over_time(self.wizard().group_analysis)),
+            (btn_mean_its, lambda: self.result_plot.show_mean_ITs(self.wizard().group_analysis)),
             (self.btn_spont_freq,     lambda: self.result_plot.show_spontaneous_peak_frequency(self.wizard().group_analysis)),
-            (self.btn_spont_amp,      lambda: self.result_plot.show_spontaneous_peak_amplitudes(self.wizard().group_analysis)),
             (self.btn_spont_windowed, self.handle_windowed_amplitudes),
         ):
             btn.clicked.connect(lambda _, f=fn: self._reveal_and_call(f))
@@ -88,6 +88,7 @@ class ResultsPage(QWizardPage):
         left.addWidget(_sec("Available for All"))
         left.addWidget(btn_avg)
         left.addWidget(btn_amp)
+        left.addWidget(btn_mean_its)
 
         left.addWidget(_sec("Single Peak"))
         left.addWidget(btn_param)
@@ -97,7 +98,6 @@ class ResultsPage(QWizardPage):
         self.lbl_multi_peak.hide()
         left.addWidget(self.lbl_multi_peak)
         left.addWidget(self.btn_spont_freq)
-        left.addWidget(self.btn_spont_amp)
         left.addWidget(self.btn_spont_windowed)
 
         left.addStretch()
@@ -126,7 +126,7 @@ class ResultsPage(QWizardPage):
         main_layout = QVBoxLayout(self)
         main_layout.addLayout(content, stretch=1)
 
-        footer = QLabel("© 2026 Hashemi Lab · NeuroStemVolt · v1.1.0")
+        footer = QLabel("© 2026 Hashemi Lab · NeuroStemVolt · v1.1.1")
         footer.setAlignment(Qt.AlignCenter)
         footer.setStyleSheet("color: palette(windowtext); font-size: 10pt;")
         main_layout.addWidget(footer)
@@ -171,10 +171,12 @@ class ResultsPage(QWizardPage):
             output_folder (str): Destination directory.
             base_name (str): File name without extension.
         """
+        plots_folder = os.path.join(output_folder, "plots")
+        os.makedirs(plots_folder, exist_ok=True)
         self.result_plot.fig.savefig(
-            os.path.join(output_folder, f"{base_name}.png"), dpi=300, bbox_inches='tight')
+            os.path.join(plots_folder, f"{base_name}.png"), dpi=300, bbox_inches='tight')
         self.result_plot.fig.savefig(
-            os.path.join(output_folder, f"{base_name}.svg"), bbox_inches='tight')
+            os.path.join(plots_folder, f"{base_name}.svg"), bbox_inches='tight')
 
     def _reveal_and_call(self, plot_fn):
         """
@@ -267,13 +269,20 @@ class ResultsPage(QWizardPage):
         """
         Save the currently displayed result plot as a PNG image.
         
-        Prompts the user for a filename using QFileDialog.
+        Prompts the user for a filename using QFileDialog, defaulting to the
+        output folder's "plots" subfolder.
         """
+        output_folder = QSettings("HashemiLab", "NeuroStemVolt").value("output_folder")
+        default_dir = ""
+        if output_folder and os.path.isdir(output_folder):
+            default_dir = os.path.join(output_folder, "plots")
+            os.makedirs(default_dir, exist_ok=True)
+
         options = QFileDialog.Options()
         file_path, _ = QFileDialog.getSaveFileName(
             self,
             "Save Current Plot As",
-            "",
+            default_dir,
             "PNG Files (*.png);;SVG Files (*.svg);;All Files (*)",
             options=options
         )
@@ -333,9 +342,6 @@ class ResultsPage(QWizardPage):
             file_type = settings.value("file_type", "None", type=str)
             if file_type == "Multi-Peak":
                 # Create temporary plots and save them
-                self.result_plot.show_spontaneous_peak_amplitudes(group_analysis)
-                self._save_canvas(output_folder, "spontaneous_peak_amplitudes")
-
                 self.result_plot.show_spontaneous_peak_frequency(group_analysis)
                 self._save_canvas(output_folder, "spontaneous_peak_frequency")
 
